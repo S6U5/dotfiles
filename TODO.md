@@ -69,6 +69,7 @@ GitHub 連携:
 - [ ] README にスクリーンショット・機能一覧(OSS 公開時の「見せる dotfiles」化)
 - [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
 - [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
+- [ ] Neovim 導入したい気持ちあり(難しくて保留中)。入るなら kickstart.nvim(最小テンプレートから育てる)か LazyVim(全部入り)か。まずはコミットメッセージ編集など部分導入から
 - [ ] GitHub のリポジトリトピックに `dotfiles` を付けて公開時に見つけやすくする(dotfiles.github.io にコミュニティの慣習まとめあり)
 
 設定の中身でよくあるもの:
