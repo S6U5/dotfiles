@@ -1,0 +1,10 @@
+# Debian / Ubuntu / Raspberry Pi OS / WSL(Ubuntu)用パッケージリスト(apt)。
+# 導入は ./packages/install.sh で明示的に行う。# 始まりの行と空行は無視される。
+# 注意: apt はパッケージ名が brew と違うことがある(例: fd は fd-find)。
+
+zsh        # メインシェル(Debian 系は初期状態が bash のため)
+tmux       # ターミナルマルチプレクサ(home/.tmux.conf が対象)
+fzf        # あいまい検索(shell/fzf.sh が存在チェックの上で利用)
+shellcheck # シェルスクリプトの lint(scripts/lint.sh・pre-commit で利用)
+shfmt      # シェルスクリプトのフォーマッタ(古い Ubuntu には無い場合あり。その場合は導入をスキップして問題ない)
+zoxide     # 賢い cd(Ubuntu 22.04+ / Debian bookworm+。無い場合はスキップして問題ない)

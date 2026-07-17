@@ -1,0 +1,8 @@
+# macOS 用パッケージリスト(Homebrew)。導入は ./packages/install.sh で明示的に行う。
+# 入れたいツールが増えたらここに追記する。GUI アプリは `cask "名前"` で書ける。
+
+brew "tmux"       # ターミナルマルチプレクサ(home/.tmux.conf が対象)
+brew "fzf"        # あいまい検索(shell/fzf.sh が存在チェックの上で利用)
+brew "shellcheck" # シェルスクリプトの lint(scripts/lint.sh・pre-commit で利用)
+brew "shfmt"      # シェルスクリプトのフォーマッタ(同上)
+brew "zoxide"     # 賢い cd(.zshrc / .bashrc が存在チェックの上で初期化)
