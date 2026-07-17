@@ -107,7 +107,9 @@ GitHub 連携:
 設定の中身でよくあるもの:
 
 - [ ] プロンプトのカスタマイズ(starship が定番。TOML 1ファイルで全シェル・全OS共通にできる)
-- [ ] `.gitconfig` の工夫 — `[include]` でローカル設定(名前・メール)を分離、diff を見やすくする delta / difftastic 導入
+- [ ] `.gitconfig` の工夫
+  - [x] `home/.gitconfig` 作成済み — `[include]` で `~/.gitconfig.local`(git 管理外)に名前・メール・マシン固有エディタを分離。共通側は pull.ff=only / push.autoSetupRemote / fetch.prune / quotepath=false / zdiff3 など
+  - [ ] diff を見やすくする delta / difftastic の導入(OSS。packages/ に足すか検討)
 - [ ] ターミナルエミュレータ設定(alacritty / wezterm / ghostty)も管理対象にする
 - [ ] `.editorconfig` をリポジトリに置く
 - [ ] Dependabot / Renovate で GitHub Actions などのバージョン更新を自動化
