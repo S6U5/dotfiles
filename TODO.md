@@ -4,9 +4,9 @@
 
 ## シェル設定
 
-- [ ] どのシェルを主軸にするか(zsh / bash 両対応?)
-- [ ] エイリアス・関数の置き場所の構成(1ファイル? 機能別に分割?)
-- [ ] OS 分岐の実装パターンを決める(`case "$(uname -s)"` を共通関数化するか)
+- [x] どのシェルを主軸にするか — **zsh / bash 両対応**に決定(エントリポイント2つ+共通部は sh 互換。CLAUDE.md「シェル設定の構成」参照)
+- [x] エイリアス・関数の置き場所の構成 — **機能別に分割**に決定(`home/.config/shell/` 以下。同上)
+- [x] OS 分岐の実装パターン — `init.sh` 内の `case "$(uname -s)"` で `os/<os>.sh` を読み分ける方式に決定(同上)
 
 ## fzf 系コマンド
 
@@ -17,13 +17,13 @@
 
 - [ ] Obsidian: URI スキーム(`obsidian://`)で何を操作するか(ノート作成、検索など)
 - [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
-- [ ] WSL の Windows 連携(explorer / Office / PowerShell)で作るコマンドの洗い出し
+- [ ] WSL の Windows 連携(explorer / PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`)
 
 ## .claude / .codex / .tmux 系
 
 - [ ] どのファイルを管理対象にするか(機密・個人情報が混ざりやすいので要精査)
 - [ ] `~/.claude/settings.json` など JSON 系は symlink でよいか、マージが必要か
-- [ ] tmux は既存設定と共存させるか(source 方式)、丸ごとリンクか
+- [x] tmux — **丸ごとリンク方式**に決定(`home/.tmux.conf`)。既存 Mac の設定を取り込み済み。クリップボードは copy-command を OS 自動判別(要 tmux 3.2+)、マシン固有設定は `~/.tmux.conf.local`(git 管理外)に逃がす
 
 ## 個人用ツール設定(リンター・フォーマッター等)
 
@@ -34,7 +34,7 @@
 
 - [x] 更新用スクリプト `update.sh` 作成済み(pull --ff-only + install.sh。未コミット変更があれば中断)
   - リンク済みファイルとフックは pull だけで反映される。install.sh 再実行が要るのは home/ に新規ファイルが増えたときだけ
-  - [ ] どこからでも呼べる `dotfiles-update` エイリアスをシェル設定に入れる(シェル設定を作るときに)
+  - [x] どこからでも呼べる `dotfiles-update` — `home/.local/bin/dotfiles-update` として実装済み(エイリアスではなくコマンド。リンクをたどってリポジトリを自動特定)
 - [ ] アンインストール(リンク解除)機能を作るか
 - [ ] 既存シェル設定への source 行追記を install.sh でやるか、手動にするか
 - [ ] 管理ツール(chezmoi / stow / yadm)の導入検討 — 有力候補は chezmoi(OS別テンプレート分岐・機密分離・diff 確認が要件に合う)
@@ -57,10 +57,9 @@
 セットアップ自動化:
 
 - [ ] ワンライナーインストール(`curl -fsSL .../install.sh | sh` で新マシンを一発セットアップ)
-- [ ] パッケージリストの管理(macOS: `Brewfile` + `brew bundle`、Linux: apt 等のリスト)でツール一式も再現可能にする
-  - ディストリごとにパッケージマネージャが違う(Ubuntu: apt / AlmaLinux 等: dnf / macOS: brew)。`packages/` 以下に OS・マネージャ別のリストと導入スクリプトを分けて置く
-  - 導入スクリプトは install.sh・更新フローとは独立させ、明示実行のみ(副作用の分離。CLAUDE.md 参照)
-  - パッケージ名がマネージャ間で違う問題(例: fd は apt だと fd-find)にどう対応するか
+- [x] パッケージリストの管理 — `packages/` として実装済み(macOS: `Brewfile` + `brew bundle`、Debian 系: `apt.txt`。導入は `./packages/install.sh` の明示実行のみ、`--dry-run` あり)
+  - パッケージ名の違いは OS 別リストで吸収する方針(各リストにそれぞれの名前で書く)
+  - [ ] dnf(AlmaLinux 等)対応は必要になったら追加
   - 単一リポジトリで辛くなったら macOS 用 / Linux 用の分割も選択肢として残す
 - [ ] `mise` / `asdf` で言語・ツールのバージョン管理(`.tool-versions`)
 
@@ -72,6 +71,13 @@
 GitHub 連携:
 
 - [ ] Codespaces / devcontainer 連携 — GitHub 設定で dotfiles リポジトリを指定すると起動時に自動適用される(`install.sh` が自動実行される)。**GitHub 側の設定が必要なので忘れないこと**
+
+サプライチェーン対策:
+
+- [x] npm — `home/.npmrc`(`ignore-scripts=true` + `save-exact=true`)
+- [x] pnpm — `home/.config/pnpm/rc`(`minimum-release-age=10080` = 7日寝かせ。npm の未知キー警告を避けるため .npmrc と分離。macOS 対応のため env.sh で XDG_CONFIG_HOME を設定)
+- [ ] プロジェクト側の雛形(templates/)に renovate / dependabot の遅延更新設定や `pnpm-workspace.yaml` の `minimumReleaseAge` を用意するか
+- [ ] bun / pip など他のパッケージマネージャの対策設定
 
 機密管理:
 
@@ -106,7 +112,7 @@ GitHub 連携:
 - [ ] Makefile / justfile 雛形
 - [ ] テンプレートをコピーするコマンドを作るか(fzf で選択してコピーなど)
 - [ ] プロンプトテンプレート(AI 系)
-  - [ ] プロジェクト用 `CLAUDE.md` / `AGENTS.md` の雛形(新プロジェクトに配る用)
+  - [x] プロジェクト用 `CLAUDE.md` / `AGENTS.md` の雛形 — `templates/project/` に作成済み(AGENTS.md 本体 + CLAUDE.md は `@AGENTS.md` 参照のみ)
   - [ ] Claude Code のカスタムスラッシュコマンド・スキル(`~/.claude/commands/` 等はユーザー設定なので `home/` 側、雛形は `templates/` 側と使い分け)
   - [ ] レビュー依頼・リファクタ依頼などよく使う定型プロンプト集
   - **注意(最重要)**: 個人的なこと・業務に関することはマジで一切含めない。プロンプトは特に混ざりやすいので、コミット前に必ず全文精査。疑わしければ入れない

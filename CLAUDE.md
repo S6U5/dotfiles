@@ -35,6 +35,23 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 - `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.zshrc` → `~/.zshrc`)。新しい設定ファイルは基本ここに置く。
 - `install.sh` — `home/` 以下を `$HOME` にシンボリックリンクするスクリプト。
+- `packages/` — パッケージリストと導入スクリプト。OS 別にリストを分ける(macOS: `Brewfile`、Debian 系: `apt.txt`。dnf 等は必要になったら追加)。導入は `./packages/install.sh` の明示実行のみ(install.sh / update.sh からは呼ばない)。
+- `templates/` — 新プロジェクトにコピーして使う雛形置き場。`$HOME` にはリンクされない(home/ と分離)。プロジェクト用のエージェント指示は `AGENTS.md` を本体とし、`CLAUDE.md` は `@AGENTS.md` 参照のみの薄いファイルにする(二重管理を避ける)。
+
+## シェル設定の構成
+
+- **zsh / bash 両対応**。エントリポイントは `home/.zshrc` と `home/.bashrc` の2つで、どちらも共通設定 `home/.config/shell/init.sh` を source する。
+- `home/.config/shell/` 以下(共通部)は **POSIX sh 互換**で書く。zsh / bash 固有の書き方が必要な設定は、共通部ではなく各エントリポイント(`.zshrc` / `.bashrc`)側に書く。
+- 読み込み順(init.sh が制御):
+  1. `env.sh` — 環境変数
+  2. その他の `*.sh` — アルファベット順(`aliases.sh`、`fzf.sh`、`functions.sh`、…)。ファイルを追加すれば自動で読み込まれる
+  3. `os/<os>.sh` — 実行中の OS のものだけ(`macos` / `wsl` / `linux` は排他。WSL では `wsl.sh` のみ読まれる)
+  4. `local.sh` — git 管理外(gitignore 対象)。マシン固有・プライベートな設定は `~/.config/shell/local.sh` に直接置く
+- 機能を追加するときは `.zshrc` を太らせず、`home/.config/shell/` に機能別ファイルを追加する。
+- **自作コマンド(実行可能スクリプト)は `home/.local/bin/` に置く**(`env.sh` で PATH に追加済み)。使い分け:
+  - シェルの状態を変えるもの(`cd` する等)や一行で済むもの → 関数・エイリアス(`.config/shell/`)
+  - 独立して動くもの・シェル以外からも呼びたいもの → `home/.local/bin/` のスクリプト(シェバン付き・実行権限付与)
+  - スクリプト内でリポジトリのパスをハードコードしない。必要なら `dotfiles-update` のように自身のシンボリックリンクをたどって解決する。
 
 ## 運用方針
 
