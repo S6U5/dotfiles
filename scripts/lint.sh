@@ -15,11 +15,11 @@ cd "$DOTFILES_DIR"
 FIX=0
 [ "${1:-}" = "--fix" ] && FIX=1
 
-# 対象: git 管理下の *.sh と .githooks/ 以下
+# 対象: git 管理下の *.sh と .githooks/ 以下、home/.local/bin/ の自作コマンド
 files=()
 while IFS= read -r f; do
   files+=("$f")
-done < <(git ls-files -- '*.sh' '.githooks/*')
+done < <(git ls-files -- '*.sh' '.githooks/*' 'home/.local/bin/*')
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "lint 対象ファイルがありません。"
