@@ -92,6 +92,11 @@ GitHub 連携:
 - [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
 - [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
 - [ ] Neovim 導入したい気持ちあり(難しくて保留中)。入るなら kickstart.nvim(最小テンプレートから育てる)か LazyVim(全部入り)か。まずはコミットメッセージ編集など部分導入から
+  - **注意: ダウンロード方法によっては最新版を使えない問題がある**
+    - apt の neovim は大幅に古い(Ubuntu LTS だと数世代前)。kickstart.nvim / LazyVim は新しめの Neovim を要求するため、**apt 版では動かない可能性が高い。`packages/apt.txt` に安易に追加しないこと**
+    - 最新版を使う手段: macOS は brew(常に新しい)。Linux は公式 GitHub Releases のバイナリ / AppImage、または bob(Neovim 専用バージョンマネージャ)。Ubuntu なら unstable PPA も選択肢
+    - Raspberry Pi(ARM)は対応バイナリがあるか要確認(公式の arm64 ビルドは比較的最近から)
+    - 導入するときは「OS ごとに入手方法が違う」前提で packages/ の仕組みに組み込むか、専用の導入スクリプトを検討
 - [ ] GitHub のリポジトリトピックに `dotfiles` を付けて公開時に見つけやすくする(dotfiles.github.io にコミュニティの慣習まとめあり)
 
 設定の中身でよくあるもの:
