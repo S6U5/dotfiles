@@ -52,6 +52,10 @@
 
 - [ ] ワンライナーインストール(`curl -fsSL .../install.sh | sh` で新マシンを一発セットアップ)
 - [ ] パッケージリストの管理(macOS: `Brewfile` + `brew bundle`、Linux: apt 等のリスト)でツール一式も再現可能にする
+  - ディストリごとにパッケージマネージャが違う(Ubuntu: apt / AlmaLinux 等: dnf / macOS: brew)。`packages/` 以下に OS・マネージャ別のリストと導入スクリプトを分けて置く
+  - 導入スクリプトは install.sh・更新フローとは独立させ、明示実行のみ(副作用の分離。CLAUDE.md 参照)
+  - パッケージ名がマネージャ間で違う問題(例: fd は apt だと fd-find)にどう対応するか
+  - 単一リポジトリで辛くなったら macOS 用 / Linux 用の分割も選択肢として残す
 - [ ] `mise` / `asdf` で言語・ツールのバージョン管理(`.tool-versions`)
 
 品質・テスト:
