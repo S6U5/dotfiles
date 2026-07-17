@@ -1,0 +1,6 @@
+# マシン固有・プライベートな設定(コミットしない。CLAUDE.md 参照)
+*.local
+local.sh
+
+# OS が作る不要ファイル
+.DS_Store
