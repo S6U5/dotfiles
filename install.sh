@@ -111,6 +111,12 @@ main() {
 
   log ""
   log "完了: ${count} ファイルを処理しました。"
+
+  # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化
+  if command -v git >/dev/null 2>&1 && [ -d "$DOTFILES_DIR/.git" ] && [ -d "$DOTFILES_DIR/.githooks" ]; then
+    run git -C "$DOTFILES_DIR" config core.hooksPath .githooks
+    log "githooks: core.hooksPath を .githooks に設定しました。"
+  fi
 }
 
 main "$@"

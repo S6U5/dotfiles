@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# 機密情報(APIキー・トークン等)の混入をコミット前にブロックする pre-commit フック。
+#
+# 有効化: git config core.hooksPath .githooks (install.sh が自動で設定する)
+#
+# - gitleaks がインストールされていれば、まず gitleaks で検査する。
+# - 無くても動くよう、内蔵の簡易パターン検査を常に行う。
+# - 誤検知の場合: 該当行に「secrets-allow」というコメントを付けるとスキップできる。
+#   (本当に機密でないことを確認した上で使うこと)
+set -euo pipefail
+
+fail=0
+
+# --- gitleaks(あれば) -------------------------------------------------
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --redact >/dev/null 2>&1; then
+    echo "ERROR: gitleaks がステージ内容から機密情報を検出しました。" >&2
+    echo "       詳細: gitleaks protect --staged -v" >&2
+    fail=1
+  fi
+fi
+
+# --- 内蔵パターン検査(gitleaks が無くても動く) -------------------------
+PATTERNS=(
+  'AKIA[0-9A-Z]{16}'                        # AWS アクセスキー
+  'ghp_[A-Za-z0-9]{36}'                     # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{22,}'            # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'                     # GitHub OAuth トークン
+  'xox[baprs]-[A-Za-z0-9-]{10,}'            # Slack トークン
+  'sk-ant-[A-Za-z0-9_-]{20,}'               # Anthropic API キー
+  'sk-[A-Za-z0-9]{32,}'                     # OpenAI 等の sk- 系キー
+  'AIza[0-9A-Za-z_-]{35}'                   # Google API キー
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'      # 秘密鍵
+  '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
+)
+
+while IFS= read -r file; do
+  # フック自身(検出パターンを含む)は検査対象外
+  case "$file" in
+    .githooks/*) continue ;;
+  esac
+
+  added=$(git diff --cached --unified=0 --no-color -- "$file" | grep -E '^\+[^+]' || true)
+  [ -z "$added" ] && continue
+
+  for pat in "${PATTERNS[@]}"; do
+    matches=$(printf '%s\n' "$added" | grep -Ei -e "$pat" | grep -v 'secrets-allow' || true)
+    if [ -n "$matches" ]; then
+      echo "ERROR: ${file}: 機密情報らしきパターンを検出しました:" >&2
+      printf '%s\n' "$matches" | sed 's/^/    /' >&2
+      fail=1
+    fi
+  done
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+if [ "$fail" -ne 0 ]; then
+  cat >&2 <<'EOF'
+
+コミットをブロックしました。機密情報が含まれていないか確認してください。
+  - 本物の機密の場合: ステージから外し、環境変数や *.local(gitignore 対象)に分離する。
+  - 誤検知の場合: 該当行に secrets-allow コメントを付けて再コミットする。
+EOF
+  exit 1
+fi
