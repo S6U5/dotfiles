@@ -42,6 +42,34 @@
 - [ ] CODEOWNERS は個人リポジトリでは不要か
 - [ ] 公開後の外部からの PR / Issue の受け入れ方針(CONTRIBUTING.md を書くか)
 
+## 他のエンジニアがよくやっている取り組み(導入検討)
+
+セットアップ自動化:
+
+- [ ] ワンライナーインストール(`curl -fsSL .../install.sh | sh` で新マシンを一発セットアップ)
+- [ ] パッケージリストの管理(macOS: `Brewfile` + `brew bundle`、Linux: apt 等のリスト)でツール一式も再現可能にする
+- [ ] `mise` / `asdf` で言語・ツールのバージョン管理(`.tool-versions`)
+
+品質・テスト:
+
+- [ ] CI で shellcheck / shfmt(lint・フォーマット強制)
+- [ ] CI でインストールテスト — まっさらな Ubuntu コンテナ + macOS ランナーで `install.sh` を実走させてクロスプラットフォーム動作を自動確認
+
+GitHub 連携:
+
+- [ ] Codespaces / devcontainer 連携 — GitHub 設定で dotfiles リポジトリを指定すると起動時に自動適用される(`install.sh` が自動実行される)。**GitHub 側の設定が必要なので忘れないこと**
+
+機密管理:
+
+- [ ] age / SOPS で暗号化してコミットする方式の検討
+- [ ] 1Password / Bitwarden CLI 連携(chezmoi 導入時の定番。テンプレートから実行時に注入)
+
+見せ方・その他:
+
+- [ ] README にスクリーンショット・機能一覧(OSS 公開時の「見せる dotfiles」化)
+- [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
+- [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
+
 ## 品質・公開準備
 
 - [ ] shellcheck を CI(GitHub Actions)で回すか
