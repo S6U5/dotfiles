@@ -69,6 +69,15 @@ GitHub 連携:
 - [ ] README にスクリーンショット・機能一覧(OSS 公開時の「見せる dotfiles」化)
 - [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
 - [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
+- [ ] GitHub のリポジトリトピックに `dotfiles` を付けて公開時に見つけやすくする(dotfiles.github.io にコミュニティの慣習まとめあり)
+
+設定の中身でよくあるもの:
+
+- [ ] プロンプトのカスタマイズ(starship が定番。TOML 1ファイルで全シェル・全OS共通にできる)
+- [ ] `.gitconfig` の工夫 — `[include]` でローカル設定(名前・メール)を分離、diff を見やすくする delta / difftastic 導入
+- [ ] ターミナルエミュレータ設定(alacritty / wezterm / ghostty)も管理対象にする
+- [ ] `.editorconfig` をリポジトリに置く
+- [ ] Dependabot / Renovate で GitHub Actions などのバージョン更新を自動化
 
 ## 品質・公開準備
 
