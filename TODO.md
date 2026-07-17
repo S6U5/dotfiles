@@ -97,6 +97,7 @@ GitHub 連携:
     - 最新版を使う手段: macOS は brew(常に新しい)。Linux は公式 GitHub Releases のバイナリ / AppImage、または bob(Neovim 専用バージョンマネージャ)。Ubuntu なら unstable PPA も選択肢
     - Raspberry Pi(ARM)は対応バイナリがあるか要確認(公式の arm64 ビルドは比較的最近から)
     - 導入するときは「OS ごとに入手方法が違う」前提で packages/ の仕組みに組み込むか、専用の導入スクリプトを検討
+    - **方針(決定): macOS は brew、WSL / Linux は公式 GitHub Releases の tarball を `~/.local` に展開**(`~/.local/bin/nvim`。sudo 不要・常に最新・更新は再実行するだけ)。バージョン切り替えが欲しくなったら bob を検討。WSL では apt / snap / AppImage / PPA は使わない
 - [ ] GitHub のリポジトリトピックに `dotfiles` を付けて公開時に見つけやすくする(dotfiles.github.io にコミュニティの慣習まとめあり)
 
 設定の中身でよくあるもの:
