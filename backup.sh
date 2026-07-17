@@ -21,14 +21,20 @@ HOME_SRC="$DOTFILES_DIR/home"
 DRY_RUN=0
 DEST_BASE="$HOME/.dotfiles-backup"
 
-log()  { printf '%s\n' "$*"; }
+log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    -*) warn "不明なオプション: $arg"; exit 1 ;;
+    -h | --help)
+      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*)
+      warn "不明なオプション: $arg"
+      exit 1
+      ;;
     *) DEST_BASE=$arg ;;
   esac
 done
@@ -44,7 +50,7 @@ count=0
 while IFS= read -r -d '' src; do
   rel=${src#"$HOME_SRC"/}
   case "$rel" in
-    .gitkeep|*/.gitkeep) continue ;;
+    .gitkeep | */.gitkeep) continue ;;
   esac
   target="$HOME/$rel"
 

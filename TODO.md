@@ -61,7 +61,7 @@
 
 品質・テスト:
 
-- [ ] CI で shellcheck / shfmt(lint・フォーマット強制)
+- [x] CI で shellcheck / shfmt — `scripts/lint.sh` + `.github/workflows/lint.yml` 導入済み。pre-commit フックでもツールがあれば実行
 - [ ] CI でインストールテスト — まっさらな Ubuntu コンテナ + macOS ランナーで `install.sh` を実走させてクロスプラットフォーム動作を自動確認
 
 GitHub 連携:
@@ -113,7 +113,7 @@ devcontainer 連携(消費される側)の注意:
 
 ## 品質・公開準備
 
-- [ ] shellcheck を CI(GitHub Actions)で回すか
+- [x] shellcheck を CI(GitHub Actions)で回す — 導入済み(上記)
 - [x] 機密情報の事前ブロック — pre-commit フック(`.githooks/pre-commit`)導入済み(gitleaks 併用+内蔵パターン)
 - [ ] 機密情報の混入チェック(gitleaks など)を CI にも入れるか(フックは `--no-verify` で素通りできるため二段目として)
 - [ ] OSS 公開前の最終レビュー(個人情報・プライベートパスの全ファイル確認)

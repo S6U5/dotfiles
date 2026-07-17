@@ -23,15 +23,15 @@ fi
 
 # --- 内蔵パターン検査(gitleaks が無くても動く) -------------------------
 PATTERNS=(
-  'AKIA[0-9A-Z]{16}'                        # AWS アクセスキー
-  'ghp_[A-Za-z0-9]{36}'                     # GitHub PAT (classic)
-  'github_pat_[A-Za-z0-9_]{22,}'            # GitHub PAT (fine-grained)
-  'gho_[A-Za-z0-9]{36}'                     # GitHub OAuth トークン
-  'xox[baprs]-[A-Za-z0-9-]{10,}'            # Slack トークン
-  'sk-ant-[A-Za-z0-9_-]{20,}'               # Anthropic API キー
-  'sk-[A-Za-z0-9]{32,}'                     # OpenAI 等の sk- 系キー
-  'AIza[0-9A-Za-z_-]{35}'                   # Google API キー
-  '-----BEGIN [A-Z ]*PRIVATE KEY-----'      # 秘密鍵
+  'AKIA[0-9A-Z]{16}'                   # AWS アクセスキー
+  'ghp_[A-Za-z0-9]{36}'                # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{22,}'       # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'                # GitHub OAuth トークン
+  'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack トークン
+  'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API キー
+  'sk-[A-Za-z0-9]{32,}'                # OpenAI 等の sk- 系キー
+  'AIza[0-9A-Za-z_-]{35}'              # Google API キー
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----' # 秘密鍵
   '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
 )
 
@@ -54,6 +54,16 @@ while IFS= read -r file; do
   done
 done < <(git diff --cached --name-only --diff-filter=ACM)
 
+# --- シェルスクリプトの lint(shellcheck / shfmt があれば) ---------------
+lint_fail=0
+repo_root=$(git rev-parse --show-toplevel)
+if [ -x "$repo_root/scripts/lint.sh" ]; then
+  if ! "$repo_root/scripts/lint.sh"; then
+    echo "ERROR: lint に失敗しました。" >&2
+    lint_fail=1
+  fi
+fi
+
 if [ "$fail" -ne 0 ]; then
   cat >&2 <<'EOF'
 
@@ -61,5 +71,8 @@ if [ "$fail" -ne 0 ]; then
   - 本物の機密の場合: ステージから外し、環境変数や *.local(gitignore 対象)に分離する。
   - 誤検知の場合: 該当行に secrets-allow コメントを付けて再コミットする。
 EOF
+fi
+
+if [ "$fail" -ne 0 ] || [ "$lint_fail" -ne 0 ]; then
   exit 1
 fi
