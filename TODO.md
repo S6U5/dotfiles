@@ -107,6 +107,7 @@ devcontainer 連携(消費される側)の注意:
 ## 品質・公開準備
 
 - [ ] shellcheck を CI(GitHub Actions)で回すか
-- [ ] 機密情報の混入チェック(gitleaks など)を CI に入れるか
+- [x] 機密情報の事前ブロック — pre-commit フック(`.githooks/pre-commit`)導入済み(gitleaks 併用+内蔵パターン)
+- [ ] 機密情報の混入チェック(gitleaks など)を CI にも入れるか(フックは `--no-verify` で素通りできるため二段目として)
 - [ ] OSS 公開前の最終レビュー(個人情報・プライベートパスの全ファイル確認)
 - [ ] README の英語化をするか
