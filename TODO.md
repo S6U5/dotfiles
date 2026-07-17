@@ -15,7 +15,9 @@
 
 ## アプリ操作コマンド
 
-- [ ] Obsidian: URI スキーム(`obsidian://`)で何を操作するか(ノート作成、検索など)
+- [x] Obsidian: vault へ移動する `cdov`・vault を指定して起動する `ov` — 実装済み(`home/.config/shell/obsidian.sh`。obsidian.json から vault 一覧を実行時取得、fzf があれば選択 UI、無ければ番号選択。ov は `obsidian://open?vault=` URI 起動)
+- [x] OneDrive: フォルダへ移動する `cdod` — 実装済み(`home/.config/shell/onedrive.sh`。macOS: `~/Library/CloudStorage/OneDrive*`、WSL: `/mnt/c/Users/*/OneDrive*` を実行時探索)
+- [ ] Obsidian: URI スキーム(`obsidian://`)でほかに何を操作するか(ノート作成、検索など)
 - [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
 - [ ] WSL の Windows 連携(explorer / PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`)
 
