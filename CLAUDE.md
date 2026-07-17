@@ -63,6 +63,12 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - チェックは `./scripts/lint.sh`、自動修正は `./scripts/lint.sh --fix`。
 - CI(`.github/workflows/lint.yml`)で必ず実行。ローカルの pre-commit フックでもツールがあれば実行される(無ければスキップ)。
 
+## ツール設定を dotfiles に入れるかの判断基準
+
+- **入れる**: `$HOME` 配下に置かれる「個人のグローバル設定」(例: `~/.shellcheckrc`、`~/.config/ruff/ruff.toml`、エディタのユーザー設定)。どのプロジェクトでも効かせたい個人の好みは dotfiles の領分。
+- **入れない**: プロジェクトルートに置いてチームで共有する設定(`.eslintrc`、`.prettierrc`、`.editorconfig` 等)。これは各プロジェクトに属する。雛形として配りたい場合は `templates/` に置く。
+- 注意: アプリによっては設定パスが OS で異なる(例: VS Code は Linux `~/.config/Code/User/`、macOS `~/Library/Application Support/Code/User/`)。現状の `home/` → `$HOME` 直マッピングでは吸収できないため、必要になったら OS 別マッピングか chezmoi を検討(TODO.md 参照)。
+
 ## ドキュメント
 
 - 本格的な設計書は作らない。方針は `CLAUDE.md`、未決定の検討事項は `TODO.md` に書く。
