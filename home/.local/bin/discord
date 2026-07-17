@@ -1,0 +1,49 @@
+#!/bin/sh
+# Discord を起動する。使い方: discord(起動のみ。ファイル指定なし)
+# 注意: Linux では本物の discord バイナリが存在しうる。このスクリプトが PATH で
+# 先勝ちして自分自身を呼ぶ再帰を避けるため、実体は明示パスで探して起動する。
+set -eu
+
+if [ $# -gt 0 ]; then
+  echo "使い方: discord(起動のみ。引数には対応していません)" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    if ! open -Ra Discord 2>/dev/null; then
+      echo "discord: Discord が見つかりません(未インストール?)" >&2
+      exit 0
+    fi
+    exec open -a Discord
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "discord: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      # プロトコル URI 起動(インストール先のバージョン差を吸収)
+      (
+        cd /mnt/c 2>/dev/null || cd /
+        cmd.exe /c start "" "discord://"
+      )
+      exit 0
+    fi
+    # Linux ネイティブ: 自分自身(~/.local/bin/discord)を避けて実体を探す
+    for cand in /usr/bin/discord /usr/local/bin/discord /snap/bin/discord \
+      /var/lib/flatpak/exports/bin/com.discordapp.Discord \
+      "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/bin/com.discordapp.Discord"; do
+      if [ -x "$cand" ]; then
+        nohup "$cand" >/dev/null 2>&1 &
+        exit 0
+      fi
+    done
+    echo "discord: Discord が見つかりません(未インストール? ブラウザ版 https://discord.com/app もあります)" >&2
+    exit 0
+    ;;
+  *)
+    echo "discord: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac

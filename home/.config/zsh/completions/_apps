@@ -1,10 +1,10 @@
-#compdef word excel powerpoint outlook onenote teams
-# Office 系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
+#compdef word excel powerpoint outlook onenote teams fusion360 discord
+# アプリ起動系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
 
 local exts
 case "$service" in
-  teams)
-    _message 'teams は起動のみ(ファイル指定なし)'
+  teams | discord)
+    _message "$service は起動のみ(ファイル指定なし)"
     return 0
     ;;
   word) exts='doc|docx|docm|dot|dotx|dotm|rtf|odt|txt' ;;
@@ -12,6 +12,7 @@ case "$service" in
   powerpoint) exts='ppt|pptx|pptm|pot|potx|potm|pps|ppsx|odp' ;;
   outlook) exts='msg|eml|ics' ;;
   onenote) exts='one|onepkg' ;;
+  fusion360) exts='f3d|f3z|step|stp|igs|iges|stl|obj|dxf' ;;
   *) exts='*' ;;
 esac
 

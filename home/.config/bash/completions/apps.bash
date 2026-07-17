@@ -1,18 +1,19 @@
 # shellcheck shell=bash
-# Office 系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
+# アプリ起動系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
 
-_office_complete() {
+_apps_complete() {
   COMPREPLY=()
   [ "$COMP_CWORD" -eq 1 ] || return 0
   local cur=${COMP_WORDS[COMP_CWORD]}
   local exts
   case "${COMP_WORDS[0]}" in
-    teams) return 0 ;; # 起動のみ(ファイル指定なし)なので何も補完しない
+    teams | discord) return 0 ;; # 起動のみ(ファイル指定なし)なので何も補完しない
     word) exts='doc docx docm dot dotx dotm rtf odt txt' ;;
     excel) exts='xls xlsx xlsm xlt xltx xltm csv' ;;
     powerpoint) exts='ppt pptx pptm pot potx potm pps ppsx odp' ;;
     outlook) exts='msg eml ics' ;;
     onenote) exts='one onepkg' ;;
+    fusion360) exts='f3d f3z step stp igs iges stl obj dxf' ;;
     *) exts='' ;;
   esac
   local f e keep
@@ -31,8 +32,7 @@ _office_complete() {
   done < <(compgen -f -- "$cur")
 }
 
-# teams はファイル指定なし(起動のみ)のため、登録して「何も補完しない」ようにする
-for _office_cmd in word excel powerpoint outlook onenote teams; do
-  complete -o filenames -F _office_complete "$_office_cmd"
+for _apps_cmd in word excel powerpoint outlook onenote teams fusion360 discord; do
+  complete -o filenames -F _apps_complete "$_apps_cmd"
 done
-unset _office_cmd
+unset _apps_cmd

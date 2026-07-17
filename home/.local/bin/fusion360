@@ -1,0 +1,69 @@
+#!/bin/sh
+# Autodesk Fusion(旧 Fusion 360)を開く。ファイルを1つ指定するとそのファイルを開く。
+# 使い方: fusion360 [ファイル]
+# 改名(Fusion 360 → Fusion)前後のどちらのインストールでも動くようにする。
+set -eu
+
+if [ $# -gt 1 ]; then
+  echo "使い方: fusion360 [ファイル](指定できるのは1ファイルまで)" >&2
+  exit 1
+fi
+
+if [ $# -eq 1 ] && [ ! -e "$1" ]; then
+  echo "fusion360: ファイルがありません: $1" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    for app in "Autodesk Fusion" "Autodesk Fusion 360"; do
+      if open -Ra "$app" 2>/dev/null; then
+        if [ $# -eq 1 ]; then
+          exec open -a "$app" "$1"
+        else
+          exec open -a "$app"
+        fi
+      fi
+    done
+    echo "fusion360: Autodesk Fusion が見つかりません(未インストール?)" >&2
+    exit 0
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      # webdeploy 方式でパスがバージョンごとに変わるため、最新の実行ファイルを探す
+      exe=$(find /mnt/c/Users/*/AppData/Local/Autodesk/webdeploy/production \
+        -maxdepth 2 -name 'Fusion360.exe' -printf '%T@ %p\n' 2>/dev/null |
+        sort -nr | head -n 1 | cut -d' ' -f2-)
+      if [ -n "$exe" ]; then
+        if [ $# -eq 1 ]; then
+          winpath=$(wslpath -w "$1")
+          exec "$exe" "$winpath"
+        fi
+        exec "$exe"
+      fi
+      # フォールバック: スタートメニューのショートカット経由(起動のみ)
+      lnk=$(find "/mnt/c/Users/"*/AppData/Roaming/Microsoft/Windows/"Start Menu"/Programs \
+        -maxdepth 3 -iname 'Autodesk Fusion*.lnk' 2>/dev/null | head -n 1)
+      if [ -n "$lnk" ]; then
+        if [ $# -eq 1 ]; then
+          echo "fusion360: この環境ではファイル指定は未対応です(起動のみ行います)" >&2
+        fi
+        winlnk=$(wslpath -w "$lnk")
+        (
+          cd /mnt/c 2>/dev/null || cd /
+          cmd.exe /c start "" "$winlnk"
+        )
+        exit 0
+      fi
+      echo "fusion360: Autodesk Fusion が見つかりません(Windows 側に未インストール?)" >&2
+      exit 0
+    else
+      echo "fusion360: Autodesk Fusion はこの環境(Linux)では利用できません" >&2
+      exit 0
+    fi
+    ;;
+  *)
+    echo "fusion360: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac
