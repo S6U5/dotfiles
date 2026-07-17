@@ -33,6 +33,15 @@
   - [ ] 導入するなら install.sh との関係をどうするか(置き換え? 併用?)
   - [ ] 導入タイミング(ファイル数・OS分岐が増えてきたら or 早めに試す)
 
+## リポジトリ保護・PR 運用
+
+- [ ] main のブランチ保護を設定する(直 push 禁止、PR 経由必須)
+  - [ ] CI 必須(status check)にするか
+  - [ ] 個人リポジトリなのでレビュー必須はどうするか(自分しかいないので不要?)
+- [ ] PR テンプレート(`.github/pull_request_template.md`)を用意するか
+- [ ] CODEOWNERS は個人リポジトリでは不要か
+- [ ] 公開後の外部からの PR / Issue の受け入れ方針(CONTRIBUTING.md を書くか)
+
 ## 品質・公開準備
 
 - [ ] shellcheck を CI(GitHub Actions)で回すか
