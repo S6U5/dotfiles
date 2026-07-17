@@ -1,9 +1,9 @@
-#compdef word excel powerpoint outlook onenote teams fusion360 discord
+#compdef word excel powerpoint outlook onenote teams fusion360
 # アプリ起動系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
 
 local exts
 case "$service" in
-  teams | discord)
+  teams)
     _message "$service は起動のみ(ファイル指定なし)"
     return 0
     ;;

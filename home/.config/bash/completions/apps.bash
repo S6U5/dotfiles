@@ -7,7 +7,7 @@ _apps_complete() {
   local cur=${COMP_WORDS[COMP_CWORD]}
   local exts
   case "${COMP_WORDS[0]}" in
-    teams | discord) return 0 ;; # 起動のみ(ファイル指定なし)なので何も補完しない
+    teams) return 0 ;; # 起動のみ(ファイル指定なし)なので何も補完しない
     word) exts='doc docx docm dot dotx dotm rtf odt txt' ;;
     excel) exts='xls xlsx xlsm xlt xltx xltm csv' ;;
     powerpoint) exts='ppt pptx pptm pot potx potm pps ppsx odp' ;;
@@ -32,7 +32,7 @@ _apps_complete() {
   done < <(compgen -f -- "$cur")
 }
 
-for _apps_cmd in word excel powerpoint outlook onenote teams fusion360 discord; do
+for _apps_cmd in word excel powerpoint outlook onenote teams fusion360; do
   complete -o filenames -F _apps_complete "$_apps_cmd"
 done
 unset _apps_cmd
