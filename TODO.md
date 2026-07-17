@@ -82,6 +82,23 @@ GitHub 連携:
 - [ ] `.editorconfig` をリポジトリに置く
 - [ ] Dependabot / Renovate で GitHub Actions などのバージョン更新を自動化
 
+## テンプレート集(新プロジェクト開始キット)
+
+`home/` とは別に `templates/` ディレクトリを切って、新プロジェクトにコピーして使う雛形を貯める構想。
+(`home/` に置くと install.sh で $HOME にリンクされてしまうため分離する)
+
+- [ ] devcontainer テンプレート(`devcontainer.json` の雛形。言語別に複数用意するか)
+- [ ] `.editorconfig` 雛形
+- [ ] 言語別 `.gitignore` 雛形
+- [ ] GitHub Actions ワークフロー雛形
+- [ ] Makefile / justfile 雛形
+- [ ] テンプレートをコピーするコマンドを作るか(fzf で選択してコピーなど)
+
+devcontainer 連携(消費される側)の注意:
+
+- [ ] VS Code `dotfiles.repository` / Codespaces 設定で dotfiles を指定する(GitHub/エディタ側の設定、忘れやすい)
+- install.sh は「非対話・sudo 不要・高速」を維持すること(コンテナ内自動実行の前提)
+
 ## 品質・公開準備
 
 - [ ] shellcheck を CI(GitHub Actions)で回すか
