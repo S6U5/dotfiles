@@ -27,6 +27,8 @@
 
 ## install.sh / 運用
 
+- [ ] 更新用コマンド/エイリアスを作る(`git pull && ./install.sh` を1コマンドに。例: `dotfiles-update`)
+  - リンク済みファイルとフックは pull だけで反映される。install.sh 再実行が要るのは home/ に新規ファイルが増えたときだけ
 - [ ] アンインストール(リンク解除)機能を作るか
 - [ ] 既存シェル設定への source 行追記を install.sh でやるか、手動にするか
 - [ ] 管理ツール(chezmoi / stow / yadm)の導入検討 — 有力候補は chezmoi(OS別テンプレート分岐・機密分離・diff 確認が要件に合う)
