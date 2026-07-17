@@ -31,6 +31,7 @@
 
 - [ ] 普段使いのリンター・フォーマッターのグローバル設定を home/ に追加していく(候補: `~/.shellcheckrc`、ruff、エディタ設定など。判断基準は CLAUDE.md 参照)
 - [ ] 設定パスが OS で違うアプリ(VS Code 等)の扱い — install.sh に OS 別マッピングを足すか、chezmoi 導入の判断材料にする
+  - [x] VS Code は当面**テンプレート方式**に決定 — `templates/vscode/settings.json.template` を各マシンの正しいパスへ手動コピーして使う(キー・マシン固有パスは雛形に書かずコピー先でのみ記入)。自動リンク化・Settings Sync 併用は将来検討
 
 ## install.sh / 運用
 

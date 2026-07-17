@@ -1,0 +1,148 @@
+{
+  // ================================================================
+  // VS Code ユーザー設定の雛形(コピーして使う。このファイル自体は読まれない)
+  //
+  // コピー先(OS でパスが違う):
+  //   macOS: ~/Library/Application Support/Code/User/settings.json
+  //   Linux: ~/.config/Code/User/settings.json
+  //   Windows: %APPDATA%\Code\User\settings.json
+  //
+  // ルール:
+  //   - API キー・サブスクリプションキーはこの雛形に書かない(コピー先でのみ記入。
+  //     可能なら拡張機能の SecretStorage / キーチェーン保存を使う)
+  //   - ユーザー名入りの絶対パスなどマシン固有の値は、末尾の「マシン固有」欄の
+  //     コメントを外してコピー先でのみ記入する
+  // ================================================================
+
+  // ==============================================
+  // エディタ基本設定
+  // ==============================================
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.wordWrap": "on",
+  "editor.lineNumbers": "on",
+  "editor.renderWhitespace": "selection",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.linkedEditing": true,
+  "editor.smoothScrolling": true,
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.stickyScroll.enabled": true,
+
+  // ==============================================
+  // 自動保存・フォーマット
+  // ==============================================
+  "files.autoSave": "onFocusChange",
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "workbench.startupEditor": "none",
+  "breadcrumbs.enabled": true,
+  "editor.minimap.enabled": false,
+  "editor.rulers": [80, 120],
+
+  // ==============================================
+  // ファイル除外(エクスプローラー)
+  // ==============================================
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true,
+    "**/.DS_Store": true,
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+
+  // ==============================================
+  // 検索除外
+  // ==============================================
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/.next": true,
+    "**/coverage": true,
+    "**/*.min.js": true
+  },
+
+  // ==============================================
+  // 言語別設定
+  // ==============================================
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": false
+    }
+  },
+  "[python]": {
+    "editor.tabSize": 4,
+    "editor.formatOnSave": true
+  },
+
+  // ==============================================
+  // ターミナル
+  // ==============================================
+  "terminal.integrated.fontSize": 13,
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+  // ==============================================
+  // Git
+  // ==============================================
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": true,
+
+  // ==============================================
+  // AI・拡張機能
+  // ==============================================
+  "claudeCode.preferredLocation": "panel",
+  "claudeCode.selectedModel": "sonnet",
+  "roo-cline.debug": false,
+  "roo-cline.allowedCommands": ["git log", "git diff", "git show"],
+  "roo-cline.deniedCommands": [],
+
+  // ==============================================
+  // その他
+  // ==============================================
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "workbench.iconTheme": "vscode-icons",
+  "workbench.editor.enablePreview": false
+
+  // ==============================================
+  // マシン固有(コピー先でコメントを外して記入。雛形には書かない)
+  // ==============================================
+  // "markdown-preview-enhanced.plantumlJarPath": "<plantuml.jar の絶対パス>",
+  // "<拡張機能のキー設定>": "<APIキーはコピー先でのみ。可能なら SecretStorage を使う>"
+}
