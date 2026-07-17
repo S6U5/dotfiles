@@ -1,0 +1,125 @@
+# 検討事項・TODO
+
+今後やること・決めることのメモ。決まったら CLAUDE.md に方針として昇格させる。
+
+## シェル設定
+
+- [ ] どのシェルを主軸にするか(zsh / bash 両対応?)
+- [ ] エイリアス・関数の置き場所の構成(1ファイル? 機能別に分割?)
+- [ ] OS 分岐の実装パターンを決める(`case "$(uname -s)"` を共通関数化するか)
+
+## fzf 系コマンド
+
+- [ ] 何を作るか洗い出し(履歴検索、ディレクトリ移動、git ブランチ切替など)
+- [ ] fzf が無い場合のフォールバックをどこまで作り込むか(スキップで済ますか)
+
+## アプリ操作コマンド
+
+- [ ] Obsidian: URI スキーム(`obsidian://`)で何を操作するか(ノート作成、検索など)
+- [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
+- [ ] WSL の Windows 連携(explorer / Office / PowerShell)で作るコマンドの洗い出し
+
+## .claude / .codex / .tmux 系
+
+- [ ] どのファイルを管理対象にするか(機密・個人情報が混ざりやすいので要精査)
+- [ ] `~/.claude/settings.json` など JSON 系は symlink でよいか、マージが必要か
+- [ ] tmux は既存設定と共存させるか(source 方式)、丸ごとリンクか
+
+## 個人用ツール設定(リンター・フォーマッター等)
+
+- [ ] 普段使いのリンター・フォーマッターのグローバル設定を home/ に追加していく(候補: `~/.shellcheckrc`、ruff、エディタ設定など。判断基準は CLAUDE.md 参照)
+- [ ] 設定パスが OS で違うアプリ(VS Code 等)の扱い — install.sh に OS 別マッピングを足すか、chezmoi 導入の判断材料にする
+
+## install.sh / 運用
+
+- [x] 更新用スクリプト `update.sh` 作成済み(pull --ff-only + install.sh。未コミット変更があれば中断)
+  - リンク済みファイルとフックは pull だけで反映される。install.sh 再実行が要るのは home/ に新規ファイルが増えたときだけ
+  - [ ] どこからでも呼べる `dotfiles-update` エイリアスをシェル設定に入れる(シェル設定を作るときに)
+- [ ] アンインストール(リンク解除)機能を作るか
+- [ ] 既存シェル設定への source 行追記を install.sh でやるか、手動にするか
+- [ ] 管理ツール(chezmoi / stow / yadm)の導入検討 — 有力候補は chezmoi(OS別テンプレート分岐・機密分離・diff 確認が要件に合う)
+  - [ ] 導入するなら install.sh との関係をどうするか(置き換え? 併用?)
+  - [ ] 導入タイミング(ファイル数・OS分岐が増えてきたら or 早めに試す)
+
+## リポジトリ保護・PR 運用
+
+- [ ] main のブランチ保護を設定する(直 push 禁止、PR 経由必須)
+  - [ ] CI 必須(status check)にするか
+  - [ ] 個人リポジトリなのでレビュー必須はどうするか(自分しかいないので不要?)
+- [x] PR テンプレート(`.github/pull_request_template.md`)— 機密・個人情報チェックリストとして作成済み
+- [ ] Issue テンプレートは OSS 公開時に用意する
+- [ ] セットアップ手順は現状 README で十分。Brewfile 等で手順が増えたら SETUP.md に切り出す
+- [ ] CODEOWNERS は個人リポジトリでは不要か
+- [ ] 公開後の外部からの PR / Issue の受け入れ方針(CONTRIBUTING.md を書くか)
+
+## 他のエンジニアがよくやっている取り組み(導入検討)
+
+セットアップ自動化:
+
+- [ ] ワンライナーインストール(`curl -fsSL .../install.sh | sh` で新マシンを一発セットアップ)
+- [ ] パッケージリストの管理(macOS: `Brewfile` + `brew bundle`、Linux: apt 等のリスト)でツール一式も再現可能にする
+  - ディストリごとにパッケージマネージャが違う(Ubuntu: apt / AlmaLinux 等: dnf / macOS: brew)。`packages/` 以下に OS・マネージャ別のリストと導入スクリプトを分けて置く
+  - 導入スクリプトは install.sh・更新フローとは独立させ、明示実行のみ(副作用の分離。CLAUDE.md 参照)
+  - パッケージ名がマネージャ間で違う問題(例: fd は apt だと fd-find)にどう対応するか
+  - 単一リポジトリで辛くなったら macOS 用 / Linux 用の分割も選択肢として残す
+- [ ] `mise` / `asdf` で言語・ツールのバージョン管理(`.tool-versions`)
+
+品質・テスト:
+
+- [x] CI で shellcheck / shfmt — `scripts/lint.sh` + `.github/workflows/lint.yml` 導入済み。pre-commit フックでもツールがあれば実行
+- [ ] CI でインストールテスト — まっさらな Ubuntu コンテナ + macOS ランナーで `install.sh` を実走させてクロスプラットフォーム動作を自動確認
+
+GitHub 連携:
+
+- [ ] Codespaces / devcontainer 連携 — GitHub 設定で dotfiles リポジトリを指定すると起動時に自動適用される(`install.sh` が自動実行される)。**GitHub 側の設定が必要なので忘れないこと**
+
+機密管理:
+
+- [ ] age / SOPS で暗号化してコミットする方式の検討
+- [ ] 1Password / Bitwarden CLI 連携(chezmoi 導入時の定番。テンプレートから実行時に注入)
+
+見せ方・その他:
+
+- [ ] README にスクリーンショット・機能一覧(OSS 公開時の「見せる dotfiles」化)
+- [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
+- [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
+- [ ] Neovim 導入したい気持ちあり(難しくて保留中)。入るなら kickstart.nvim(最小テンプレートから育てる)か LazyVim(全部入り)か。まずはコミットメッセージ編集など部分導入から
+- [ ] GitHub のリポジトリトピックに `dotfiles` を付けて公開時に見つけやすくする(dotfiles.github.io にコミュニティの慣習まとめあり)
+
+設定の中身でよくあるもの:
+
+- [ ] プロンプトのカスタマイズ(starship が定番。TOML 1ファイルで全シェル・全OS共通にできる)
+- [ ] `.gitconfig` の工夫 — `[include]` でローカル設定(名前・メール)を分離、diff を見やすくする delta / difftastic 導入
+- [ ] ターミナルエミュレータ設定(alacritty / wezterm / ghostty)も管理対象にする
+- [ ] `.editorconfig` をリポジトリに置く
+- [ ] Dependabot / Renovate で GitHub Actions などのバージョン更新を自動化
+
+## テンプレート集(新プロジェクト開始キット)
+
+`home/` とは別に `templates/` ディレクトリを切って、新プロジェクトにコピーして使う雛形を貯める構想。
+(`home/` に置くと install.sh で $HOME にリンクされてしまうため分離する)
+
+- [ ] devcontainer テンプレート(`devcontainer.json` の雛形。言語別に複数用意するか)
+- [ ] `.editorconfig` 雛形
+- [ ] 言語別 `.gitignore` 雛形
+- [ ] GitHub Actions ワークフロー雛形
+- [ ] Makefile / justfile 雛形
+- [ ] テンプレートをコピーするコマンドを作るか(fzf で選択してコピーなど)
+- [ ] プロンプトテンプレート(AI 系)
+  - [ ] プロジェクト用 `CLAUDE.md` / `AGENTS.md` の雛形(新プロジェクトに配る用)
+  - [ ] Claude Code のカスタムスラッシュコマンド・スキル(`~/.claude/commands/` 等はユーザー設定なので `home/` 側、雛形は `templates/` 側と使い分け)
+  - [ ] レビュー依頼・リファクタ依頼などよく使う定型プロンプト集
+  - **注意(最重要)**: 個人的なこと・業務に関することはマジで一切含めない。プロンプトは特に混ざりやすいので、コミット前に必ず全文精査。疑わしければ入れない
+
+devcontainer 連携(消費される側)の注意:
+
+- [ ] VS Code `dotfiles.repository` / Codespaces 設定で dotfiles を指定する(GitHub/エディタ側の設定、忘れやすい)
+- install.sh は「非対話・sudo 不要・高速」を維持すること(コンテナ内自動実行の前提)
+
+## 品質・公開準備
+
+- [x] shellcheck を CI(GitHub Actions)で回す — 導入済み(上記)
+- [x] 機密情報の事前ブロック — pre-commit フック(`.githooks/pre-commit`)導入済み(gitleaks 併用+内蔵パターン)
+- [ ] 機密情報の混入チェック(gitleaks など)を CI にも入れるか(フックは `--no-verify` で素通りできるため二段目として)
+- [ ] OSS 公開前の最終レビュー(個人情報・プライベートパスの全ファイル確認)
+- [ ] README の英語化をするか
