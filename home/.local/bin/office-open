@@ -1,0 +1,67 @@
+#!/bin/sh
+# Microsoft Office 系コマンド(word / excel など)の共通実体。直接使うことは想定していない。
+# 使い方: office-open <macOSアプリ名> <Windows実行ファイル名> <コマンド表示名> [ファイル]
+# アプリが無い環境では親切なメッセージを出して正常終了する(CLAUDE.md「アプリ操作コマンド」参照)。
+set -eu
+
+if [ $# -lt 3 ]; then
+  echo "使い方: office-open <macOSアプリ名> <Windows実行ファイル名> <コマンド表示名> [ファイル]" >&2
+  exit 1
+fi
+
+mac_app=$1
+win_exe=$2
+cmd_name=$3
+shift 3
+
+if [ $# -gt 1 ]; then
+  echo "使い方: $cmd_name [ファイル](指定できるのは1ファイルまで)" >&2
+  exit 1
+fi
+
+if [ $# -eq 1 ] && [ ! -e "$1" ]; then
+  echo "$cmd_name: ファイルがありません: $1" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    if ! open -Ra "$mac_app" 2>/dev/null; then
+      echo "$cmd_name: $mac_app が見つかりません(未インストール?)" >&2
+      exit 0
+    fi
+    if [ $# -eq 1 ]; then
+      open -a "$mac_app" "$1"
+    else
+      open -a "$mac_app"
+    fi
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "$cmd_name: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      # cmd.exe は WSL 内のパスを作業ディレクトリにできないため /mnt/c に移ってから起動する
+      if [ $# -eq 1 ]; then
+        winpath=$(wslpath -w "$1")
+        (
+          cd /mnt/c 2>/dev/null || cd /
+          cmd.exe /c start "" "$win_exe" "$winpath"
+        )
+      else
+        (
+          cd /mnt/c 2>/dev/null || cd /
+          cmd.exe /c start "" "$win_exe"
+        )
+      fi
+    else
+      echo "$cmd_name: $mac_app はこの環境(Linux)では利用できません" >&2
+      exit 0
+    fi
+    ;;
+  *)
+    echo "$cmd_name: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac

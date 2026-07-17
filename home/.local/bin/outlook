@@ -1,0 +1,3 @@
+#!/bin/sh
+# Microsoft Outlook を開く。使い方: outlook [ファイル]
+exec "$(dirname "$0")/office-open" "Microsoft Outlook" "outlook.exe" "outlook" "$@"

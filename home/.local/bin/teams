@@ -1,0 +1,39 @@
+#!/bin/sh
+# Microsoft Teams を起動する。使い方: teams
+# Teams はファイルを開くアプリではないため、引数は受け付けない(起動のみ)。
+# WSL では新旧 Teams の実行ファイル名の違いを避けるため、プロトコル URI(msteams:)で起動する。
+set -eu
+
+if [ $# -gt 0 ]; then
+  echo "使い方: teams(起動のみ。ファイル指定には対応していません)" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    if ! open -Ra "Microsoft Teams" 2>/dev/null; then
+      echo "teams: Microsoft Teams が見つかりません(未インストール?)" >&2
+      exit 0
+    fi
+    open -a "Microsoft Teams"
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "teams: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      (
+        cd /mnt/c 2>/dev/null || cd /
+        cmd.exe /c start "" "msteams:"
+      )
+    else
+      echo "teams: Microsoft Teams はこの環境(Linux)では利用できません(ブラウザ版 https://teams.microsoft.com を利用してください)" >&2
+      exit 0
+    fi
+    ;;
+  *)
+    echo "teams: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac

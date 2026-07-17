@@ -1,6 +1,8 @@
 # マシン固有・プライベートな設定(コミットしない。CLAUDE.md 参照)
 *.local
 local.sh
+# ただし home/.local/(自作コマンド置き場)は *.local に誤マッチするため除外しない
+!home/.local/
 
 # OS が作る不要ファイル
 .DS_Store

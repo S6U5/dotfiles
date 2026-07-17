@@ -1,0 +1,3 @@
+#!/bin/sh
+# Microsoft Word を開く。使い方: word [ファイル]
+exec "$(dirname "$0")/office-open" "Microsoft Word" "winword.exe" "word" "$@"
