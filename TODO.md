@@ -25,6 +25,11 @@
 - [ ] `~/.claude/settings.json` など JSON 系は symlink でよいか、マージが必要か
 - [ ] tmux は既存設定と共存させるか(source 方式)、丸ごとリンクか
 
+## 個人用ツール設定(リンター・フォーマッター等)
+
+- [ ] 普段使いのリンター・フォーマッターのグローバル設定を home/ に追加していく(候補: `~/.shellcheckrc`、ruff、エディタ設定など。判断基準は CLAUDE.md 参照)
+- [ ] 設定パスが OS で違うアプリ(VS Code 等)の扱い — install.sh に OS 別マッピングを足すか、chezmoi 導入の判断材料にする
+
 ## install.sh / 運用
 
 - [x] 更新用スクリプト `update.sh` 作成済み(pull --ff-only + install.sh。未コミット変更があれば中断)
