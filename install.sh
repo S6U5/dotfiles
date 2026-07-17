@@ -28,7 +28,7 @@ usage() {
   sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-log()  { printf '%s\n' "$*"; }
+log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 run() {
@@ -83,10 +83,17 @@ link_file() {
 main() {
   for arg in "$@"; do
     case "$arg" in
-      --force)   FORCE=1 ;;
+      --force) FORCE=1 ;;
       --dry-run) DRY_RUN=1 ;;
-      -h|--help) usage; exit 0 ;;
-      *) warn "不明なオプション: $arg"; usage; exit 1 ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        warn "不明なオプション: $arg"
+        usage
+        exit 1
+        ;;
     esac
   done
 
@@ -103,7 +110,7 @@ main() {
   while IFS= read -r -d '' src; do
     rel=${src#"$HOME_SRC"/}
     case "$rel" in
-      .gitkeep|*/.gitkeep) continue ;;
+      .gitkeep | */.gitkeep) continue ;;
     esac
     link_file "$src" "$HOME/$rel"
     count=$((count + 1))
