@@ -10,6 +10,16 @@
 
 クロスプラットフォームで使うため、設定は環境依存を避けるか、OS ごとに分岐できる構成にする。
 
+### OS 固有コマンド
+
+その OS でしか意味のないコマンド・関数も作ってよい。ただし対象 OS 以外では定義しない(または no-op にする)こと。
+
+- WSL の例: エクスプローラーを開く(`explorer.exe`)、Office ソフトや PowerShell(`powershell.exe` / `pwsh.exe`)を開く、など Windows 連携系
+- macOS の例: `open`、`pbcopy` / `pbpaste` 連携など
+- Linux の例: `xdg-open` 連携など
+
+WSL 判定は `/proc/version` に `microsoft` が含まれるか、`$WSL_DISTRO_NAME` の有無などで行う。
+
 ## 運用方針
 
 - 現時点では設定ファイルを**残す(コミットする)だけ**でよい。インストールスクリプトや管理ツールの導入は後回し。
