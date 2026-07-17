@@ -1,0 +1,38 @@
+#!/bin/sh
+# OS のファイルマネージャで指定パス(既定: カレントディレクトリ)を開く。
+#   WSL: Windows のエクスプローラー / macOS: Finder / Linux: 既定のファイルマネージャ
+# 使い方: explorer [パス]
+set -eu
+
+target=${1:-.}
+
+if [ ! -e "$target" ]; then
+  echo "explorer: パスがありません: $target" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    open "$target"
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v explorer.exe >/dev/null 2>&1; then
+        echo "explorer: explorer.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      winpath=$(wslpath -w "$target")
+      # explorer.exe は成功時にも終了コード 1 を返す仕様のため、戻り値は無視する
+      explorer.exe "$winpath" || true
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$target"
+    else
+      echo "explorer: ファイルマネージャを開く手段が見つかりません(xdg-open なし)" >&2
+      exit 0
+    fi
+    ;;
+  *)
+    echo "explorer: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac

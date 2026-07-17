@@ -19,7 +19,7 @@
 - [x] OneDrive: フォルダへ移動する `cdod` — 実装済み(`home/.config/shell/onedrive.sh`。macOS: `~/Library/CloudStorage/OneDrive*`、WSL: `/mnt/c/Users/*/OneDrive*` を実行時探索)
 - [ ] Obsidian: URI スキーム(`obsidian://`)でほかに何を操作するか(ノート作成、検索など)
 - [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
-- [ ] WSL の Windows 連携(explorer / PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`)
+- [ ] WSL の Windows 連携(PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`。`explorer` も実装済み — WSL: エクスプローラー / macOS: Finder / Linux: xdg-open)
 
 ## .claude / .codex / .tmux 系
 
@@ -69,6 +69,10 @@
 
 - [x] CI で shellcheck / shfmt — `scripts/lint.sh` + `.github/workflows/lint.yml` 導入済み。pre-commit フックでもツールがあれば実行
 - [ ] CI でインストールテスト — まっさらな Ubuntu コンテナ + macOS ランナーで `install.sh` を実走させてクロスプラットフォーム動作を自動確認
+  - [x] テスト本体 `scripts/test-install.sh` 作成済み(一時 HOME でリンク・冪等性・非侵略・シェル読み込み・コマンド動作を検証。macOS と Ubuntu 24.04 コンテナで合格確認済み)
+  - [x] `.devcontainer/devcontainer.json` 作成済み(コンテナ起動時に test-install.sh を自動実行)
+  - [ ] CI(GitHub Actions)への組み込みは未対応
+- [ ] Docker の導入方針: **Docker Desktop は使わず Engine のみ**にしたい。Linux / WSL は docker-ce を公式 apt リポジトリから。macOS はネイティブ Engine 不可のため colima 等の軽量 VM 経由を検討(現状この Mac は Docker Desktop — 移行するかは要検討)
 
 GitHub 連携:
 

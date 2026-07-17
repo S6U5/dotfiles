@@ -42,6 +42,14 @@ cd dotfiles
 
 tmux や fzf など、dotfiles が使うツール一式を導入します(macOS: `packages/Brewfile`、Debian 系: `packages/apt.txt`)。設定のリンク(`install.sh`)とは独立しており、実行しなくても dotfiles 自体は壊れず動きます。
 
+## テスト
+
+```sh
+./scripts/test-install.sh
+```
+
+一時ディレクトリを HOME に見立てて、リンク配置・冪等性・既存ファイル非侵略などを検証します(実際の `$HOME` は変更しません)。まっさらな環境で試す場合は Docker(`docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-install.sh`)か、`.devcontainer/` でコンテナを開くと自動実行されます。
+
 ## 更新
 
 ```sh
