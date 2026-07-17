@@ -38,7 +38,9 @@
 - [ ] main のブランチ保護を設定する(直 push 禁止、PR 経由必須)
   - [ ] CI 必須(status check)にするか
   - [ ] 個人リポジトリなのでレビュー必須はどうするか(自分しかいないので不要?)
-- [ ] PR テンプレート(`.github/pull_request_template.md`)を用意するか
+- [x] PR テンプレート(`.github/pull_request_template.md`)— 機密・個人情報チェックリストとして作成済み
+- [ ] Issue テンプレートは OSS 公開時に用意する
+- [ ] セットアップ手順は現状 README で十分。Brewfile 等で手順が増えたら SETUP.md に切り出す
 - [ ] CODEOWNERS は個人リポジトリでは不要か
 - [ ] 公開後の外部からの PR / Issue の受け入れ方針(CONTRIBUTING.md を書くか)
 
