@@ -6,6 +6,7 @@ s6u5が自分用に作ったdotfilesです。
 
 - `home/` — `$HOME` に配置する設定ファイル群。この中のディレクトリ構造がそのまま `$HOME` にマッピングされます。
 - `install.sh` — インストールスクリプト
+- `backup.sh` — インストール前に既存の設定ファイルを退避するスクリプト
 - `.githooks/` — 開発用 git フック。APIキー等の機密情報をコミット前に自動ブロックします(`install.sh` 実行時に有効化)。
 
 ## インストール
@@ -13,8 +14,11 @@ s6u5が自分用に作ったdotfilesです。
 ```sh
 git clone https://github.com/S6U5/dotfiles.git
 cd dotfiles
+./backup.sh   # 既存の設定を退避(推奨)
 ./install.sh
 ```
+
+`backup.sh` は install.sh が対象とする既存ファイルを `~/.dotfiles-backup/backup-<日時>/` に退避します(`$HOME` 側は変更しません)。退避先は `./backup.sh /path/to/dest` のように指定でき、外付け SSD やクラウド同期フォルダを指定しておくとより安心です。
 
 `home/` 以下のファイルが同じ構造で `$HOME` にシンボリックリンクされます。
 
