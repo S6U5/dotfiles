@@ -1,8 +1,12 @@
 # dotfiles
 
+<!--
+CI バッジ。プライベートリポジトリではバッジ画像が取得できず壊れて表示されるため、
+OSS 公開に踏み切ったタイミングでコメントを外して有効化する。
 [![Lint](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml)
 [![Test](https://github.com/S6U5/dotfiles/actions/workflows/test.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/test.yml)
 [![Secrets scan](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml)
+-->
 
 WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles です。
 
