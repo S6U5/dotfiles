@@ -1,8 +1,9 @@
 # shellcheck shell=sh
 # クラウドストレージ連携コマンド。
-#   cdod [名前の一部] — OneDrive のフォルダへ移動
-#   cdic [名前の一部] — iCloud Drive へ移動
-#   cdgd [名前の一部] — Google Drive のフォルダへ移動
+#   cdod  [名前の一部] — OneDrive(個人用)へ移動
+#   cdode [名前の一部] — OneDrive(組織用: 会社・学校アカウント)へ移動
+#   cdic  [名前の一部] — iCloud Drive へ移動
+#   cdgd  [名前の一部] — Google Drive のフォルダへ移動
 # 候補が複数のときは fzf(あれば)か番号選択。パスはハードコードせず実行時に探索する。
 
 # OneDrive フォルダの候補(1行1件)を OS ごとに出力する
@@ -79,9 +80,30 @@ _gdrive_candidates() {
   return 0
 }
 
-# OneDrive のフォルダへ移動する
+# OneDrive の候補を個人用/組織用に選り分ける($1: personal または enterprise)
+# 個人用はフォルダ名が「OneDrive」または「OneDrive-Personal」、組織用は「OneDrive-会社名」等
+_onedrive_filtered() {
+  _onedrive_candidates | while read -r _od_line; do
+    case "${_od_line##*/}" in
+      OneDrive | OneDrive-Personal | "OneDrive - Personal")
+        [ "$1" = personal ] && printf '%s\n' "$_od_line"
+        ;;
+      *)
+        [ "$1" = enterprise ] && printf '%s\n' "$_od_line"
+        ;;
+    esac
+  done
+  return 0
+}
+
+# OneDrive(個人用)へ移動する
 cdod() {
-  _dotfiles_cd_from_list "$(_onedrive_candidates)" "${1:-}" cdod
+  _dotfiles_cd_from_list "$(_onedrive_filtered personal)" "${1:-}" cdod
+}
+
+# OneDrive(組織用: 会社・学校アカウント)へ移動する
+cdode() {
+  _dotfiles_cd_from_list "$(_onedrive_filtered enterprise)" "${1:-}" cdode
 }
 
 # iCloud Drive へ移動する
