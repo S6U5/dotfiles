@@ -4,5 +4,21 @@
 # fzf 公式のキーバインド統合で対応済み(.zshrc / .bashrc 側)。
 
 if command -v fzf >/dev/null 2>&1; then
-  : # ここに fzf 系の自作関数を追加していく(git ブランチ切替など。TODO.md 参照)
+  # git ブランチを fzf で選んで切り替える(リモートブランチは追跡ブランチを自動作成)
+  fbr() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+      echo "fbr: git リポジトリの中ではありません" >&2
+      return 1
+    fi
+    _fbr_sel=$(git branch --all --format='%(refname:short)' |
+      sed 's|^origin/||' | grep -vx 'HEAD' | sort -u |
+      fzf --prompt='branch> ') || {
+      unset _fbr_sel
+      return 0
+    }
+    if [ -n "$_fbr_sel" ]; then
+      git switch "$_fbr_sel"
+    fi
+    unset _fbr_sel
+  }
 fi
