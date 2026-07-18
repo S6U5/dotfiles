@@ -26,3 +26,14 @@ fi
 
 # zoxide(賢い cd)
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
+
+# fzf のキーバインド(Ctrl-R: 履歴検索 / Ctrl-T: ファイル / Alt-C: ディレクトリ移動)
+if command -v fzf >/dev/null 2>&1; then
+  if _fzf_init=$(fzf --bash 2>/dev/null); then
+    eval "$_fzf_init"
+  elif [ -r /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+    # apt 版など古い fzf(0.48 未満は --bash 非対応)向けフォールバック
+    . /usr/share/doc/fzf/examples/key-bindings.bash
+  fi
+  unset _fzf_init
+fi
