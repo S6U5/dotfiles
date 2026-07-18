@@ -127,6 +127,25 @@ else
   ng "--prune: 生きているリンクが壊れた"
 fi
 
+echo "== 8b) リンク切れの扱い(dotfiles 由来だけ張り替え、他ツール由来は保護)"
+RELINK_HOME=$(mktemp -d)
+trap 'rm -rf "$TEST_HOME" "$PRUNE_REPO" "$PRUNE_HOME" "$RELINK_HOME"' EXIT
+# 旧リポジトリ由来を装ったリンク切れ → 張り替えられるべき
+ln -s "/no/such/old-repo/home/.npmrc" "$RELINK_HOME/.npmrc"
+# 他ツール由来のリンク切れ(dotfiles 構造ではない)→ 触ってはいけない
+ln -s "/Volumes/UnmountedSSD/config.txt" "$RELINK_HOME/.tmux.conf"
+HOME="$RELINK_HOME" "$DOTFILES_DIR/install.sh" >/dev/null 2>&1 || true
+if [ -L "$RELINK_HOME/.npmrc" ] && [ -e "$RELINK_HOME/.npmrc" ]; then
+  ok "relink: dotfiles 由来のリンク切れは張り替わる"
+else
+  ng "relink: dotfiles 由来のリンク切れが張り替わらない"
+fi
+if [ "$(readlink "$RELINK_HOME/.tmux.conf")" = "/Volumes/UnmountedSSD/config.txt" ]; then
+  ok "relink: 他ツール由来のリンク切れは保護される"
+else
+  ng "relink: 他ツール由来のリンクが書き換えられた"
+fi
+
 echo "== 9) 補完定義ファイルの構文"
 if bash -n "$DOTFILES_DIR/home/.config/bash/completions/apps.bash" 2>/dev/null; then
   ok "bash 補完: 構文OK"

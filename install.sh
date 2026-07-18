@@ -68,10 +68,19 @@ link_file() {
 
   # 既存ファイル・リンクがある場合
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    # リンク切れシンボリックリンクはユーザーデータを持たないため、退避せず張り替える
-    # (リポジトリを移動・改名した後でも --force なしで再インストールできるように)
+    # 「dotfiles 構造(.../home/<相対パス>)を指すリンク切れ」だけは退避せず張り替える
+    # (リポジトリを移動・改名した後でも --force なしで再インストールできるように)。
+    # それ以外のリンク切れ(他ツール由来・未マウントの外部ボリューム等)には触れない。
+    relink=0
     if [ -L "$dest" ] && [ ! -e "$dest" ]; then
+      rel_dest=${dest#"$HOME"/}
+      case "$(readlink "$dest")" in
+        */home/"$rel_dest") relink=1 ;;
+      esac
+    fi
+    if [ "$relink" -eq 1 ]; then
       run rm "$dest"
+      log "  relink: $dest(旧リポジトリへのリンク切れを張り替え)"
     elif [ "$FORCE" -eq 1 ]; then
       backup="$dest.bak.$(date +%Y%m%d%H%M%S)"
       run mv "$dest" "$backup"
