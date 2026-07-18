@@ -1,0 +1,83 @@
+#!/bin/sh
+# WSL の仮想ディスク(ext4.vhdx)を圧縮し、空き領域を Windows 側に返す。
+# WSL 内でファイルを削除しても vhdx は自動では縮まないため、Windows 側での
+# diskpart 圧縮が必要になる。このコマンドはその手順を自動化する:
+#   1. Windows の一時フォルダに diskpart スクリプトと PowerShell スクリプトを生成
+#   2. 管理者権限の PowerShell を起動(UAC の確認ダイアログが出る)
+#   3. Windows 側で wsl --shutdown → diskpart compact が実行される
+#      (シャットダウンでこの WSL セッションも終了するため、続きは Windows 側の
+#       ウィンドウが引き継ぐ。全 WSL セッションが一旦終了する点に注意)
+# 使い方:
+#   wsl-compact           # 仮想ディスクを圧縮
+#   wsl-compact --sparse  # 代わりに Sparse VHD(自動回収)を有効化する(WSL 2.0+)
+set -eu
+
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wsl-compact: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 0
+fi
+
+if ! command -v reg.exe >/dev/null 2>&1 || ! command -v powershell.exe >/dev/null 2>&1; then
+  echo "wsl-compact: reg.exe / powershell.exe が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+if [ "${1:-}" = --sparse ]; then
+  echo "Sparse VHD(空き領域の自動回収)を有効化します。全 WSL セッションが一旦終了します。"
+  exec wsl.exe --manage "${WSL_DISTRO_NAME:?WSL_DISTRO_NAME が未設定です}" --set-sparse true
+fi
+
+# レジストリから現在のディストリの vhdx の場所を特定する
+regout=$(reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s 2>/dev/null | tr -d '\r')
+base=$(printf '%s\n' "$regout" | awk -v d="${WSL_DISTRO_NAME:-}" '
+  /^HKEY_/ { name=""; path="" }
+  $1 == "DistributionName" { name = $3 }
+  $1 == "BasePath" {
+    path = $3
+    for (i = 4; i <= NF; i++) path = path " " $i
+  }
+  name == d && path != "" { print path; exit }
+')
+base=$(printf '%s\n' "$base" | sed 's/^\\\\?\\//')
+
+if [ -z "$base" ]; then
+  echo "wsl-compact: このディストリ(${WSL_DISTRO_NAME:-不明})の vhdx を特定できませんでした" >&2
+  exit 1
+fi
+
+vhdx="$base\\ext4.vhdx"
+if [ ! -e "$(wslpath -u "$vhdx" 2>/dev/null)" ]; then
+  echo "wsl-compact: 仮想ディスクが見つかりません: $vhdx" >&2
+  exit 1
+fi
+
+# Windows の一時フォルダに diskpart スクリプトと PowerShell スクリプトを生成
+wintemp=$(
+  cd /mnt/c 2>/dev/null || cd /
+  cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r'
+)
+dp_win="$wintemp\\dotfiles-wsl-compact.diskpart.txt"
+ps_win="$wintemp\\dotfiles-wsl-compact.ps1"
+
+printf 'select vdisk file="%s"\r\nattach vdisk readonly\r\ncompact vdisk\r\ndetach vdisk\r\nexit\r\n' \
+  "$vhdx" >"$(wslpath -u "$dp_win")"
+
+cat >"$(wslpath -u "$ps_win")" <<EOF
+Write-Host "WSL を終了します..."
+wsl --shutdown
+Start-Sleep -Seconds 3
+Write-Host "仮想ディスクを圧縮しています(数分かかることがあります)..."
+diskpart /s "$dp_win"
+Write-Host ""
+Write-Host "完了しました。Enter キーで閉じます"
+Read-Host
+EOF
+
+echo "対象: $vhdx"
+echo "管理者権限の PowerShell を起動します(UAC の確認が出ます)。"
+echo "この WSL セッションはまもなく終了し、続きは Windows 側のウィンドウで実行されます。"
+(
+  cd /mnt/c 2>/dev/null || cd /
+  powershell.exe -NoProfile -Command \
+    "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$ps_win'"
+)
