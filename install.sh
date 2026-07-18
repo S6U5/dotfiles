@@ -16,6 +16,7 @@
 #   ./install.sh            # インストール(既存ファイルはスキップ)
 #   ./install.sh --dry-run  # 何が行われるかの表示のみ
 #   ./install.sh --force    # 既存ファイルを .bak に退避して上書き
+#   ./install.sh --prune    # リンク後に、リポジトリ由来のリンク切れリンクを削除
 set -euo pipefail
 
 DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -23,9 +24,10 @@ HOME_SRC="$DOTFILES_DIR/home"
 
 FORCE=0
 DRY_RUN=0
+PRUNE=0
 
 usage() {
-  sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 log() { printf '%s\n' "$*"; }
@@ -85,6 +87,7 @@ main() {
     case "$arg" in
       --force) FORCE=1 ;;
       --dry-run) DRY_RUN=1 ;;
+      --prune) PRUNE=1 ;;
       -h | --help)
         usage
         exit 0
@@ -118,6 +121,30 @@ main() {
 
   log ""
   log "完了: ${count} ファイルを処理しました。"
+
+  # --prune: home/ から削除されたファイルのリンク(このリポジトリを指すリンク切れ)を掃除する。
+  # 対象は $HOME 直下と、このリポジトリがリンクを張る領域(~/.config, ~/.local)のみ。
+  # 他ツールのリンクには触れない(リンク先が $HOME_SRC 配下のものだけ削除)。
+  if [ "$PRUNE" -eq 1 ]; then
+    log ""
+    pruned=0
+    while IFS= read -r -d '' link; do
+      target=$(readlink "$link") || continue
+      case "$target" in
+        "$HOME_SRC"/*) ;;
+        *) continue ;;
+      esac
+      if [ ! -e "$link" ]; then
+        run rm "$link"
+        log "  del:  $link -> $target(リンク切れ)"
+        pruned=$((pruned + 1))
+      fi
+    done < <(
+      find "$HOME" -maxdepth 1 -type l -print0 2>/dev/null
+      find "$HOME/.config" "$HOME/.local" -type l -print0 2>/dev/null
+    )
+    log "prune: リンク切れを ${pruned} 件削除しました。"
+  fi
 
   # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化
   if command -v git >/dev/null 2>&1 && [ -d "$DOTFILES_DIR/.git" ] && [ -d "$DOTFILES_DIR/.githooks" ]; then

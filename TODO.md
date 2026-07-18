@@ -10,8 +10,8 @@
 
 ## fzf 系コマンド
 
-- [ ] 何を作るか洗い出し(履歴検索、ディレクトリ移動、git ブランチ切替など)
-- [ ] fzf が無い場合のフォールバックをどこまで作り込むか(スキップで済ますか)
+- [x] 履歴検索・ファイル検索・ディレクトリ移動 — fzf 公式キーバインド統合で対応済み(.zshrc / .bashrc。Ctrl-R / Ctrl-T / Alt-C。古い fzf には /usr/share の同梱スクリプトでフォールバック、無ければ静かにスキップ)
+- [ ] 自作関数の洗い出し(git ブランチ切替など。`fzf.sh` に追加していく)
 
 ## アプリ操作コマンド
 
@@ -39,6 +39,8 @@
   - リンク済みファイルとフックは pull だけで反映される。install.sh 再実行が要るのは home/ に新規ファイルが増えたときだけ
   - [x] どこからでも呼べる `dotfiles-update` — `home/.local/bin/dotfiles-update` として実装済み(エイリアスではなくコマンド。リンクをたどってリポジトリを自動特定)
 - [ ] アンインストール(リンク解除)機能を作るか
+  - [x] `install.sh --prune` 実装済み — home/ から削除したファイルの「リンク切れ」を自動掃除(リポジトリを指すリンクだけが対象。他ツールのリンクには触れない)
+  - [ ] 全リンクを解除する完全アンインストールは必要になったら
 - [ ] 既存シェル設定への source 行追記を install.sh でやるか、手動にするか
 - [ ] 管理ツール(chezmoi / stow / yadm)の導入検討 — 有力候補は chezmoi(OS別テンプレート分岐・機密分離・diff 確認が要件に合う)
   - [ ] 導入するなら install.sh との関係をどうするか(置き換え? 併用?)
@@ -72,7 +74,7 @@
 - [ ] CI でインストールテスト — まっさらな Ubuntu コンテナ + macOS ランナーで `install.sh` を実走させてクロスプラットフォーム動作を自動確認
   - [x] テスト本体 `scripts/test-install.sh` 作成済み(一時 HOME でリンク・冪等性・非侵略・シェル読み込み・コマンド動作を検証。macOS と Ubuntu 24.04 コンテナで合格確認済み)
   - [x] `.devcontainer/devcontainer.json` 作成済み(コンテナ起動時に test-install.sh を自動実行)
-  - [ ] CI(GitHub Actions)への組み込みは未対応
+  - [x] CI 組み込み済み — `.github/workflows/test.yml`(ubuntu-latest + macos-latest で test-install.sh を実行)
 - [ ] Docker の導入方針: **Docker Desktop は使わず Engine のみ**にしたい。Linux / WSL は docker-ce を公式 apt リポジトリから。macOS はネイティブ Engine 不可のため colima 等の軽量 VM 経由を検討(現状この Mac は Docker Desktop — 移行するかは要検討)
 
 GitHub 連携:
