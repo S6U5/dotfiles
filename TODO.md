@@ -19,6 +19,7 @@
 - [x] クラウドストレージへ移動する `cdod`(OneDrive 個人用)/ `cdode`(OneDrive 組織用)/ `cdic`(iCloud Drive)/ `cdgd`(Google Drive)— 実装済み(`home/.config/shell/clouddrive.sh`。macOS / WSL のパスを実行時探索。OneDrive はフォルダ名で個人用/組織用を判別。Google Drive はフォルダ名の英日両対応)
 - [ ] Obsidian: URI スキーム(`obsidian://`)でほかに何を操作するか(ノート作成、検索など)
 - [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
+- [x] ネットワークドライブ(Z: 割り当て・NAS 等)連携 — **作らない(意図的な見送り)**。理由: ①サーバー名・共有名は業務情報・内部ネットワーク情報で最重要ルールに抵触しやすい ②sudo 必須・不通時のハング・ゴーストマウント等、挙動も危うい。必要になったら `local.sh`(git 管理外)に自分専用関数を書く
 - [ ] WSL の Windows 連携(PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`。`explorer` も実装済み — WSL: エクスプローラー / macOS: Finder / Linux: xdg-open)
 
 ## .claude / .codex / .tmux 系
