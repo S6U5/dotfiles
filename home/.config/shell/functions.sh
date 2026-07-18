@@ -41,3 +41,26 @@ _dotfiles_pick_line() {
   unset _dp_list _dp_no
   return 0
 }
+
+# 候補リストから1つ選んで cd する共通処理(cdod / cdic / cdgd などの実体)。
+# $1: 候補リスト(1行1件)、$2: 絞り込み、$3: コマンド名(メッセージ・プロンプトに使用)
+_dotfiles_cd_from_list() {
+  if [ -z "$1" ]; then
+    echo "$3: 対象フォルダが見つかりません(未設定?)" >&2
+    return 0
+  fi
+  _dcf_t=$(_dotfiles_pick_line "$1" "${2:-}" "$3") || {
+    echo "$3: 該当するフォルダがありません${2:+(絞り込み: $2)}" >&2
+    unset _dcf_t
+    return 1
+  }
+  if [ -z "$_dcf_t" ]; then
+    unset _dcf_t
+    return 0
+  fi
+  cd "$_dcf_t" || {
+    unset _dcf_t
+    return 1
+  }
+  unset _dcf_t
+}
