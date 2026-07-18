@@ -23,6 +23,12 @@ case "$(uname -s)" in
         echo "teams: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
         exit 0
       fi
+      # msteams: プロトコルの登録有無を事前確認(無い環境では親切に案内して正常終了)
+      if command -v reg.exe >/dev/null 2>&1 &&
+        ! reg.exe query 'HKCR\msteams' >/dev/null 2>&1; then
+        echo "teams: Microsoft Teams が見つかりません(Windows 側に未インストール?)" >&2
+        exit 0
+      fi
       (
         cd /mnt/c 2>/dev/null || cd /
         cmd.exe /c start "" "msteams:"

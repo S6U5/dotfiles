@@ -42,8 +42,21 @@ case "$(uname -s)" in
         echo "$cmd_name: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
         exit 0
       fi
+      # アプリ本体の有無を App Paths レジストリで事前確認(無い環境では親切に案内して正常終了)
+      if command -v reg.exe >/dev/null 2>&1 &&
+        ! reg.exe query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\$win_exe" >/dev/null 2>&1; then
+        echo "$cmd_name: $mac_app が見つかりません(Windows 側に未インストール?)" >&2
+        exit 0
+      fi
       # cmd.exe は WSL 内のパスを作業ディレクトリにできないため /mnt/c に移ってから起動する
       if [ $# -eq 1 ]; then
+        # cmd.exe のクオートを破る文字を含むファイル名は拒否する(インジェクション対策)
+        case "$1" in
+          *'"'* | *'&'* | *'|'* | *'<'* | *'>'* | *'^'* | *'%'*)
+            echo "$cmd_name: Windows 側に渡せない文字(\" & | < > ^ %)を含むファイル名です: $1" >&2
+            exit 1
+            ;;
+        esac
         winpath=$(wslpath -w "$1")
         (
           cd /mnt/c 2>/dev/null || cd /

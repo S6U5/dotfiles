@@ -30,16 +30,47 @@ case "$(uname -s)" in
     ;;
   Linux)
     if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-      # webdeploy 方式でパスがバージョンごとに変わるため、最新の実行ファイルを探す
-      exe=$(find /mnt/c/Users/*/AppData/Local/Autodesk/webdeploy/production \
-        -maxdepth 2 -name 'Fusion360.exe' -printf '%T@ %p\n' 2>/dev/null |
-        sort -nr | head -n 1 | cut -d' ' -f2-)
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "fusion360: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      if [ $# -eq 1 ]; then
+        # cmd.exe のクオートを破る文字を含むファイル名は拒否する(インジェクション対策)
+        case "$1" in
+          *'"'* | *'&'* | *'|'* | *'<'* | *'>'* | *'^'* | *'%'*)
+            echo "fusion360: Windows 側に渡せない文字(\" & | < > ^ %)を含むファイル名です: $1" >&2
+            exit 1
+            ;;
+        esac
+      fi
+      # まず現在の Windows ユーザーのプロファイル配下を探し、無ければ全ユーザーを走査する
+      # (共有 PC で他ユーザーのインストールを誤って拾わないため)。
+      # webdeploy 方式でパスがバージョンごとに変わるため、最新の実行ファイルを選ぶ
+      profile=$(
+        cd /mnt/c 2>/dev/null || cd /
+        cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
+      )
+      profile_u=$(wslpath -u "$profile" 2>/dev/null) || profile_u=""
+      exe=""
+      for base in ${profile_u:+"$profile_u/AppData/Local/Autodesk/webdeploy/production"} \
+        /mnt/c/Users/*/AppData/Local/Autodesk/webdeploy/production; do
+        exe=$(find "$base" -maxdepth 2 -name 'Fusion360.exe' -printf '%T@ %p\n' 2>/dev/null |
+          sort -nr | head -n 1 | cut -d' ' -f2-)
+        [ -n "$exe" ] && break
+      done
       if [ -n "$exe" ]; then
-        if [ $# -eq 1 ]; then
-          winpath=$(wslpath -w "$1")
-          exec "$exe" "$winpath"
-        fi
-        exec "$exe"
+        # exec で直接起動するとターミナルが IDE 終了までブロックされるため、start でデタッチする
+        exe_win=$(wslpath -w "$exe")
+        (
+          cd /mnt/c 2>/dev/null || cd /
+          if [ $# -eq 1 ]; then
+            winpath=$(wslpath -w "$1")
+            cmd.exe /c start "" "$exe_win" "$winpath"
+          else
+            cmd.exe /c start "" "$exe_win"
+          fi
+        )
+        exit 0
       fi
       # フォールバック: スタートメニューのショートカット経由(起動のみ)
       lnk=$(find "/mnt/c/Users/"*/AppData/Roaming/Microsoft/Windows/"Start Menu"/Programs \

@@ -28,21 +28,48 @@ case "$(uname -s)" in
     ;;
   Linux)
     if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-      # Windows 側の Arduino IDE 2.x(ユーザー別/全ユーザーの標準インストール先)を探す
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "arduino: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      if [ $# -eq 1 ]; then
+        # cmd.exe のクオートを破る文字を含むファイル名は拒否する(インジェクション対策)
+        case "$1" in
+          *'"'* | *'&'* | *'|'* | *'<'* | *'>'* | *'^'* | *'%'*)
+            echo "arduino: Windows 側に渡せない文字(\" & | < > ^ %)を含むファイル名です: $1" >&2
+            exit 1
+            ;;
+        esac
+      fi
+      # Windows 側の Arduino IDE 2.x を探す。まず現在ユーザーのプロファイル配下、
+      # 次に全ユーザー用、最後に他ユーザー走査(共有 PC での誤検出を避ける順序)
+      profile=$(
+        cd /mnt/c 2>/dev/null || cd /
+        cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
+      )
+      profile_u=$(wslpath -u "$profile" 2>/dev/null) || profile_u=""
       exe=$(
-        find /mnt/c/Users/*/AppData/Local/Programs/"Arduino IDE" \
+        find ${profile_u:+"$profile_u/AppData/Local/Programs/Arduino IDE"} \
           "/mnt/c/Program Files/Arduino IDE" \
+          /mnt/c/Users/*/AppData/Local/Programs/"Arduino IDE" \
           -maxdepth 1 -name 'Arduino IDE.exe' 2>/dev/null | head -n 1
       )
       if [ -z "$exe" ]; then
         echo "arduino: Arduino IDE が見つかりません(Windows 側に未インストール?)" >&2
         exit 0
       fi
-      if [ $# -eq 1 ]; then
-        winpath=$(wslpath -w "$1")
-        exec "$exe" "$winpath"
-      fi
-      exec "$exe"
+      # exec で直接起動するとターミナルが IDE 終了までブロックされるため、start でデタッチする
+      exe_win=$(wslpath -w "$exe")
+      (
+        cd /mnt/c 2>/dev/null || cd /
+        if [ $# -eq 1 ]; then
+          winpath=$(wslpath -w "$1")
+          cmd.exe /c start "" "$exe_win" "$winpath"
+        else
+          cmd.exe /c start "" "$exe_win"
+        fi
+      )
+      exit 0
     fi
     # Linux ネイティブ: 本物の arduino / arduino-ide があればそちらに譲る
     for cand in /usr/bin/arduino /usr/local/bin/arduino /usr/bin/arduino-ide \

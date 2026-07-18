@@ -56,8 +56,12 @@ wintemp=$(
   cd /mnt/c 2>/dev/null || cd /
   cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r'
 )
-dp_win="$wintemp\\dotfiles-wsl-compact.diskpart.txt"
-ps_win="$wintemp\\dotfiles-wsl-compact.ps1"
+# ファイル名は毎回ランダムにする(固定名だと生成〜管理者実行の隙に
+# 別プロセスが差し替える攻撃が成立しうるため)
+rand=$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n') || rand=""
+[ -n "$rand" ] || rand=$$
+dp_win="$wintemp\\dotfiles-wsl-compact-$rand.diskpart.txt"
+ps_win="$wintemp\\dotfiles-wsl-compact-$rand.ps1"
 
 printf 'select vdisk file="%s"\r\nattach vdisk readonly\r\ncompact vdisk\r\ndetach vdisk\r\nexit\r\n' \
   "$vhdx" >"$(wslpath -u "$dp_win")"
