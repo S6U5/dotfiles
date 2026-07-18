@@ -28,16 +28,32 @@ cp templates/claude/settings.json.template ~/.claude/settings.json
 ## 参考: 許可リスト(allow)の例
 
 コピー先の `~/.claude/settings.json` の `permissions` に、必要な分だけ足して使う。
-`curl`(任意 URL への送信)や `pkill`(プロセス強制終了)のような広すぎる許可は入れず、都度確認にする。
+
+- `curl`(任意 URL への送信)や `pkill`(プロセス強制終了)のような広すぎる許可は入れず、都度確認にする
+- **パッケージ導入系(npm install / npx 等)は allow に入れない**。第三者コードの取得・実行なので、
+  テンプレート側の `ask` で「必ず確認」に固定してある(deny > ask > allow の優先順のため、
+  ここで allow に足しても確認が入る)
 
 ```json
 "allow": [
-  "Bash(mkdir:*)", "Bash(touch:*)", "Bash(ls:*)", "Bash(tree:*)",
-  "Bash(mv:*)", "Bash(cp:*)", "Bash(cat:*)", "Bash(grep:*)",
-  "Bash(find:*)", "Bash(echo:*)", "Bash(true)",
-  "Bash(npm install:*)", "Bash(npm run dev:*)", "Bash(npm run build:*)",
-  "Bash(npm run test:*)", "Bash(npm run lint)", "Bash(npm run lint:*)",
-  "Bash(npm run format:*)", "Bash(npm ls:*)", "Bash(npx:*)", "Bash(npm exec:*)"
+  "Bash(mkdir:*)",
+  "Bash(touch:*)",
+  "Bash(ls:*)",
+  "Bash(tree:*)",
+  "Bash(mv:*)",
+  "Bash(cp:*)",
+  "Bash(cat:*)",
+  "Bash(grep:*)",
+  "Bash(find:*)",
+  "Bash(echo:*)",
+  "Bash(true)",
+  "Bash(npm run dev:*)",
+  "Bash(npm run build:*)",
+  "Bash(npm run test:*)",
+  "Bash(npm run lint)",
+  "Bash(npm run lint:*)",
+  "Bash(npm run format:*)",
+  "Bash(npm ls:*)"
 ]
 ```
 

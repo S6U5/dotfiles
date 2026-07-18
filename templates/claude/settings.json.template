@@ -2,6 +2,23 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "cleanupPeriodDays": 30,
   "permissions": {
+    "ask": [
+      "Bash(npm install:*)",
+      "Bash(npm ci:*)",
+      "Bash(npx:*)",
+      "Bash(npm exec:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm dlx:*)",
+      "Bash(yarn add:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(uv add:*)",
+      "Bash(uv pip install:*)",
+      "Bash(brew install:*)",
+      "Bash(apt-get install:*)",
+      "Bash(apt install:*)"
+    ],
     "deny": [
       "Bash(rm -rf /)",
       "Bash(rm -rf /*)",
