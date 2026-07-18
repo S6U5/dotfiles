@@ -148,6 +148,12 @@ devcontainer 連携(消費される側)の注意:
 - [ ] VS Code `dotfiles.repository` / Codespaces 設定で dotfiles を指定する(GitHub/エディタ側の設定、忘れやすい)
 - install.sh は「非対話・sudo 不要・高速」を維持すること(コンテナ内自動実行の前提)
 
+## 診断からの持ち越し(意図的な見送り)
+
+- [ ] pre-commit フックの改善(診断指摘・実害小のため見送り): ①lint がステージ内容ではなく作業ツリー全体を検査する ②gitleaks の `protect` サブコマンドが新バージョンで非推奨化予定。CI(gitleaks 全履歴)が二段目として機能しているため急がない
+- [ ] update.sh の「未コミットの変更」検査は追跡ファイルのみ(未追跡ファイルは対象外。メッセージと検査範囲のずれ)
+- [ ] install.sh のリンク済み判定は文字列比較のみ(リポジトリへ別パス経由でアクセスすると誤警告の可能性)
+
 ## 品質・公開準備
 
 - [x] shellcheck を CI(GitHub Actions)で回す — 導入済み(上記)

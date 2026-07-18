@@ -1,19 +1,26 @@
 #!/bin/sh
 # 開発ツールのキャッシュを掃除する。既定は「サイズ表示のみ」で何も消さない。
-#   cachesweep           # 各キャッシュの現在サイズを表示
-#   cachesweep --clean   # 安全なキャッシュ削除を実行(各ツールの公式コマンドのみ)
-#   cachesweep --docker  # --clean に加えて Docker の未使用データも削除(次回ビルドが遅くなりうる)
+#   cachesweep                  # 各キャッシュの現在サイズを表示
+#   cachesweep --clean          # 安全なキャッシュ削除を実行(各ツールの公式コマンドのみ)
+#   cachesweep --docker         # --clean に加えて Docker の未使用データも削除(次回ビルドが遅くなりうる)
+#   cachesweep --apt-autoremove # --clean に加えて apt の不要パッケージも削除(キャッシュではなく
+#                               # パッケージ本体の削除のため、明示したときだけ)
 # OS 自体のキャッシュ(~/Library/Caches 等)には触れない(壊すリスクに見合わないため)。
 set -eu
 
 MODE=report
 DOCKER=0
+APT_AUTOREMOVE=0
 for arg in "$@"; do
   case "$arg" in
     --clean) MODE=clean ;;
     --docker)
       MODE=clean
       DOCKER=1
+      ;;
+    --apt-autoremove)
+      MODE=clean
+      APT_AUTOREMOVE=1
       ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
@@ -73,9 +80,12 @@ if command -v uv >/dev/null 2>&1; then
   uv cache clean || true
 fi
 if command -v apt-get >/dev/null 2>&1; then
-  echo "-- apt autoremove / clean(sudo を使用)"
-  sudo apt-get autoremove -y || true
+  echo "-- apt clean(sudo を使用)"
   sudo apt-get clean || true
+  if [ "$APT_AUTOREMOVE" -eq 1 ]; then
+    echo "-- apt autoremove(パッケージ本体の削除。--apt-autoremove 指定時のみ)"
+    sudo apt-get autoremove -y || true
+  fi
 fi
 if [ "$DOCKER" -eq 1 ] && command -v docker >/dev/null 2>&1; then
   echo "-- docker system prune(未使用のコンテナ・イメージ・ネットワーク・ビルドキャッシュ)"
