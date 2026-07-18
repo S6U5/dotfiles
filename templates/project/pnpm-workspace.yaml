@@ -1,0 +1,7 @@
+# pnpm-workspace.yaml の雛形。新プロジェクトのルートにコピーして使う。
+# サプライチェーン対策: 公開から 7 日(10080 分)未満のバージョンを導入しない
+# (グローバル設定 home/.config/pnpm/rc と同じ方針をプロジェクト側でも明示する)
+packages:
+  - .
+
+minimumReleaseAge: 10080
