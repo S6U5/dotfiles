@@ -1,0 +1,7 @@
+# GitHub Actions で使うアクションのバージョン更新を自動 PR 化する
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
