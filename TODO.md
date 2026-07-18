@@ -11,14 +11,14 @@
 ## fzf 系コマンド
 
 - [x] 履歴検索・ファイル検索・ディレクトリ移動 — fzf 公式キーバインド統合で対応済み(.zshrc / .bashrc。Ctrl-R / Ctrl-T / Alt-C。古い fzf には /usr/share の同梱スクリプトでフォールバック、無ければ静かにスキップ)
-- [ ] 自作関数の洗い出し(git ブランチ切替など。`fzf.sh` に追加していく)
+- [x] 自作関数の第1弾 — `fbr`(fzf で git ブランチ切替。リモートブランチは追跡ブランチを自動作成)を `fzf.sh` に実装済み。以降も欲しくなったら同ファイルに追加
 
 ## アプリ操作コマンド
 
 - [x] Obsidian: vault へ移動する `cdov`・vault を指定して起動する `ov` — 実装済み(`home/.config/shell/obsidian.sh`。obsidian.json から vault 一覧を実行時取得、fzf があれば選択 UI、無ければ番号選択。ov は `obsidian://open?vault=` URI 起動)
 - [x] クラウドストレージへ移動する `cdod`(OneDrive 個人用)/ `cdode`(OneDrive 組織用)/ `cdic`(iCloud Drive)/ `cdgd`(Google Drive)— 実装済み(`home/.config/shell/clouddrive.sh`。macOS / WSL のパスを実行時探索。OneDrive はフォルダ名で個人用/組織用を判別。Google Drive はフォルダ名の英日両対応)
 - [ ] Obsidian: URI スキーム(`obsidian://`)でほかに何を操作するか(ノート作成、検索など)
-- [ ] Vault パスなどの環境変数名の命名規則(`DOTFILES_` プレフィックスなど)
+- [x] 環境変数の命名規則 — **`DOTFILES_` プレフィックスに決定**(CLAUDE.md「命名規則」に昇格。現状は obsidian.json 自動検出のため実使用なし。将来 vault 指定等が必要になったら `DOTFILES_OBSIDIAN_VAULT` のように命名)
 - [x] ネットワークドライブ(Z: 割り当て・NAS 等)連携 — **作らない(意図的な見送り)**。理由: ①サーバー名・共有名は業務情報・内部ネットワーク情報で最重要ルールに抵触しやすい ②sudo 必須・不通時のハング・ゴーストマウント等、挙動も危うい。必要になったら `local.sh`(git 管理外)に自分専用関数を書く
 - [ ] WSL の Windows 連携(PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`。`explorer` も実装済み — WSL: エクスプローラー / macOS: Finder / Linux: xdg-open)
 
@@ -35,7 +35,8 @@
 
 ## 個人用ツール設定(リンター・フォーマッター等)
 
-- [ ] 普段使いのリンター・フォーマッターのグローバル設定を home/ に追加していく(候補: `~/.shellcheckrc`、ruff、エディタ設定など。判断基準は CLAUDE.md 参照)
+- [ ] 普段使いのリンター・フォーマッターのグローバル設定を home/ に追加していく(候補: ruff、エディタ設定など。判断基準は CLAUDE.md 参照)
+  - [x] `~/.shellcheckrc` — `home/.shellcheckrc` として追加済み(external-sources=true)
 - [ ] 設定パスが OS で違うアプリ(VS Code 等)の扱い — install.sh に OS 別マッピングを足すか、chezmoi 導入の判断材料にする
   - [x] VS Code は当面**テンプレート方式**に決定 — `templates/vscode/settings.json.template` を各マシンの正しいパスへ手動コピーして使う(キー・マシン固有パスは雛形に書かずコピー先でのみ記入)。自動リンク化・Settings Sync 併用は将来検討
 
@@ -47,7 +48,7 @@
 - [ ] アンインストール(リンク解除)機能を作るか
   - [x] `install.sh --prune` 実装済み — home/ から削除したファイルの「リンク切れ」を自動掃除(リポジトリを指すリンクだけが対象。他ツールのリンクには触れない)
   - [ ] 全リンクを解除する完全アンインストールは必要になったら
-- [ ] 既存シェル設定への source 行追記を install.sh でやるか、手動にするか
+- [x] 既存シェル設定への source 行追記 — **不要と決定**。`.zshrc` / `.bashrc` を丸ごとリンクで管理する構成にしたため、追記方式は使わない。既存設定があるマシンでは backup.sh で退避 → 必要な内容を home/ 側に取り込み → `--force` で切替、という運用
 - [ ] 管理ツール(chezmoi / stow / yadm)の導入検討 — 有力候補は chezmoi(OS別テンプレート分岐・機密分離・diff 確認が要件に合う)
   - [ ] 導入するなら install.sh との関係をどうするか(置き換え? 併用?)
   - [ ] 導入タイミング(ファイル数・OS分岐が増えてきたら or 早めに試す)
@@ -91,8 +92,8 @@ GitHub 連携:
 
 - [x] npm — `home/.npmrc`(`ignore-scripts=true` + `save-exact=true`)
 - [x] pnpm — `home/.config/pnpm/rc`(`minimum-release-age=10080` = 7日寝かせ。npm の未知キー警告を避けるため .npmrc と分離。macOS 対応のため env.sh で XDG_CONFIG_HOME を設定)
-- [ ] プロジェクト側の雛形(templates/)に renovate / dependabot の遅延更新設定や `pnpm-workspace.yaml` の `minimumReleaseAge` を用意するか
-- [ ] bun / pip など他のパッケージマネージャの対策設定
+- [x] プロジェクト側の雛形 — `templates/project/renovate.json`(minimumReleaseAge 7日)と `templates/project/pnpm-workspace.yaml`(minimumReleaseAge 10080分)を作成済み
+- [ ] bun / pip など他のパッケージマネージャの対策設定(bun は既定で postinstall 無効なので緊急度低。bunfig の寝かせ設定・pip のビルド時実行対策は使い始めるときに調査)
 
 機密管理:
 
@@ -120,8 +121,8 @@ GitHub 連携:
   - [x] `home/.gitconfig` 作成済み — `[include]` で `~/.gitconfig.local`(git 管理外)に名前・メール・マシン固有エディタを分離。共通側は pull.ff=only / push.autoSetupRemote / fetch.prune / quotepath=false / zdiff3 など
   - [ ] diff を見やすくする delta / difftastic の導入(OSS。packages/ に足すか検討)
 - [ ] ターミナルエミュレータ設定(alacritty / wezterm / ghostty)も管理対象にする
-- [ ] `.editorconfig` をリポジトリに置く
-- [ ] Dependabot / Renovate で GitHub Actions などのバージョン更新を自動化
+- [x] `.editorconfig` をリポジトリに置く — 追加済み(雛形も `templates/project/.editorconfig` に)
+- [x] Dependabot で GitHub Actions のバージョン更新を自動化 — `.github/dependabot.yml` 追加済み(月次)
 
 ## テンプレート集(新プロジェクト開始キット)
 
@@ -129,7 +130,7 @@ GitHub 連携:
 (`home/` に置くと install.sh で $HOME にリンクされてしまうため分離する)
 
 - [ ] devcontainer テンプレート(`devcontainer.json` の雛形。言語別に複数用意するか)
-- [ ] `.editorconfig` 雛形
+- [x] `.editorconfig` 雛形 — `templates/project/.editorconfig` 作成済み
 - [ ] 言語別 `.gitignore` 雛形
 - [ ] GitHub Actions ワークフロー雛形
 - [ ] Makefile / justfile 雛形
@@ -149,6 +150,6 @@ devcontainer 連携(消費される側)の注意:
 
 - [x] shellcheck を CI(GitHub Actions)で回す — 導入済み(上記)
 - [x] 機密情報の事前ブロック — pre-commit フック(`.githooks/pre-commit`)導入済み(gitleaks 併用+内蔵パターン)
-- [ ] 機密情報の混入チェック(gitleaks など)を CI にも入れるか(フックは `--no-verify` で素通りできるため二段目として)
+- [x] 機密情報の混入チェックを CI にも — `.github/workflows/secrets-scan.yml`(gitleaks。全履歴を検査)を追加済み
 - [ ] OSS 公開前の最終レビュー(個人情報・プライベートパスの全ファイル確認)
 - [ ] README の英語化をするか

@@ -43,6 +43,45 @@ cd dotfiles
 
 tmux や fzf など、dotfiles が使うツール一式を導入します(macOS: `packages/Brewfile`、Debian 系: `packages/apt.txt`)。設定のリンク(`install.sh`)とは独立しており、実行しなくても dotfiles 自体は壊れず動きます。
 
+## 収録コマンド・関数
+
+インストール後、新しいシェルから使えます。候補が複数あるものは fzf(あれば)か番号選択になり、引数で名前の絞り込みができます。アプリや依存ツールが無い環境では、どのコマンドも壊れず案内を出して終了します。
+
+### 移動(cd 系)
+
+| コマンド | 移動先 |
+|---|---|
+| `cdov [名前]` | Obsidian の vault(一覧は Obsidian 自身の設定から自動取得) |
+| `cdic [名前]` | iCloud Drive |
+| `cdgd [名前]` | Google Drive(マイドライブ / 共有ドライブ) |
+| `cdod` / `cdode [名前]` | OneDrive(個人用 / 組織用) |
+| `cdwin [サブフォルダ]` | Windows のユーザーフォルダ(WSL 用。Downloads 等は場所を移動していても正しく解決) |
+| `cdgr` | git リポジトリのルート |
+| `mkcd <dir>` | ディレクトリを作って移動 |
+| `tmpd` | 使い捨ての一時ディレクトリ(掃除は OS 任せ) |
+
+### アプリ起動
+
+| コマンド | 動作 |
+|---|---|
+| `word` / `excel` / `powerpoint` / `outlook` / `onenote` `[ファイル]` | Office で開く(WSL では Windows 側の Office を起動。対応形式のみタブ補完・1ファイルまで) |
+| `teams` | Microsoft Teams を起動 |
+| `fusion360 [ファイル]` | Autodesk Fusion(旧 Fusion 360)で開く |
+| `ov [名前]` | Obsidian を vault 指定で起動 |
+| `explorer [パス]` | ファイルマネージャで開く(WSL: エクスプローラー / macOS: Finder / Linux: xdg-open) |
+
+### ユーティリティ
+
+| コマンド | 動作 |
+|---|---|
+| `dotfiles-update` | どこからでもこのリポジトリを更新(pull + 再リンク) |
+| `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
+| `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
+| `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
+| `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
+
+このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。
+
 ## テスト
 
 ```sh
