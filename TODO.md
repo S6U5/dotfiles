@@ -27,6 +27,7 @@
   - [x] `~/.claude/settings.json` — **テンプレート配布方式**で `templates/claude/settings.json.template` として管理(キーを書ける場所なので home/ の自動リンク対象にはしない。VS Code と同じ方式。使い方は templates/claude/README.md)。通知フックは osascript 直書きから、クロスプラットフォームの `notify` コマンド経由に変更済み
     - **API キーの扱い(決定)**: 雛形への直書きは禁止。必要になったらコピー先でのみ、`~/.config/shell/local.sh`(git 管理外)の環境変数か `apiKeyHelper` 方式にする。現在はサブスクリプションログインなので不要
   - [ ] 旧管理場所 `~/Configs/`(git 管理されていない前身)からの残りの移行: claude-code の `commands/*.md`(**プロンプトなので全文精査してから**)、`.mcp.json`(キーの有無を確認してから)、codex / vscode / tmux(`~/Configs/.tmux.conf` は取り込み済みの `~/.tmux.conf` と内容が違うので差分確認)
+    - 注意: `~/.claude/managed-settings.json` へのリンクは**公式の読み込み場所ではない**(公式ドキュメント確認済み。macOS の正式配置は `/Library/Application Support/ClaudeCode/`)。おそらく効いていないので、移行時に中身を確認して user settings に統合するか廃止する
   - [ ] 移行完了後に `~/Configs` を廃止するか
 - [x] `~/.claude/settings.json` など JSON 系は symlink でよいか — **テンプレート配布方式で決定**(symlink はしない。キーを書ける設定ファイルは home/ の自動リンクに入れない方針。このMacの旧 ~/Configs へのリンクは、切替時に手動でコピーに置き換える)
 - [x] tmux — **丸ごとリンク方式**に決定(`home/.tmux.conf`)。既存 Mac の設定を取り込み済み。クリップボードは copy-command を OS 自動判別(要 tmux 3.2+)、マシン固有設定は `~/.tmux.conf.local`(git 管理外)に逃がす
