@@ -28,7 +28,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     -h | --help)
-      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     -*)

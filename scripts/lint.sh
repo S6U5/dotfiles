@@ -19,7 +19,7 @@ FIX=0
 files=()
 while IFS= read -r f; do
   files+=("$f")
-done < <(git ls-files -- '*.sh' '.githooks/*' 'home/.local/bin/*')
+done < <(git ls-files -- '*.sh' '.githooks/*' 'home/.local/bin/*' 'home/.config/bash/*' 'home/.bashrc' 'home/.bash_profile')
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "lint 対象ファイルがありません。"

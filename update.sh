@@ -5,6 +5,7 @@
 # リポジトリを最新化(git pull)して、install.sh で新規ファイルのリンクを張る。
 #
 #   ./update.sh            # 更新
+#   ./update.sh --prune    # 更新後、リポジトリ由来のリンク切れも掃除する
 #   ./update.sh --dry-run  # pull はせず、リンク処理の内容表示のみ
 #
 # 安全設計:
@@ -19,11 +20,13 @@ log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 DRY_RUN=0
+PRUNE_ARG=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
+    --prune) PRUNE_ARG="--prune" ;;
     -h | --help)
-      sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
@@ -46,8 +49,10 @@ fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "[dry-run] git pull はスキップします。"
-  "$DOTFILES_DIR/install.sh" --dry-run
+  # shellcheck disable=SC2086
+  "$DOTFILES_DIR/install.sh" --dry-run $PRUNE_ARG
 else
   git -C "$DOTFILES_DIR" pull --ff-only
-  "$DOTFILES_DIR/install.sh"
+  # shellcheck disable=SC2086
+  "$DOTFILES_DIR/install.sh" $PRUNE_ARG
 fi

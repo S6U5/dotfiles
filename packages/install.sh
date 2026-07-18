@@ -21,7 +21,7 @@ case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
   -h | --help)
-    sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
     exit 0
     ;;
   *)
@@ -40,7 +40,7 @@ install_brew() {
     HOMEBREW_NO_AUTO_UPDATE=1 brew bundle list --file "$PACKAGES_DIR/Brewfile" | sed 's/^/  /'
     return 0
   fi
-  brew bundle --file "$PACKAGES_DIR/Brewfile"
+  HOMEBREW_NO_AUTO_UPDATE=1 brew bundle --file "$PACKAGES_DIR/Brewfile"
 }
 
 install_apt() {

@@ -27,7 +27,8 @@ DRY_RUN=0
 PRUNE=0
 
 usage() {
-  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # 先頭のコメントブロック(シェバンの次の行から最初の非コメント行まで)を表示する
+  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
 
 log() { printf '%s\n' "$*"; }
@@ -67,7 +68,11 @@ link_file() {
 
   # 既存ファイル・リンクがある場合
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    if [ "$FORCE" -eq 1 ]; then
+    # リンク切れシンボリックリンクはユーザーデータを持たないため、退避せず張り替える
+    # (リポジトリを移動・改名した後でも --force なしで再インストールできるように)
+    if [ -L "$dest" ] && [ ! -e "$dest" ]; then
+      run rm "$dest"
+    elif [ "$FORCE" -eq 1 ]; then
       backup="$dest.bak.$(date +%Y%m%d%H%M%S)"
       run mv "$dest" "$backup"
       log "  bak:  $dest -> $backup"
