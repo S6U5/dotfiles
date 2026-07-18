@@ -17,6 +17,13 @@ cp templates/claude/settings.json.template ~/.claude/settings.json
 - 通知フックはクロスプラットフォームの `notify` コマンド(`home/.local/bin/notify`)
   経由なので、macOS / WSL / Linux のどこでも動く。
 
+## 雛形に入れないもの(コピー先でのみ設定する)
+
+- **API キー・機密**(前述)
+- **モデル指定(`model`)** — モデル名は時期で変わる時限的な値。未指定ならその時々の既定が使われる
+- **実験的フラグ(`env` の `CLAUDE_CODE_EXPERIMENTAL_*` 等)** — 将来のバージョンで廃止・改名されうる
+- **広すぎる許可** — `curl`(任意 URL への送信)や `pkill`(プロセス強制終了)などは自動許可にせず都度確認する
+
 ## 注意
 
 - settings.json は厳密な JSON(コメント不可)のため、雛形にもコメントは書かない。
