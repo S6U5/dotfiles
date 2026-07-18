@@ -23,6 +23,7 @@ cp templates/claude/settings.json.template ~/.claude/settings.json
 - **モデル指定(`model`)** — モデル名は時期で変わる時限的な値。未指定ならその時々の既定が使われる
 - **実験的フラグ(`env` の `CLAUDE_CODE_EXPERIMENTAL_*` 等)** — 将来のバージョンで廃止・改名されうる
 - **広すぎる許可** — `curl`(任意 URL への送信)や `pkill`(プロセス強制終了)などは自動許可にせず都度確認する
+- **プラグイン構成(`enabledPlugins`)** — プラグインはマシンごとの導入状態と対で管理するもの。雛形には書かず、各マシンで導入・有効化する
 
 ## 注意
 
