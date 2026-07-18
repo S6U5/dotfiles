@@ -67,6 +67,7 @@ tmux や fzf など、dotfiles が使うツール一式を導入します(macOS:
 | `word` / `excel` / `powerpoint` / `outlook` / `onenote` `[ファイル]` | Office で開く(WSL では Windows 側の Office を起動。対応形式のみタブ補完・1ファイルまで) |
 | `teams` | Microsoft Teams を起動 |
 | `fusion360 [ファイル]` | Autodesk Fusion(旧 Fusion 360)で開く |
+| `arduino [ファイル]` | Arduino IDE で開く(Linux に本物の arduino コマンドがあればそちらを優先) |
 | `ov [名前]` | Obsidian を vault 指定で起動 |
 | `explorer [パス]` | ファイルマネージャで開く(WSL: エクスプローラー / macOS: Finder / Linux: xdg-open) |
 

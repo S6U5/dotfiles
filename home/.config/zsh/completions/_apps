@@ -1,4 +1,4 @@
-#compdef word excel powerpoint outlook onenote teams fusion360
+#compdef word excel powerpoint outlook onenote teams fusion360 arduino
 # アプリ起動系コマンドの補完: 各アプリで開ける形式のみ、1ファイルまで(2つ目以降は補完しない)
 
 local exts
@@ -13,6 +13,7 @@ case "$service" in
   outlook) exts='msg|eml|ics' ;;
   onenote) exts='one|onepkg' ;;
   fusion360) exts='f3d|f3z|step|stp|igs|iges|stl|obj|dxf' ;;
+  arduino) exts='ino|pde' ;;
   *) exts='*' ;;
 esac
 

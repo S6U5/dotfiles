@@ -14,6 +14,7 @@ _apps_complete() {
     outlook) exts='msg eml ics' ;;
     onenote) exts='one onepkg' ;;
     fusion360) exts='f3d f3z step stp igs iges stl obj dxf' ;;
+    arduino) exts='ino pde' ;;
     *) exts='' ;;
   esac
   local f e keep
@@ -32,7 +33,7 @@ _apps_complete() {
   done < <(compgen -f -- "$cur")
 }
 
-for _apps_cmd in word excel powerpoint outlook onenote teams fusion360; do
+for _apps_cmd in word excel powerpoint outlook onenote teams fusion360 arduino; do
   complete -o filenames -F _apps_complete "$_apps_cmd"
 done
 unset _apps_cmd
