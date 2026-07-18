@@ -14,11 +14,18 @@ _onedrive_candidates() {
       [ -d "$HOME/OneDrive" ] && printf '%s\n' "$HOME/OneDrive"
       ;;
     Linux)
-      if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-        # WSL: Windows 側の OneDrive フォルダ(個人用・組織用)を探す
-        find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _od_u; do
-          find "$_od_u" -mindepth 1 -maxdepth 1 -name 'OneDrive*' -type d 2>/dev/null
-        done
+      if _dotfiles_is_wsl; then
+        # WSL: Windows 側の OneDrive フォルダ(個人用・組織用)を探す。
+        # 現在ユーザーのプロファイル優先(共有 PC で他ユーザーの分を拾わないため)
+        _od_prof=$(_dotfiles_win_profile) || _od_prof=""
+        if [ -n "$_od_prof" ]; then
+          find "$_od_prof" -mindepth 1 -maxdepth 1 -name 'OneDrive*' -type d 2>/dev/null
+        else
+          find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _od_u; do
+            find "$_od_u" -mindepth 1 -maxdepth 1 -name 'OneDrive*' -type d 2>/dev/null
+          done
+        fi
+        unset _od_prof
       else
         [ -d "$HOME/OneDrive" ] && printf '%s\n' "$HOME/OneDrive"
       fi
@@ -36,10 +43,16 @@ _icloud_candidates() {
       fi
       ;;
     Linux)
-      if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-        find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _ic_u; do
-          [ -d "$_ic_u/iCloudDrive" ] && printf '%s\n' "$_ic_u/iCloudDrive"
-        done
+      if _dotfiles_is_wsl; then
+        _ic_prof=$(_dotfiles_win_profile) || _ic_prof=""
+        if [ -n "$_ic_prof" ]; then
+          [ -d "$_ic_prof/iCloudDrive" ] && printf '%s\n' "$_ic_prof/iCloudDrive"
+        else
+          find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _ic_u; do
+            [ -d "$_ic_u/iCloudDrive" ] && printf '%s\n' "$_ic_u/iCloudDrive"
+          done
+        fi
+        unset _ic_prof
       fi
       ;;
   esac
@@ -63,11 +76,17 @@ _gdrive_candidates() {
         done
       ;;
     Linux)
-      if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-        # ミラーリング型: ユーザーフォルダ配下の「Google Drive」
-        find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _gd_u; do
-          find "$_gd_u" -mindepth 1 -maxdepth 1 -name 'Google Drive*' -type d 2>/dev/null
-        done
+      if _dotfiles_is_wsl; then
+        # ミラーリング型: ユーザーフォルダ配下の「Google Drive」(現在ユーザー優先)
+        _gd_prof=$(_dotfiles_win_profile) || _gd_prof=""
+        if [ -n "$_gd_prof" ]; then
+          find "$_gd_prof" -mindepth 1 -maxdepth 1 -name 'Google Drive*' -type d 2>/dev/null
+        else
+          find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _gd_u; do
+            find "$_gd_u" -mindepth 1 -maxdepth 1 -name 'Google Drive*' -type d 2>/dev/null
+          done
+        fi
+        unset _gd_prof
         # ストリーミング型: 仮想ドライブ(G: 等)が WSL にマウントされていれば
         find /mnt -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _gd_m; do
           for _gd_sub in "My Drive" "マイドライブ"; do

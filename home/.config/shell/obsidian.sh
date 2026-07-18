@@ -12,13 +12,20 @@ _obsidian_config() {
       printf '%s\n' "$HOME/Library/Application Support/obsidian/obsidian.json"
       ;;
     Linux)
-      if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
-        # WSL: Windows 側の Obsidian の設定を探す
-        find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _obs_u; do
-          if [ -r "$_obs_u/AppData/Roaming/obsidian/obsidian.json" ]; then
-            printf '%s\n' "$_obs_u/AppData/Roaming/obsidian/obsidian.json"
-          fi
-        done | head -n 1
+      if _dotfiles_is_wsl; then
+        # WSL: Windows 側の Obsidian の設定を探す(現在ユーザーのプロファイル優先。
+        # 全ユーザー走査はフォールバックで、共有 PC では他人の設定を拾いうる点に注意)
+        _obs_prof=$(_dotfiles_win_profile) || _obs_prof=""
+        if [ -n "$_obs_prof" ] && [ -r "$_obs_prof/AppData/Roaming/obsidian/obsidian.json" ]; then
+          printf '%s\n' "$_obs_prof/AppData/Roaming/obsidian/obsidian.json"
+        else
+          find /mnt/c/Users -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while read -r _obs_u; do
+            if [ -r "$_obs_u/AppData/Roaming/obsidian/obsidian.json" ]; then
+              printf '%s\n' "$_obs_u/AppData/Roaming/obsidian/obsidian.json"
+            fi
+          done | head -n 1
+        fi
+        unset _obs_prof
       else
         printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/obsidian/obsidian.json"
       fi
@@ -31,18 +38,21 @@ _obsidian_pick() {
   _obs_conf=$(_obsidian_config)
   if [ -z "$_obs_conf" ] || [ ! -r "$_obs_conf" ]; then
     echo "Obsidian の vault 一覧が見つかりません(Obsidian 未インストール?)" >&2
-    return 0
+    unset _obs_conf
+    return 1
   fi
 
   if command -v jq >/dev/null 2>&1; then
     _obs_paths=$(jq -r '.vaults[].path' "$_obs_conf")
   else
-    # jq が無い環境向けの簡易パース(","で分割して "path":"..." を抜き出す)
+    # jq が無い環境向けの簡易パース(","で分割して "path":"..." を抜き出す)。
+    # 既知の制限: vault パスに「,」やエスケープされた「"」を含むと候補が欠ける
     _obs_paths=$(tr ',' '\n' <"$_obs_conf" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p' | sed 's/\\\\/\\/g')
   fi
 
   _obs_sel=$(_dotfiles_pick_line "$_obs_paths" "${1:-}" vault) || {
     echo "該当する vault がありません${1:+(絞り込み: $1)}" >&2
+    unset _obs_conf _obs_paths _obs_sel
     return 1
   }
 
@@ -52,17 +62,19 @@ _obsidian_pick() {
   esac
 
   printf '%s\n' "$_obs_sel"
+  unset _obs_conf _obs_paths _obs_sel
 }
 
-# Obsidian の vault へ移動する
+# Obsidian の vault へ移動する(移動できなかったら非0)
 cdov() {
   _cdov_t=$(_obsidian_pick "${1:-}") || {
     unset _cdov_t
     return 1
   }
   if [ -z "$_cdov_t" ]; then
+    # 選択キャンセル: 移動していないので非0
     unset _cdov_t
-    return 0
+    return 1
   fi
   if [ ! -d "$_cdov_t" ]; then
     echo "cdov: vault のディレクトリが存在しません: $_cdov_t" >&2

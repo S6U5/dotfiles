@@ -3,6 +3,30 @@
 # 外部ツールに依存する関数は、実行時に存在チェックして無ければ親切なメッセージを出して終了する
 # (CLAUDE.md「外部ツール依存の扱い」参照)。
 
+# WSL 上で動いているかを判定する共通ヘルパー(判定条件はここに一本化する)
+_dotfiles_is_wsl() {
+  [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null
+}
+
+# WSL: 現在の Windows ユーザーのプロファイル(/mnt/c/Users/名前)を出力する。
+# 共有 PC で他ユーザーのフォルダを誤って拾わないため、探索はまずこの配下から行う
+_dotfiles_win_profile() {
+  command -v cmd.exe >/dev/null 2>&1 || return 1
+  _dwp_win=$(
+    cd /mnt/c 2>/dev/null || cd /
+    cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
+  )
+  if [ -z "$_dwp_win" ]; then
+    unset _dwp_win
+    return 1
+  fi
+  wslpath -u "$_dwp_win" 2>/dev/null || {
+    unset _dwp_win
+    return 1
+  }
+  unset _dwp_win
+}
+
 # ディレクトリを作って移動する
 mkcd() {
   mkdir -p "$1" && cd "$1" || return 1
@@ -73,10 +97,12 @@ _dotfiles_pick_line() {
 
 # 候補リストから1つ選んで cd する共通処理(cdod / cdic / cdgd などの実体)。
 # $1: 候補リスト(1行1件)、$2: 絞り込み、$3: コマンド名(メッセージ・プロンプトに使用)
+# 終了コード: 実際に移動したときだけ 0(候補なし・不一致・キャンセルは 1。
+# `cdod && コマンド` のような合成で、移動していないのに後続が走るのを防ぐ)
 _dotfiles_cd_from_list() {
   if [ -z "$1" ]; then
     echo "$3: 対象フォルダが見つかりません(未設定?)" >&2
-    return 0
+    return 1
   fi
   _dcf_t=$(_dotfiles_pick_line "$1" "${2:-}" "$3") || {
     echo "$3: 該当するフォルダがありません${2:+(絞り込み: $2)}" >&2
@@ -85,7 +111,7 @@ _dotfiles_cd_from_list() {
   }
   if [ -z "$_dcf_t" ]; then
     unset _dcf_t
-    return 0
+    return 1
   fi
   cd "$_dcf_t" || {
     unset _dcf_t

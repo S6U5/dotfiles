@@ -10,9 +10,14 @@ if command -v fzf >/dev/null 2>&1; then
       echo "fbr: git リポジトリの中ではありません" >&2
       return 1
     fi
-    _fbr_sel=$(git branch --all --format='%(refname:short)' |
-      sed 's|^origin/||' | grep -vx 'HEAD' | sort -u |
-      fzf --prompt='branch> ') || {
+    # ローカルブランチ + リモート名を剥がしたリモートブランチを候補にする
+    # (origin 以外のリモートにも対応。ローカルの feature/x を壊さないよう剥がすのはリモート側だけ)
+    _fbr_sel=$(
+      {
+        git branch --format='%(refname:short)'
+        git branch -r --format='%(refname:short)' | sed 's|^[^/]*/||'
+      } | grep -vx 'HEAD' | sort -u | fzf --prompt='branch> '
+    ) || {
       unset _fbr_sel
       return 0
     }

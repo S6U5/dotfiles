@@ -5,24 +5,16 @@
 # WSL 以外では親切メッセージを出して何もしない(CLAUDE.md「OS 固有コマンド」参照)。
 
 cdwin() {
-  if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  if ! _dotfiles_is_wsl; then
     echo "cdwin: WSL 専用のコマンドです(この環境では何もしません)" >&2
-    return 0
-  fi
-  if ! command -v cmd.exe >/dev/null 2>&1; then
-    echo "cdwin: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
-    return 0
+    return 1
   fi
 
-  # Windows のユーザーフォルダをハードコードせず実行時に取得する
-  _cdwin_prof=$(
-    cd /mnt/c 2>/dev/null || cd /
-    cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
-  )
-  _cdwin_dir=$(wslpath -u "$_cdwin_prof" 2>/dev/null)
+  # Windows のユーザーフォルダをハードコードせず実行時に取得する(functions.sh の共通ヘルパー)
+  _cdwin_dir=$(_dotfiles_win_profile) || _cdwin_dir=""
   if [ -z "$_cdwin_dir" ] || [ ! -d "$_cdwin_dir" ]; then
-    echo "cdwin: Windows のユーザーフォルダを特定できませんでした" >&2
-    unset _cdwin_prof _cdwin_dir
+    echo "cdwin: Windows のユーザーフォルダを特定できませんでした(Windows 連携が無効?)" >&2
+    unset _cdwin_dir
     return 1
   fi
 
@@ -50,15 +42,15 @@ cdwin() {
     fi
     if [ ! -d "$_cdwin_target" ]; then
       echo "cdwin: フォルダがありません: $1" >&2
-      unset _cdwin_prof _cdwin_dir _cdwin_target _cdwin_known
+      unset _cdwin_dir _cdwin_target _cdwin_known
       return 1
     fi
     _cdwin_dir=$_cdwin_target
   fi
 
   cd "$_cdwin_dir" || {
-    unset _cdwin_prof _cdwin_dir _cdwin_target _cdwin_known
+    unset _cdwin_dir _cdwin_target _cdwin_known
     return 1
   }
-  unset _cdwin_prof _cdwin_dir _cdwin_target _cdwin_known
+  unset _cdwin_dir _cdwin_target _cdwin_known
 }

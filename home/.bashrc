@@ -1,4 +1,6 @@
+# shellcheck shell=bash
 # bash 用エントリポイント。共通設定(zsh と共有)を読み込み、bash 固有の設定はこのファイルに書く。
+# ログインシェルからは .bash_profile 経由で読み込まれる。
 
 # 対話シェルでなければ何もしない
 case $- in
