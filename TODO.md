@@ -25,6 +25,7 @@
 
 - [ ] どのファイルを管理対象にするか(機密・個人情報が混ざりやすいので要精査)
   - [x] `~/.claude/settings.json` — `home/.claude/settings.json` として取り込み済み(キー無しを確認。通知フックは osascript 直書きから、クロスプラットフォームの `notify` コマンド経由に変更)
+    - **API キーの扱い(決定)**: settings.json への直書きは禁止。必要になったら `~/.config/shell/local.sh`(git 管理外)の環境変数か、`apiKeyHelper`(キーチェーン等から取得するスクリプト)方式にする。現在はサブスクリプションログインなので不要
   - [ ] 旧管理場所 `~/Configs/`(git 管理されていない前身)からの残りの移行: claude-code の `commands/*.md`(**プロンプトなので全文精査してから**)、`.mcp.json`(キーの有無を確認してから)、codex / vscode / tmux(`~/Configs/.tmux.conf` は取り込み済みの `~/.tmux.conf` と内容が違うので差分確認)
   - [ ] 移行完了後に `~/Configs` を廃止するか
 - [x] `~/.claude/settings.json` など JSON 系は symlink でよいか — **symlink 方式で決定**(Claude Code は設定をユーザー編集ファイルとして扱うため、リンクで問題ない。このMacでは旧 ~/Configs へのリンクが既存なので、切替時は install.sh --force で退避・置換)
