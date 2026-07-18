@@ -8,6 +8,35 @@ mkcd() {
   mkdir -p "$1" && cd "$1" || return 1
 }
 
+# git リポジトリのルートへ移動する(深い階層から一発で戻る)
+cdgr() {
+  _cdgr_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "cdgr: git リポジトリの中ではありません" >&2
+    unset _cdgr_root
+    return 1
+  }
+  cd "$_cdgr_root" || {
+    unset _cdgr_root
+    return 1
+  }
+  unset _cdgr_root
+}
+
+# 使い捨ての一時ディレクトリを作って移動する。
+# 場所は OS の一時領域(Linux: /tmp、macOS: TMPDIR)なので、掃除は OS 任せでよい
+tmpd() {
+  _tmpd_dir=$(mktemp -d "${TMPDIR:-/tmp}/tmpd.XXXXXX") || {
+    echo "tmpd: 一時ディレクトリを作成できませんでした" >&2
+    unset _tmpd_dir
+    return 1
+  }
+  cd "$_tmpd_dir" || {
+    unset _tmpd_dir
+    return 1
+  }
+  unset _tmpd_dir
+}
+
 # 候補(1行1件のパス)から1つ選んで標準出力に出す共通ヘルパー。
 # $1: 候補リスト、$2: 絞り込み(部分一致・大文字小文字無視)、$3: プロンプト表示名
 # 絞り込みは最後のパス要素(フォルダ名)だけに効かせる(親ディレクトリ名への誤マッチを防ぐ)。
