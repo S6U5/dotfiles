@@ -1,59 +1,62 @@
 # dotfiles
 
-s6u5が自分用に作ったdotfilesです。
+[![Lint](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml)
+[![Test](https://github.com/S6U5/dotfiles/actions/workflows/test.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/test.yml)
+[![Secrets scan](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml)
 
-## 構成
+WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles です。
 
-- `home/` — `$HOME` に配置する設定ファイル群。この中のディレクトリ構造がそのまま `$HOME` にマッピングされます。
-  - `.zshrc` / `.bashrc` — シェルのエントリポイント(zsh / bash 両対応)。どちらも共通設定を読み込みます。
-  - `.config/shell/` — シェル共通設定(sh 互換)。環境変数・エイリアス・関数などを機能別ファイルで管理し、`os/` 以下で OS 固有設定(macOS / WSL / Linux)を読み分けます。
-  - マシン固有・プライベートな設定は `~/.config/shell/local.sh`(git 管理外)に置くと最後に読み込まれます。
-  - `.local/bin/` — 自作コマンド置き場(PATH に自動で通ります)。`dotfiles-update` でどこからでもリポジトリを更新できます。`word` / `excel` / `powerpoint` / `outlook` / `onenote` / `teams` で Office アプリを開けます(macOS はローカルアプリ、WSL は Windows 側の Office を起動。タブ補完は各アプリで開ける形式のみ・1ファイルまで。teams は起動のみ)。
-- `install.sh` — インストールスクリプト
-- `backup.sh` — インストール前に既存の設定ファイルを退避するスクリプト
-- `update.sh` — リポジトリを最新化して新規ファイルのリンクを張るスクリプト(`git pull` + `install.sh`)
-- `.githooks/` — 開発用 git フック。APIキー等の機密情報をコミット前に自動ブロックします(`install.sh` 実行時に有効化)。
-- `templates/` — 新プロジェクトにコピーして使う雛形(`$HOME` にはリンクされません)。
+> **注**: あくまで個人の設定(好みが濃いめ)です。そのまま使うより、構成や
+> スクリプトの作りを参考にしたり、フォークして自分用に育てるのに向いています。
 
-## インストール
+## 特徴
+
+- **クロスプラットフォーム** — zsh / bash 両対応。macOS・WSL・Linux(Raspberry Pi 含む)で同じコマンド・設定が動きます
+- **既存環境を侵略しない** — 既存ファイルは絶対に上書きせず(スキップ+警告)、置き換えは明示した時だけ・必ず退避してから。何度実行しても安全(冪等)
+- **依存が無くても壊れない** — fzf や各アプリが無い環境でも、エラーを出さず動くか、親切に案内して終了します
+- **機密ゼロ方針** — API キー・個人情報はリポジトリに置かず、git 管理外のローカルファイル(`*.local` / `local.sh`)へ分離。pre-commit フック+ CI の二段でコミット前後に機密混入を検査します
+- **テスト済み** — インストール動作(リンク・冪等性・非侵略・掃除)を 24 項目の自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
+
+## クイックスタート
 
 ```sh
 git clone https://github.com/S6U5/dotfiles.git
 cd dotfiles
-./backup.sh   # 既存の設定を退避(推奨)
-./install.sh
+./backup.sh   # 既存の設定を ~/.dotfiles-backup/backup-<日時>/ に退避(推奨)
+./install.sh  # home/ 以下を同じ構造で $HOME にシンボリックリンク
 ```
 
-`backup.sh` は install.sh が対象とする既存ファイルを `~/.dotfiles-backup/backup-<日時>/` に退避します(`$HOME` 側は変更しません)。退避先は `./backup.sh /path/to/dest` のように指定でき、外付け SSD やクラウド同期フォルダを指定しておくとより安心です。
+ツール一式(tmux / fzf / zoxide / shellcheck / shfmt)も入れるなら:
 
-`home/` 以下のファイルが同じ構造で `$HOME` にシンボリックリンクされます。
+```sh
+./packages/install.sh            # OS を判定して導入(macOS: Homebrew / Debian 系: apt)
+./packages/install.sh --dry-run  # 何が入るかの表示のみ
+```
+
+パッケージ導入は設定のリンクとは独立しており、実行しなくても dotfiles 自体は壊れず動きます。
 
 ### 既存の設定ファイルとぶつかったとき(初回導入の正規ルート)
 
-`~/.bashrc`(Ubuntu / WSL では OS が最初から設置)や `~/.gitconfig`(git 設定済みなら必ず存在)など、**主要ファイルは初回導入時にほぼ必ず「スキップ+警告」になります**。これは異常ではなく、既存環境を黙って壊さないための設計です。警告された各ファイルはこう判断します:
+`~/.bashrc`(Ubuntu / WSL では OS が最初から設置)や `~/.gitconfig` など、**主要ファイルは初回導入時にほぼ必ず「スキップ+警告」になります**。これは異常ではなく、既存環境を黙って壊さないための設計です。警告された各ファイルはこう判断します:
 
-1. 中身が不要、またはこのリポジトリに取り込み済み → そのまま `./install.sh --force`(退避してから置き換え)
+1. 中身が不要、またはこのリポジトリに取り込み済み → `./install.sh --force`(`*.bak.<日時>` に退避してから置き換え)
 2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.gitconfig.local` / `~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `--force`
 3. 判断に迷う → `backup.sh` の退避があるのでいつでも戻せます
 
-- **既存のファイルは上書きしません**(スキップして警告を表示)
-- `./install.sh --dry-run` — 何が行われるかを表示するだけで、実際には変更しません
-- `./install.sh --force` — 既存ファイルを `*.bak.<日時>` に退避してからリンクします
-- `./install.sh --prune` — リポジトリ側で削除されたファイルの「リンク切れ」を掃除します(このリポジトリ由来のリンクのみ対象)。`./update.sh --prune` でも同じ掃除ができます
-- 何度実行しても安全です(冪等)。リポジトリを別の場所へ移動した場合も、再実行すれば古いリンクが自動で張り替わります
+### install.sh のオプション
 
-## パッケージ導入(任意)
+| オプション | 動作 |
+|---|---|
+| (なし) | リンクを張る。既存ファイルはスキップ+警告 |
+| `--dry-run` | 何が行われるかの表示のみ(変更しない) |
+| `--force` | 既存ファイルを `*.bak.<日時>` に退避してからリンク |
+| `--prune` | リポジトリ側で削除されたファイルの「リンク切れ」を掃除(このリポジトリ由来のリンクのみ対象) |
 
-```sh
-./packages/install.sh            # OS を判定してパッケージを導入
-./packages/install.sh --dry-run  # 何が導入されるかの表示のみ
-```
-
-tmux や fzf など、dotfiles が使うツール一式を導入します(macOS: `packages/Brewfile`、Debian 系: `packages/apt.txt`)。設定のリンク(`install.sh`)とは独立しており、実行しなくても dotfiles 自体は壊れず動きます。
+リポジトリを別の場所へ移動した場合も、再実行すれば古いリンクが自動で張り替わります(他ツール由来のリンクには触れません)。
 
 ## 収録コマンド・関数
 
-インストール後、新しいシェルから使えます。候補が複数あるものは fzf(あれば)か番号選択になり、引数で名前の絞り込みができます。アプリや依存ツールが無い環境では、どのコマンドも壊れず案内を出して終了します。
+インストール後、新しいシェルから使えます。候補が複数あるものは fzf(あれば)か番号選択になり、引数で名前の絞り込みができます。
 
 ### 移動(cd 系)
 
@@ -83,7 +86,7 @@ tmux や fzf など、dotfiles が使うツール一式を導入します(macOS:
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update` | どこからでもこのリポジトリを更新(pull + 再リンク) |
+| `dotfiles-update [--prune]` | どこからでもこのリポジトリを更新(pull + 再リンク) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
@@ -91,22 +94,55 @@ tmux や fzf など、dotfiles が使うツール一式を導入します(macOS:
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。
 
+## リポジトリ構成
+
+```
+home/              $HOME に同じ構造でリンクされる設定ファイル群
+├── .zshrc / .bashrc / .bash_profile   シェルのエントリポイント(zsh / bash 両対応)
+├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル)
+│   └── os/                            OS 固有の起動時設定(macos / wsl / linux)
+├── .local/bin/                        自作コマンド(PATH に自動で通る)
+├── .gitconfig / .tmux.conf / .npmrc   各ツールの共通設定
+└── ...
+packages/          パッケージリスト(Brewfile / apt.txt)と導入スクリプト
+templates/         新プロジェクトにコピーして使う雛形($HOME にはリンクされない)
+├── project/         開発プロジェクト用(AGENTS.md / CLAUDE.md / .editorconfig など)
+├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
+├── vscode/          VS Code 設定の雛形
+└── claude/          Claude Code 設定の雛形
+scripts/           lint(shellcheck / shfmt)とインストールテスト
+.githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
+```
+
+マシン固有・プライベートな値は `~/.config/shell/local.sh` / `~/.gitconfig.local` / `~/.tmux.conf.local`(いずれも git 管理外)に置くと、共通設定の後に読み込まれて上書きできます。
+
+## 更新
+
+```sh
+./update.sh            # 最新化(fast-forward のみ)+ 新規ファイルのリンク
+./update.sh --prune    # あわせてリンク切れも掃除
+```
+
+どこからでも `dotfiles-update` コマンドで同じことができます。未コミットのローカル変更がある場合は安全のため中断します。
+
 ## テスト
 
 ```sh
 ./scripts/test-install.sh
 ```
 
-一時ディレクトリを HOME に見立てて、リンク配置・冪等性・既存ファイル非侵略などを検証します(実際の `$HOME` は変更しません)。まっさらな環境で試す場合は Docker(`docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-install.sh`)か、`.devcontainer/` でコンテナを開くと自動実行されます。
-
-## 更新
+一時ディレクトリを HOME に見立てて、リンク配置・冪等性・既存ファイル非侵略・`--force` の退避・`--prune` の掃除範囲などを検証します(実際の `$HOME` は変更しません)。まっさらな環境で試すなら:
 
 ```sh
-./update.sh
+docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-install.sh
 ```
 
-リポジトリを最新化(fast-forward のみ)して、新しく追加されたファイルのリンクを張ります。未コミットのローカル変更がある場合は安全のため中断します。
+または `.devcontainer/` でコンテナとして開くと自動実行されます。
 
 ## 対応環境
 
-WSL / macOS / Linux
+WSL(Ubuntu)/ macOS / Linux(Debian 系・Raspberry Pi OS で確認想定)
+
+## ライセンス
+
+[MIT](LICENSE)
