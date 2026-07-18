@@ -53,9 +53,14 @@ cp templates/claude/settings.json.template ~/.claude/settings.json
   "Bash(npm run lint)",
   "Bash(npm run lint:*)",
   "Bash(npm run format:*)",
-  "Bash(npm ls:*)"
+  "Bash(npm ls:*)",
+  "Bash(uv run:*)",
+  "Bash(uv venv)",
+  "Bash(uv tree:*)"
 ]
 ```
+
+uv の導入系(`uv add` / `uv sync` / `uvx` / `uv tool install` / `uv pip install`)はテンプレートの `ask` で確認必須にしてある。
 
 ## 注意
 

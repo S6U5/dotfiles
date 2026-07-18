@@ -18,6 +18,9 @@
       "Bash(pip3 install:*)",
       "Bash(uv add:*)",
       "Bash(uv pip install:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv tool install:*)",
+      "Bash(uvx:*)",
       "Bash(brew install:*)",
       "Bash(apt-get install:*)",
       "Bash(apt install:*)"
