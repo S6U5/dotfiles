@@ -18,6 +18,38 @@
 - [x] Obsidian: vault へ移動する `cdov`・vault を指定して起動する `ov` — 実装済み(`home/.config/shell/obsidian.sh`。obsidian.json から vault 一覧を実行時取得、fzf があれば選択 UI、無ければ番号選択。ov は `obsidian://open?vault=` URI 起動)
 - [x] クラウドストレージへ移動する `cdod`(OneDrive 個人用)/ `cdode`(OneDrive 組織用)/ `cdic`(iCloud Drive)/ `cdgd`(Google Drive)— 実装済み(`home/.config/shell/clouddrive.sh`。macOS / WSL のパスを実行時探索。OneDrive はフォルダ名で個人用/組織用を判別。Google Drive はフォルダ名の英日両対応)
 - [ ] Obsidian: URI スキーム(`obsidian://`)でほかに何を操作するか(ノート作成、検索など)
+- [ ] Obsidian 公式 CLI(`obsidian` コマンド)対応 — **方針は決定、実装は後日**(v1.12系/2026-02 一般提供。「起動中アプリのリモコン」で、未起動なら初回コマンドが起動)
+  - **決定した方針**:
+    - 公式 CLI を使う(コミュニティ製 `notesmd-cli` 等ではなく公式 `obsidian`)
+    - macOS / ネイティブ Linux は**そのまま公式 CLI を使う**(macOS: `/usr/local/bin/obsidian` → アプリバンドル内 `obsidian-cli`。Linux: `~/.local/bin/obsidian`)
+    - **WSL では Linux 版 CLI を入れない**。入れると WSLg 経由の Linux 版 Obsidian を操作してしまう。**WSL からは Windows ネイティブの Obsidian を interop で操作する**(Windows 側の `Obsidian.com` を叩く。`…\AppData\Local\Programs\Obsidian\`)。**WSLg は使わない**
+    - 既存の `ov`(URI 起動)/ `cdov`(vault 移動)と同じ「WSL→Windows を叩く」流儀の延長。共通層(`obsidian.sh`)に「常に定義+実行時チェック」で置く
+    - **トレードオフ/前提(世間の知見)**: Obsidian を WSL 内に入れて WSLg で GUI を出す派(vault を Linux FS に置ける)も一般的だが、それは不使用と決めた WSLg 依存。Windows ネイティブ版は **`\\wsl.localhost\...`(WSL の ext4 の奥)の vault をうまく開けない**。よって **vault は Windows 側(`/mnt/c/...` から見える場所)に置く前提**とする。既存 `obsidian.sh` が obsidian.json を Windows 側から読み `wslpath` で変換している作りとも整合
+  - **検証段取り**: 現在の作業機は Mac。WSL 側の検証は Windows にこのリポジトリをクローンして後日実施する予定(macOS 分は手元で確認可能)
+  - **未確定点(実機で要検証)**:
+    - OS 差の吸収: macOS/Linux はネイティブ CLI をそのまま、WSL だけ Windows の `Obsidian.com` へルーティングするラッパー設計(`obsidian` 関数を共通層に置き、OS 分岐で委譲先を切り替える)
+    - `.com` リダイレクタを WSL interop から実行できるか(フルパス指定・PATHEXT 依存の有無・引数の渡し方)
+    - **パス形式の変換**: Windows はバックスラッシュ、Linux はスラッシュ。ファイルパス引数を取るコマンドで `wslpath` による相互変換が要る(既存 `_obsidian_pick` の `wslpath -u` と同じ発想)
+    - 既存 `obsidian.sh`(`ov` の URI 方式)との関係 — 公式 CLI に寄せて置き換えるか、URI 起動と CLI 操作を併存させるか
+    - Catalyst/Insider ゲートの扱い(未導入環境では `obsidian` 不在。存在チェックで親切メッセージ→正常終了)
+    - **ユーザー名・env は不要の見込み**: Windows ユーザー名は既存 `_dotfiles_win_profile` と同様に interop で実行時解決できる(`cmd.exe /c 'echo %LOCALAPPDATA%'` → `…\Programs\Obsidian\Obsidian.com` を導く)。env が要るのは既定 vault 等の好み上書き用途くらいで、その場合のみ `DOTFILES_OBSIDIAN_*`
+    - **Windows 側で CLI を動かすときの注意(要検証: WSL interop 経由でも当てはまるか)**:
+      - 旧コンソールホスト(conhost)ではなく **Windows Terminal** を使う
+      - **管理者権限のシェルだと CLI が無反応**になる報告あり(標準権限で実行)
+      - `Obsidian.com` は PATHEXT で `.exe` より優先される「ターミナルリダイレクタ」。WSL からはフルパス指定で叩く想定
+  - **ドキュメント方針**: 専用設計書は作らない(CLAUDE.md「ドキュメント」)。実装後にユーザー向け最小セットアップ手順だけ README に載せる。設計・注意点は本 TODO に集約
+  - **README 掲載予定の下書き(人間向け前提環境・セットアップ)** — 実装時に README へ昇格:
+    - 端末環境の目安: **Windows は Windows Terminal + WSL、macOS は標準ターミナル(Terminal.app)**
+    - Obsidian v1.12.4+(CLI 一般提供版。該当期は Catalyst ライセンス)
+    - 各 OS でネイティブに Obsidian をインストール(= CLI がバンドルされる)
+      - macOS: そのまま `obsidian` が使える
+      - WSL: **Windows 側に** Obsidian をインストール(WSL 内の Linux 版は入れない)
+    - WSL の場合の環境:
+      - **Windows の既定ターミナルを WSL にする**(端末を開いたら WSL に入る状態にする。Windows Terminal の既定プロファイルを WSL ディストロにする)
+      - 端末アプリは **Windows Terminal** を使う(旧コンソールホストは避ける)
+      - シェルは**標準権限**で起動(管理者権限だと CLI 無反応の報告)
+      - WSL interop 有効(既定で有効。`Obsidian.com` を interop で叩ける前提)
+    - CLI は「起動中アプリのリモコン」= Obsidian アプリが起動していること(未起動なら初回コマンドが起動)
 - [x] 環境変数の命名規則 — **`DOTFILES_` プレフィックスに決定**(CLAUDE.md「命名規則」に昇格。現状は obsidian.json 自動検出のため実使用なし。将来 vault 指定等が必要になったら `DOTFILES_OBSIDIAN_VAULT` のように命名)
 - [x] ネットワークドライブ(Z: 割り当て・NAS 等)連携 — **作らない(意図的な見送り)**。理由: ①サーバー名・共有名は業務情報・内部ネットワーク情報で最重要ルールに抵触しやすい ②sudo 必須・不通時のハング・ゴーストマウント等、挙動も危うい。必要になったら `local.sh`(git 管理外)に自分専用関数を書く
 - [ ] WSL の Windows 連携(PowerShell)で作るコマンドの洗い出し(Office 系は `word` / `excel` / `powerpoint` / `outlook` / `onenote` として実装済み。共通実体は `office-open`。`explorer` も実装済み — WSL: エクスプローラー / macOS: Finder / Linux: xdg-open)
