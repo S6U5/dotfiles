@@ -114,7 +114,7 @@
   - [x] テスト本体 `scripts/test-install.sh` 作成済み(一時 HOME でリンク・冪等性・非侵略・シェル読み込み・コマンド動作を検証。macOS と Ubuntu 24.04 コンテナで合格確認済み)
   - [x] `.devcontainer/devcontainer.json` 作成済み(コンテナ起動時に test-install.sh を自動実行)
   - [x] CI 組み込み済み — `.github/workflows/test.yml`(ubuntu-latest + macos-latest で test-install.sh を実行)
-- [ ] Docker の導入方針: **Docker Desktop は使わず Engine のみ**にしたい。Linux / WSL は docker-ce を公式 apt リポジトリから。macOS はネイティブ Engine 不可のため colima 等の軽量 VM 経由を検討(現状この Mac は Docker Desktop — 移行するかは要検討)
+- [ ] Docker の導入方針: **できれば Docker Desktop を使わず Engine のみにしたい(強制ではない)**。Linux / WSL は docker-ce を公式 apt リポジトリから。macOS はネイティブ Engine 不可のため colima 等の軽量 VM 経由を検討(現状この Mac は Docker Desktop — 移行するかは要検討)
 
 GitHub 連携:
 
