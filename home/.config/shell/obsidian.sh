@@ -44,8 +44,12 @@ _obsidian_pick() {
 
   if command -v jq >/dev/null 2>&1; then
     _obs_paths=$(jq -r '.vaults[].path' "$_obs_conf")
+  elif command -v python3 >/dev/null 2>&1; then
+    _obs_paths=$(python3 -c 'import json, sys
+for v in json.load(open(sys.argv[1], encoding="utf-8"))["vaults"].values():
+    print(v["path"])' "$_obs_conf")
   else
-    # jq が無い環境向けの簡易パース(","で分割して "path":"..." を抜き出す)。
+    # jq も python3 も無い環境向けの簡易パース(","で分割して "path":"..." を抜き出す)。
     # 既知の制限: vault パスに「,」やエスケープされた「"」を含むと候補が欠ける
     _obs_paths=$(tr ',' '\n' <"$_obs_conf" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p' | sed 's/\\\\/\\/g')
   fi
@@ -88,8 +92,37 @@ cdov() {
   unset _cdov_t
 }
 
-# vault を指定して Obsidian を起動する
+# PATH 上の実行ファイル ov(有名 OSS ページャー noborus/ov 等)を探す。
+# シェル関数の ov が先勝ちするため、command -v ではなく PATH を直接歩く
+_ov_find_real() {
+  _ovf_ifs=$IFS
+  IFS=:
+  for _ovf_d in $PATH; do
+    if [ -n "$_ovf_d" ] && [ -x "$_ovf_d/ov" ] && [ -f "$_ovf_d/ov" ]; then
+      printf '%s\n' "$_ovf_d/ov"
+      IFS=$_ovf_ifs
+      unset _ovf_ifs _ovf_d
+      return 0
+    fi
+  done
+  IFS=$_ovf_ifs
+  unset _ovf_ifs _ovf_d
+  return 1
+}
+
+# vault を指定して Obsidian を起動する。
+# 命名の注意: ページャー noborus/ov と名前が衝突するため、ページャー用途と
+# 判断できる呼び出し(引数が既存ファイル、またはパイプ・リダイレクト入力)は
+# 本物の ov に委譲する(命名方針: 実在コマンドと被ったら本物に譲る)
 ov() {
+  if { [ -f "${1:-}" ] || [ ! -t 0 ]; } && _ov_real=$(_ov_find_real); then
+    "$_ov_real" "$@"
+    set -- $? # 終了コードを退避(一時変数を残さないため)
+    unset _ov_real
+    return "$1"
+  fi
+  unset _ov_real
+
   _ov_t=$(_obsidian_pick "${1:-}") || {
     unset _ov_t
     return 1
@@ -117,7 +150,7 @@ ov() {
       open "$_ov_uri"
       ;;
     Linux)
-      if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if _dotfiles_is_wsl; then
         (
           cd /mnt/c 2>/dev/null || cd /
           cmd.exe /c start "" "$_ov_uri"
