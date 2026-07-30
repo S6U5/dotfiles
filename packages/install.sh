@@ -17,18 +17,19 @@ set -euo pipefail
 PACKAGES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DRY_RUN=0
-case "${1:-}" in
-  "") ;;
-  --dry-run) DRY_RUN=1 ;;
-  -h | --help)
-    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
-    exit 0
-    ;;
-  *)
-    echo "不明なオプション: $1" >&2
-    exit 1
-    ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    -h | --help)
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *)
+      echo "不明なオプション: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
 
 install_brew() {
   if ! command -v brew >/dev/null 2>&1; then
@@ -56,10 +57,26 @@ install_apt() {
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "[dry-run] sudo apt-get install: ${pkgs[*]}"
+    echo "[dry-run] (この環境の apt リポジトリに無いパッケージは実行時にスキップされます)"
     return 0
   fi
   sudo apt-get update
-  sudo apt-get install -y "${pkgs[@]}"
+
+  # リポジトリに無いパッケージ(古い Ubuntu の shfmt / zoxide 等)が
+  # 一括 install 全体を失敗させないよう、警告してスキップする
+  available=()
+  for pkg in "${pkgs[@]}"; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+      available+=("$pkg")
+    else
+      echo "WARN: スキップ: $pkg(この環境の apt リポジトリにありません)" >&2
+    fi
+  done
+  if [ "${#available[@]}" -eq 0 ]; then
+    echo "導入可能なパッケージがありません。"
+    return 0
+  fi
+  sudo apt-get install -y "${available[@]}"
 }
 
 case "$(uname -s)" in
