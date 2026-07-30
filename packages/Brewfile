@@ -6,3 +6,4 @@ brew "fzf"        # あいまい検索(shell/fzf.sh が存在チェックの上�
 brew "shellcheck" # シェルスクリプトの lint(scripts/lint.sh・pre-commit で利用)
 brew "shfmt"      # シェルスクリプトのフォーマッタ(同上)
 brew "zoxide"     # 賢い cd(.zshrc / .bashrc が存在チェックの上で初期化)
+brew "neovim"     # エディタ(vi/vim エイリアス・$EDITOR が存在チェックの上で利用。設定は home/.config/nvim で管理予定)

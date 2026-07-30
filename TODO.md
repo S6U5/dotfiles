@@ -137,7 +137,12 @@ GitHub 連携:
 - [ ] README にスクリーンショット・機能一覧(OSS 公開時の「見せる dotfiles」化)
 - [ ] `Makefile` / `justfile` で `make install` / `make test` などタスク整理
 - [ ] Neovim 設定など肥大化するものは別リポジトリに分けるか検討
-- [ ] Neovim 導入したい気持ちあり(難しくて保留中)。入るなら kickstart.nvim(最小テンプレートから育てる)か LazyVim(全部入り)か。まずはコミットメッセージ編集など部分導入から
+- [x] エディタ方針決定: **Neovim(kickstart.nvim)を使う。まずは部分導入から**(Wezterm / tmux 系のターミナル中心ワークフローとの相性を優先。慣れるまでは VSCode + Vim 拡張も併用してよい)
+  - [x] `vi` / `vim` を `nvim` にエイリアス — `aliases.sh` に追加済み(`nvim` がある環境のみ。無い環境は通常の vi/vim のまま)
+  - [x] `$EDITOR` の nvim 優先設定 — `env.sh` に既存(nvim があれば優先。`git commit` 等は `core.editor` を設定していないため自動でこれに乗る。`.gitconfig` 参照)
+  - [x] `packages/Brewfile` に `neovim` 追加済み(macOS)
+  - [x] WSL / Linux 用インストール — `packages/neovim-install.sh` として実装済み(公式 GitHub Releases の tarball を `~/.local/share/nvim-linux` に展開し `~/.local/bin/nvim` にシンボリックリンク。更新は同スクリプトの再実行。明示実行のみで install.sh / update.sh からは呼ばない)
+  - [ ] kickstart.nvim ベースの `home/.config/nvim/init.lua` 作成はこれから(周辺ツール: ripgrep・Nerd Font 等の依存整理も必要)
   - **注意: ダウンロード方法によっては最新版を使えない問題がある**
     - apt の neovim は大幅に古い(Ubuntu LTS だと数世代前)。kickstart.nvim / LazyVim は新しめの Neovim を要求するため、**apt 版では動かない可能性が高い。`packages/apt.txt` に安易に追加しないこと**
     - 最新版を使う手段: macOS は brew(常に新しい)。Linux は公式 GitHub Releases のバイナリ / AppImage、または bob(Neovim 専用バージョンマネージャ)。Ubuntu なら unstable PPA も選択肢
