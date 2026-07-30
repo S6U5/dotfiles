@@ -1,0 +1,12 @@
+# gitleaks の設定(pre-commit フック・CI の双方で使われる)。
+# 目的: 内蔵パターン検査と同じ「secrets-allow」コメントによる誤検知回避を
+# gitleaks 側でも有効にする(コメント方式を1つに統一するため)。
+# 本当に機密でないことを目視確認した上で使うこと。
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "secrets-allow コメントが付いた行は誤検知として許可(.githooks/pre-commit の内蔵検査と共通の回避方法)"
+regexTarget = "line"
+regexes = ['''secrets-allow''']

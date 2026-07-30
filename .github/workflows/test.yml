@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# GITHUB_TOKEN は読み取りのみに最小化(公開後は外部 PR でも実行されるため)
+permissions:
+  contents: read
+
 jobs:
   install-test:
     strategy:

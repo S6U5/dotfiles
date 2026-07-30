@@ -8,6 +8,7 @@
 # - 無くても動くよう、内蔵の簡易パターン検査を常に行う。
 # - 誤検知の場合: 該当行に「secrets-allow」というコメントを付けるとスキップできる。
 #   (本当に機密でないことを確認した上で使うこと)
+#   gitleaks 経路でも同じコメントが効くよう .gitleaks.toml の allowlist に登録済み。
 set -euo pipefail
 
 fail=0
@@ -35,7 +36,10 @@ PATTERNS=(
   '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
 )
 
-while IFS= read -r file; do
+# ファイル名は -z(NUL 区切り)で受ける。行区切りだと非 ASCII 名が core.quotePath で
+# クォートされ、パス照合が空振りして検査がスキップされてしまう。
+# --diff-filter は R(rename)も含める。rename 先への追記が検査から漏れないように。
+while IFS= read -r -d '' file; do
   # フック自身(検出パターンを含む)は検査対象外
   case "$file" in
     .githooks/*) continue ;;
@@ -52,7 +56,7 @@ while IFS= read -r file; do
       fail=1
     fi
   done
-done < <(git diff --cached --name-only --diff-filter=ACM)
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
 
 # --- シェルスクリプトの lint(shellcheck / shfmt があれば) ---------------
 lint_fail=0
