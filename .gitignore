@@ -3,6 +3,9 @@
 local.sh
 # ただし home/.local/(自作コマンド置き場)は *.local に誤マッチするため除外しない
 !home/.local/
+# Claude Code のローカル設定(実マシンの絶対パス等を含みうる。ファイル名が
+# *.local にマッチしないため明示指定)
+.claude/settings.local.json
 
 # OS が作る不要ファイル
 .DS_Store
