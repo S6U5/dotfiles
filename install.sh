@@ -19,7 +19,9 @@
 #   ./install.sh --prune    # リンク後に、リポジトリ由来のリンク切れリンクを削除
 set -euo pipefail
 
-DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# pwd -P で物理パスに正規化する(シンボリックリンク経由で実行されても
+# リンク済み判定 readlink = src が一致するように)
+DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 HOME_SRC="$DOTFILES_DIR/home"
 
 FORCE=0
@@ -91,7 +93,12 @@ link_file() {
     fi
   fi
 
-  run mkdir -p "$(dirname "$dest")"
+  # 親パスの途中に通常ファイルがあると mkdir -p は失敗する。
+  # set -e で全体が止まらないよう、方針どおり「スキップ+警告」にする
+  if ! run mkdir -p "$(dirname "$dest")" 2>/dev/null; then
+    warn "スキップ: $dest(親ディレクトリを作成できません。$(dirname "$dest") の途中に通常ファイルがある可能性)"
+    return 0
+  fi
   run ln -s "$src" "$dest"
   log "  link: $dest -> $src"
 }
@@ -157,13 +164,21 @@ main() {
       find "$HOME" -maxdepth 1 -type l -print0 2>/dev/null
       find "$HOME/.config" "$HOME/.local" -type l -print0 2>/dev/null
     )
-    log "prune: リンク切れを ${pruned} 件削除しました。"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "prune: [dry-run] リンク切れ ${pruned} 件を削除します。"
+    else
+      log "prune: リンク切れを ${pruned} 件削除しました。"
+    fi
   fi
 
   # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化
   if command -v git >/dev/null 2>&1 && [ -d "$DOTFILES_DIR/.git" ] && [ -d "$DOTFILES_DIR/.githooks" ]; then
     run git -C "$DOTFILES_DIR" config core.hooksPath .githooks
-    log "githooks: core.hooksPath を .githooks に設定しました。"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      log "githooks: [dry-run] core.hooksPath を .githooks に設定します。"
+    else
+      log "githooks: core.hooksPath を .githooks に設定しました。"
+    fi
   fi
 }
 
