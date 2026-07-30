@@ -66,12 +66,17 @@ ps_win="$wintemp\\dotfiles-wsl-compact-$rand.ps1"
 printf 'select vdisk file="%s"\r\nattach vdisk readonly\r\ncompact vdisk\r\ndetach vdisk\r\nexit\r\n' \
   "$vhdx" >"$(wslpath -u "$dp_win")"
 
+# PowerShell に埋め込むパスはシングルクォート文字列にし、' は '' に二重化して
+# エスケープする(%TEMP% がクォートや特殊文字を含むパスでも壊れないように)
+dp_win_q=$(printf '%s' "$dp_win" | sed "s/'/''/g")
+ps_win_q=$(printf '%s' "$ps_win" | sed "s/'/''/g")
+
 cat >"$(wslpath -u "$ps_win")" <<EOF
 Write-Host "WSL を終了します..."
 wsl --shutdown
 Start-Sleep -Seconds 3
 Write-Host "仮想ディスクを圧縮しています(数分かかることがあります)..."
-diskpart /s "$dp_win"
+diskpart /s '$dp_win_q'
 Write-Host ""
 Write-Host "完了しました。Enter キーで閉じます"
 Read-Host
@@ -83,5 +88,5 @@ echo "この WSL セッションはまもなく終了し、続きは Windows 側
 (
   cd /mnt/c 2>/dev/null || cd /
   powershell.exe -NoProfile -Command \
-    "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$ps_win'"
+    "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$ps_win_q'"
 )
