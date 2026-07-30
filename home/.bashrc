@@ -8,6 +8,7 @@ case $- in
   *) return ;;
 esac
 
+# shellcheck disable=SC1091  # 実行時の $HOME 上のファイルのため静的解析では追えない
 [ -r "$HOME/.config/shell/init.sh" ] && . "$HOME/.config/shell/init.sh"
 
 # --- 以下、bash 固有の設定 ---
@@ -21,6 +22,7 @@ shopt -s histappend
 # 補完(自作コマンドの補完定義は ~/.config/bash/completions/ に置く)
 if [ -d "$HOME/.config/bash/completions" ]; then
   for _f in "$HOME/.config/bash/completions"/*.bash; do
+    # shellcheck disable=SC1090  # 実行時に列挙するファイルのため静的解析では追えない
     [ -r "$_f" ] && . "$_f"
   done
   unset _f
@@ -35,6 +37,7 @@ if command -v fzf >/dev/null 2>&1; then
     eval "$_fzf_init"
   elif [ -r /usr/share/doc/fzf/examples/key-bindings.bash ]; then
     # apt 版など古い fzf(0.48 未満は --bash 非対応)向けフォールバック
+    # shellcheck disable=SC1091  # 対象環境(apt 版 fzf)にのみ存在するファイル
     . /usr/share/doc/fzf/examples/key-bindings.bash
   fi
   unset _fzf_init
