@@ -27,6 +27,7 @@ APPLESCRIPT
         # 呼び出し元をブロックしないようバックグラウンドで表示する
         (
           cd /mnt/c 2>/dev/null || cd /
+          # shellcheck disable=SC2016  # $env:... は PowerShell 側で展開する(意図的なシングルクォート)
           NOTIFY_TITLE="$title" NOTIFY_BODY="$body" \
             WSLENV="${WSLENV:+$WSLENV:}NOTIFY_TITLE/u:NOTIFY_BODY/u" \
             powershell.exe -NoProfile -Command \
