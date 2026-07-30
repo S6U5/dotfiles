@@ -1,12 +1,9 @@
 # dotfiles
 
-<!--
-CI バッジ。プライベートリポジトリではバッジ画像が取得できず壊れて表示されるため、
-OSS 公開に踏み切ったタイミングでコメントを外して有効化する。
 [![Lint](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/lint.yml)
 [![Test](https://github.com/S6U5/dotfiles/actions/workflows/test.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/test.yml)
 [![Secrets scan](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml/badge.svg)](https://github.com/S6U5/dotfiles/actions/workflows/secrets-scan.yml)
--->
+
 
 WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles です。
 
@@ -114,7 +111,7 @@ templates/         新プロジェクトにコピーして使う雛形($HOME に
 ├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
 ├── vscode/          VS Code 設定の雛形
 └── claude/          Claude Code 設定の雛形
-scripts/           lint(shellcheck / shfmt)とインストールテスト
+scripts/           lint(shellcheck / shfmt)・インストールテスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
@@ -139,6 +136,15 @@ scripts/           lint(shellcheck / shfmt)とインストールテスト
 
 ```sh
 docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-install.sh
+```
+
+## push を無効化する(誤 push 防止)
+
+fetch/pull だけ使い、この clone からは push しないようにしたい環境向けです。ローカルの `.git/config` だけを変更するので、他の clone やリモート側には影響しません。
+
+```sh
+./scripts/lock-push.sh           # push を無効化
+./scripts/lock-push.sh --unlock  # push を元に戻す
 ```
 
 または `.devcontainer/` でコンテナとして開くと自動実行されます。
