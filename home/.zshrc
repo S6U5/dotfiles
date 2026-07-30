@@ -13,12 +13,17 @@ setopt hist_ignore_all_dups share_history
 # 補完(自作コマンドの補完定義は ~/.config/zsh/completions/ に置く)
 fpath=("$HOME/.config/zsh/completions" $fpath)
 autoload -Uz compinit
-# キャッシュ(.zcompdump)が24時間以内なら検査を省略して高速起動
-if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
-  compinit
-else
-  compinit -C
-fi
+# キャッシュ(.zcompdump)が24時間以内なら検査を省略(-C)して高速起動。
+# glob 修飾子 (#q...) には EXTENDED_GLOB が必要なため、対話シェル全体の
+# glob 挙動を変えないよう無名関数 + localoptions の中でだけ有効化する
+() {
+  setopt localoptions extendedglob
+  if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+    compinit
+  else
+    compinit -C
+  fi
+}
 
 # zoxide(賢い cd)。compinit の後に初期化する必要がある
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
