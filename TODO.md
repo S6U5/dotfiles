@@ -64,6 +64,7 @@
   - [ ] 移行完了後に `~/Configs` を廃止するか
 - [x] `~/.claude/settings.json` など JSON 系は symlink でよいか — **テンプレート配布方式で決定**(symlink はしない。キーを書ける設定ファイルは home/ の自動リンクに入れない方針。このMacの旧 ~/Configs へのリンクは、切替時に手動でコピーに置き換える)
 - [x] tmux — **丸ごとリンク方式**に決定(`home/.tmux.conf`)。既存 Mac の設定を取り込み済み。クリップボードは copy-command を OS 自動判別(要 tmux 3.2+)、マシン固有設定は `~/.tmux.conf.local`(git 管理外)に逃がす
+- [x] herdr — **メインのターミナルマルチプレクサ**として導入決定(tmux はサブとして残す。herdr 非対応環境・SSH 越しなど向け)。tmux ライクな「エージェント対応」マルチプレクサ(Rust製、AGPL-3.0-or-later、Claude Code / Codex 等の状態をサイドバー表示)。導入は `packages/` に自作スクリプトを作らず、公式インストーラを直接使う方針(`curl -fsSL https://herdr.dev/install.sh | sh`、macOS/Linux 対応・ワンライナーで完結するため自作でラップする価値が薄く、公式ドキュメントに従うことでメンテモード等の変化にも気づける)。prefix キーは tmux と同じデフォルトの `Ctrl+B` のまま変更しない(両者を同時併用する想定はないため実害なしと判断)。設定ファイル(`~/.config/herdr/config.toml`)をカスタマイズする段になったら home/ 自動リンク方式(tmux と同様)で管理する
 
 ## 個人用ツール設定(リンター・フォーマッター等)
 
