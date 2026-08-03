@@ -1,0 +1,40 @@
+{
+  "skill_name": "package-researcher",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "packages/にripgrepを追加したい。macOSとLinuxそれぞれベストな入れ方教えて",
+      "expected_output": "brew/aptどちらも公式が明示的に非推奨としていないことを確認し、パターンA(Brewfile/apt.txtへの追記のみ、専用スクリプト不要)と判定した表形式の調査レポート。実装はせず調査止まり。",
+      "files": [],
+      "assertions": [
+        "スキルが指定する表形式(ツール|メンテ状況|macOS|Linux|判定)で報告している",
+        "brew/aptどちらも問題ない(パターンA、専用スクリプト不要)と明確に結論づけている",
+        "実装(ファイル編集)を行わず、調査止まりで報告している"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "atuinをpackagesに追加したい。公式のおすすめの入れ方調べて",
+      "expected_output": "macOSはbrewでOK、Linux/WSLはapt非対応(公式が推奨するのはinstallスクリプト)と判定し、パターンB(zoxide-install.shと同型の専用スクリプト)を提案する表形式の調査レポート。実装はせず調査止まり。",
+      "files": [],
+      "assertions": [
+        "スキルが指定する表形式で報告している",
+        "macOSはbrewで問題ないと判定している",
+        "Linux/WSLはaptを使わずパターンB(専用installスクリプトが必要)と判定し、その具体的根拠(apt非対応または非推奨の事実)を示している",
+        "実装(ファイル編集)を行わず、調査止まりで報告している"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "packages/Brewfileとapt.txtの中身、公式的に今でも正しい判断か一通り確認して",
+      "expected_output": "Brewfile/apt.txtの全7ツールを対象に、既存のzoxide/neovim専用スクリプト対応が今も妥当であることを(neovim-install.shの存在も含めて)正しく認識した棚卸しレポート。不要な変更提案をしない。実装はせず調査止まり。",
+      "files": [],
+      "assertions": [
+        "Brewfile/apt.txtに載っている全ツール(7種)を網羅している",
+        "zoxide/neovimが既に専用スクリプトで正しく対応済みであることを正しく認識し、不要な変更を提案していない",
+        "neovimのLinux/WSL導入がpackages/neovim-install.shで既に解決済みであることを認識している",
+        "実装(ファイル編集)を行わず、調査止まりで報告している"
+      ]
+    }
+  ]
+}

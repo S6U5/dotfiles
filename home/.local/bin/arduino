@@ -1,0 +1,90 @@
+#!/bin/sh
+# Arduino IDE を開く。ファイル(スケッチ)を1つ指定するとそれを開く。
+# 使い方: arduino [ファイル]
+# 注意: Linux では apt の旧 IDE(1.x)が同名の本物コマンドを持つため、
+#       本物が居ればそちらに譲る(明示パスで探し、自分自身への再帰を避ける)。
+set -eu
+
+if [ $# -gt 1 ]; then
+  echo "使い方: arduino [ファイル](指定できるのは1ファイルまで)" >&2
+  exit 1
+fi
+
+if [ $# -eq 1 ] && [ ! -e "$1" ]; then
+  echo "arduino: ファイルがありません: $1" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    if ! open -Ra "Arduino IDE" 2>/dev/null; then
+      echo "arduino: Arduino IDE が見つかりません(未インストール?)" >&2
+      exit 0
+    fi
+    if [ $# -eq 1 ]; then
+      exec open -a "Arduino IDE" "$1"
+    fi
+    exec open -a "Arduino IDE"
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v cmd.exe >/dev/null 2>&1; then
+        echo "arduino: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 0
+      fi
+      if [ $# -eq 1 ]; then
+        # cmd.exe のクオートを破る文字を含むファイル名は拒否する(インジェクション対策)
+        case "$1" in
+          *'"'* | *'&'* | *'|'* | *'<'* | *'>'* | *'^'* | *'%'*)
+            echo "arduino: Windows 側に渡せない文字(\" & | < > ^ %)を含むファイル名です: $1" >&2
+            exit 1
+            ;;
+        esac
+      fi
+      # Windows 側の Arduino IDE 2.x を探す。まず現在ユーザーのプロファイル配下、
+      # 次に全ユーザー用、最後に他ユーザー走査(共有 PC での誤検出を避ける順序)
+      profile=$(
+        cd /mnt/c 2>/dev/null || cd /
+        cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
+      )
+      profile_u=$(wslpath -u "$profile" 2>/dev/null) || profile_u=""
+      exe=$(
+        find ${profile_u:+"$profile_u/AppData/Local/Programs/Arduino IDE"} \
+          "/mnt/c/Program Files/Arduino IDE" \
+          /mnt/c/Users/*/AppData/Local/Programs/"Arduino IDE" \
+          -maxdepth 1 -name 'Arduino IDE.exe' 2>/dev/null | head -n 1
+      )
+      if [ -z "$exe" ]; then
+        echo "arduino: Arduino IDE が見つかりません(Windows 側に未インストール?)" >&2
+        exit 0
+      fi
+      # exec で直接起動するとターミナルが IDE 終了までブロックされるため、start でデタッチする
+      exe_win=$(wslpath -w "$exe")
+      (
+        cd /mnt/c 2>/dev/null || cd /
+        if [ $# -eq 1 ]; then
+          winpath=$(wslpath -w "$1")
+          cmd.exe /c start "" "$exe_win" "$winpath"
+        else
+          cmd.exe /c start "" "$exe_win"
+        fi
+      )
+      exit 0
+    fi
+    # Linux ネイティブ: 本物の arduino / arduino-ide があればそちらに譲る
+    for cand in /usr/bin/arduino /usr/local/bin/arduino /usr/bin/arduino-ide \
+      /snap/bin/arduino /var/lib/flatpak/exports/bin/cc.arduino.IDE2 \
+      "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/bin/cc.arduino.IDE2"; do
+      if [ -x "$cand" ]; then
+        nohup "$cand" "$@" >/dev/null 2>&1 &
+        exit 0
+      fi
+    done
+    echo "arduino: Arduino IDE が見つかりません(未インストール?)" >&2
+    exit 0
+    ;;
+  *)
+    echo "arduino: 未対応の OS です($(uname -s))" >&2
+    exit 0
+    ;;
+esac

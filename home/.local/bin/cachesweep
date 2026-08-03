@@ -1,0 +1,96 @@
+#!/bin/sh
+# 開発ツールのキャッシュを掃除する。既定は「サイズ表示のみ」で何も消さない。
+#   cachesweep                  # 各キャッシュの現在サイズを表示
+#   cachesweep --clean          # 安全なキャッシュ削除を実行(各ツールの公式コマンドのみ)
+#   cachesweep --docker         # --clean に加えて Docker の未使用データも削除(次回ビルドが遅くなりうる)
+#   cachesweep --apt-autoremove # --clean に加えて apt の不要パッケージも削除(キャッシュではなく
+#                               # パッケージ本体の削除のため、明示したときだけ)
+# OS 自体のキャッシュ(~/Library/Caches 等)には触れない(壊すリスクに見合わないため)。
+set -eu
+
+MODE=report
+DOCKER=0
+APT_AUTOREMOVE=0
+for arg in "$@"; do
+  case "$arg" in
+    --clean) MODE=clean ;;
+    --docker)
+      MODE=clean
+      DOCKER=1
+      ;;
+    --apt-autoremove)
+      MODE=clean
+      APT_AUTOREMOVE=1
+      ;;
+    -h | --help)
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+      exit 0
+      ;;
+    *)
+      echo "不明なオプション: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+show() { # $1: 名前, $2: パス
+  if [ -n "$2" ] && [ -e "$2" ]; then
+    printf '  %-6s %8s  %s\n' "$1" "$(du -sh "$2" 2>/dev/null | cut -f1)" "$2"
+  fi
+}
+
+echo "== キャッシュの状態"
+command -v brew >/dev/null 2>&1 && show brew "$(brew --cache 2>/dev/null)"
+command -v npm >/dev/null 2>&1 && show npm "$(npm config get cache 2>/dev/null)"
+command -v pnpm >/dev/null 2>&1 && show pnpm "$(pnpm store path 2>/dev/null)"
+command -v pip3 >/dev/null 2>&1 && show pip "$(pip3 cache dir 2>/dev/null)"
+command -v uv >/dev/null 2>&1 && show uv "$(uv cache dir 2>/dev/null)"
+command -v apt-get >/dev/null 2>&1 && show apt /var/cache/apt
+if command -v docker >/dev/null 2>&1; then
+  echo "  docker:"
+  docker system df 2>/dev/null | sed 's/^/    /' || echo "    (docker デーモン停止中)"
+fi
+
+if [ "$MODE" = report ]; then
+  echo ""
+  echo "削除するには: cachesweep --clean(Docker も含めるなら --docker)"
+  exit 0
+fi
+
+echo ""
+echo "== キャッシュ削除"
+if command -v brew >/dev/null 2>&1; then
+  echo "-- brew cleanup"
+  brew cleanup || true
+fi
+if command -v npm >/dev/null 2>&1; then
+  echo "-- npm cache clean"
+  npm cache clean --force || true
+fi
+if command -v pnpm >/dev/null 2>&1; then
+  echo "-- pnpm store prune"
+  pnpm store prune || true
+fi
+if command -v pip3 >/dev/null 2>&1; then
+  echo "-- pip cache purge"
+  pip3 cache purge || true
+fi
+if command -v uv >/dev/null 2>&1; then
+  echo "-- uv cache clean"
+  uv cache clean || true
+fi
+if command -v apt-get >/dev/null 2>&1; then
+  echo "-- apt clean(sudo を使用)"
+  sudo apt-get clean || true
+  if [ "$APT_AUTOREMOVE" -eq 1 ]; then
+    echo "-- apt autoremove(パッケージ本体の削除。--apt-autoremove 指定時のみ)"
+    sudo apt-get autoremove -y || true
+  fi
+fi
+if [ "$DOCKER" -eq 1 ] && command -v docker >/dev/null 2>&1; then
+  echo "-- docker system prune(未使用のコンテナ・イメージ・ネットワーク・ビルドキャッシュ)"
+  docker system prune -f || true
+fi
+
+echo ""
+echo "完了。WSL の場合、空いた領域を Windows に返すには wsl-compact を実行してください。"

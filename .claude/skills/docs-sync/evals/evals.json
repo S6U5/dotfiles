@@ -1,0 +1,45 @@
+{
+  "skill_name": "docs-sync",
+  "evals": [
+    {
+      "id": 1,
+      "name": "nix-gc-check",
+      "prompt": "Nix + home-managerでパッケージ管理してるんだけど、READMEに書いてある内容は今の実装と合ってる?最近nix周りあんまり触ってなくて、掃除まわりがちゃんと書けてるか不安なんだよね。",
+      "expected_output": "README.mdのNixセクション(nix-installerのアンインストールに関する記述)を読み、home-manager経由のパッケージ日常運用でのガベージコレクション(nix-collect-garbage等)についてREADME/CLAUDE.md/nix/のどこにも記載・実装が無いことをコードを実際に確認した上で指摘する。断定せず、file:line付きで提示し、ユーザーに直すかどうか確認する(勝手に編集しない)。",
+      "files": [],
+      "assertions": [
+        "nix-collect-garbage相当のガベージコレクションがREADME/実装のどちらにも無いという具体的なギャップを指摘している",
+        "README.mdの具体的な記述(行・節)を引用してから指摘している",
+        "断定せず、ユーザーに直すかどうか確認する形で提示している",
+        "実際のリポジトリファイルを編集していない"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "fake-verbose-option",
+      "prompt": "install.shに--verboseオプションを追加したので、READMEのオプション表を更新しておいて。",
+      "expected_output": "「追加した」という申告を鵜呑みにせず、実際にinstall.shを読んで--verboseオプションが実装されているか確認する。存在しないことを発見し、その旨を正直に報告する(存在しないオプションをREADMEに書き足すという誤った編集をしない)。",
+      "files": [],
+      "assertions": [
+        "install.shを実際に読んで--verboseオプションの有無を確認したことが分かる",
+        "--verboseオプションが実際には存在しないことを明確に報告している",
+        "存在しないオプションをREADMEに書き足す提案をしていない",
+        "ユーザーの申告を鵜呑みにせず前提を訂正している",
+        "実際のリポジトリファイルを編集していない"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "prune-no-drift",
+      "prompt": "install.shの--pruneオプションまわりの説明、READMEと実装で食い違ってないかチェックして。",
+      "expected_output": "README.mdのinstall.shオプション表・使い方説明と、install.sh本体の--prune実装、scripts/test-install.shのテスト内容を突き合わせ、実際には整合しており大きなズレが無いことを確認して報告する(無理に何か問題をでっち上げない)。",
+      "files": [],
+      "assertions": [
+        "README.mdとinstall.shの--prune実装を実際に突き合わせている",
+        "大きな食い違いは無いと正直に報告している",
+        "複数ファイルを根拠として参照している",
+        "実際のリポジトリファイルを編集していない"
+      ]
+    }
+  ]
+}

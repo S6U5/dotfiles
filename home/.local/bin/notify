@@ -1,0 +1,45 @@
+#!/bin/sh
+# デスクトップ通知を出す(OS ごとの通知手段を吸収する)。
+#   macOS: 通知センター / WSL: Windows のポップアップ / Linux: notify-send
+# どの手段も無ければ標準出力に表示する(壊れない)。
+# 使い方: notify <タイトル> [本文]
+# 安全設計: 引数はコード文字列(AppleScript / PowerShell)に埋め込まず、
+# 引数・環境変数として渡す(引用符入りの文字列でも壊れず、インジェクションも成立しない)。
+set -eu
+
+title=${1:-通知}
+body=${2:-}
+
+case "$(uname -s)" in
+  Darwin)
+    if command -v osascript >/dev/null 2>&1; then
+      osascript - "$title" "$body" <<'APPLESCRIPT' >/dev/null 2>&1 && exit 0
+on run argv
+  display notification (item 2 of argv) with title (item 1 of argv)
+end run
+APPLESCRIPT
+    fi
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if command -v powershell.exe >/dev/null 2>&1; then
+        # 値は WSLENV 経由の環境変数で渡す。ポップアップ(最大5秒)で
+        # 呼び出し元をブロックしないようバックグラウンドで表示する
+        (
+          cd /mnt/c 2>/dev/null || cd /
+          # shellcheck disable=SC2016  # $env:... は PowerShell 側で展開する(意図的なシングルクォート)
+          NOTIFY_TITLE="$title" NOTIFY_BODY="$body" \
+            WSLENV="${WSLENV:+$WSLENV:}NOTIFY_TITLE/u:NOTIFY_BODY/u" \
+            powershell.exe -NoProfile -Command \
+            '(New-Object -ComObject WScript.Shell).Popup($env:NOTIFY_BODY, 5, $env:NOTIFY_TITLE) | Out-Null'
+        ) >/dev/null 2>&1 &
+        exit 0
+      fi
+    elif command -v notify-send >/dev/null 2>&1; then
+      notify-send "$title" "$body" 2>/dev/null && exit 0
+    fi
+    ;;
+esac
+
+# フォールバック: 通知手段が無ければ端末に表示
+printf '[notify] %s: %s\n' "$title" "$body"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Microsoft OneNote を開く。使い方: onenote [ファイル]
+exec "$(dirname "$0")/office-open" "Microsoft OneNote" "onenote.exe" "onenote" "$@"

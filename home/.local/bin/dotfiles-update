@@ -1,0 +1,23 @@
+#!/bin/sh
+# dotfiles リポジトリを更新する(update.sh をどこからでも呼べるようにするラッパー)。
+# インストール後の実体はリポジトリへのシンボリックリンクなので、
+# 自身のリンクをたどってリポジトリの場所を割り出す(パスのハードコードを避ける)。
+set -eu
+
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case "$link" in
+    /*) target=$link ;;
+    *) target=$(dirname "$target")/$link ;;
+  esac
+done
+
+repo=$(cd "$(dirname "$target")/../../.." && pwd)
+
+if [ ! -x "$repo/update.sh" ]; then
+  echo "dotfiles-update: リポジトリが見つかりません($repo に update.sh がありません)" >&2
+  exit 1
+fi
+
+exec "$repo/update.sh" "$@"

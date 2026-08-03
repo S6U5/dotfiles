@@ -1,0 +1,5 @@
+{
+  "name": "dotfiles-test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "postCreateCommand": "bash scripts/test-install.sh"
+}

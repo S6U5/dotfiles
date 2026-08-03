@@ -1,0 +1,15 @@
+# herdr のキーバインドを tmux のデフォルトに揃える(プレフィックスは Ctrl+b のまま)
+
+[keys]
+# プレフィックスキー + % でペインを垂直分割、+ " で水平分割(tmuxのデフォルト split-window -h/-v に合わせる。
+# herdr 自体のデフォルトは prefix+v / prefix+minus のため明示的に上書きする)
+split_vertical = "prefix+%"
+split_horizontal = 'prefix+"'
+
+# ワークスペース選択(navigate mode)を矢印キーだけでなく hjkl でも操作できるようにする
+# (ペイン移動 h/j/k/l はデフォルトで既に有効。ワークスペース上下だけデフォルトが矢印キーのみだった)
+navigate_workspace_up = "k"
+navigate_workspace_down = "j"
+
+[ui]
+agent_panel_sort = "priority"

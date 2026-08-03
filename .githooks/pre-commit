@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# コミット前チェック用の pre-commit フック。
+#   1. main ブランチへの直接コミットをブロック(作業ブランチの利用を強制)
+#   2. 機密情報(APIキー・トークン等)の混入をブロック
+#   3. シェルスクリプトの lint
+#
+# 有効化: git config core.hooksPath .githooks (install.sh が自動で設定する)
+#
+# - gitleaks がインストールされていれば、まず gitleaks で検査する。
+# - 無くても動くよう、内蔵の簡易パターン検査を常に行う。
+# - 誤検知の場合: 該当行に「secrets-allow」というコメントを付けるとスキップできる。
+#   (本当に機密でないことを確認した上で使うこと)
+#   gitleaks 経路でも同じコメントが効くよう .gitleaks.toml の allowlist に登録済み。
+set -euo pipefail
+
+# --- main ブランチへの直接コミットをブロック ---------------------------
+# 個人リポジトリなのでレビュー必須化はしないが、「作業はブランチで行い main は
+# 常にそのまま使える状態を保つ」というCLAUDE.mdのブランチルールを機械的に強制する。
+# エージェント(Claude Code等)がこのルールを見落として main のまま作業を進めて
+# しまうのを、リモートへの push で弾かれる前(コミット時点)に検知して防ぐ狙い。
+# 緊急で直接コミットしたい場合は `git commit --no-verify` で回避できる。
+current_branch=$(git symbolic-ref --short -q HEAD || true)
+if [ "$current_branch" = "main" ]; then
+  cat >&2 <<'EOF'
+ERROR: main ブランチで直接コミットしようとしています。
+       作業ブランチを作成してください: git checkout -b <ブランチ名>
+       (緊急で main に直接コミットする場合は git commit --no-verify で回避できます)
+EOF
+  exit 1
+fi
+
+fail=0
+
+# --- gitleaks(あれば) -------------------------------------------------
+# protect サブコマンドは v8.19.0 で非推奨化されたため、公式が pre-commit 向けと
+# 明記している `git --staged` を使う(stdin 経由の diff 手動パースより diff の
+# 解釈が正確で、.gitleaks.toml の secrets-allow 許可リストとの整合性も保てる)。
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks git --staged --redact >/dev/null 2>&1; then
+    echo "ERROR: gitleaks がステージ内容から機密情報を検出しました。" >&2
+    echo "       詳細: gitleaks git --staged -v" >&2
+    fail=1
+  fi
+fi
+
+# --- 内蔵パターン検査(gitleaks が無くても動く) -------------------------
+PATTERNS=(
+  'AKIA[0-9A-Z]{16}'                   # AWS アクセスキー
+  'ghp_[A-Za-z0-9]{36}'                # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{22,}'       # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'                # GitHub OAuth トークン
+  'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack トークン
+  'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API キー
+  'sk-[A-Za-z0-9]{32,}'                # OpenAI 等の sk- 系キー
+  'AIza[0-9A-Za-z_-]{35}'              # Google API キー
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----' # 秘密鍵
+  '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
+)
+
+# ファイル名は -z(NUL 区切り)で受ける。行区切りだと非 ASCII 名が core.quotePath で
+# クォートされ、パス照合が空振りして検査がスキップされてしまう。
+# --diff-filter は R(rename)も含める。rename 先への追記が検査から漏れないように。
+while IFS= read -r -d '' file; do
+  # フック自身(検出パターンを含む)は検査対象外
+  case "$file" in
+    .githooks/*) continue ;;
+  esac
+
+  added=$(git diff --cached --unified=0 --no-color -- "$file" | grep -E '^\+[^+]' || true)
+  [ -z "$added" ] && continue
+
+  for pat in "${PATTERNS[@]}"; do
+    matches=$(printf '%s\n' "$added" | grep -Ei -e "$pat" | grep -v 'secrets-allow' || true)
+    if [ -n "$matches" ]; then
+      echo "ERROR: ${file}: 機密情報らしきパターンを検出しました:" >&2
+      printf '%s\n' "$matches" | sed 's/^/    /' >&2
+      fail=1
+    fi
+  done
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+# --- シェルスクリプトの lint(shellcheck / shfmt があれば) ---------------
+# lint.sh はディスク上のファイル内容を検査するため、ステージしていない未ステージの
+# 編集がワーキングツリーに残っていると、コミットに含まれない変更のせいで誤って
+# ブロックされたり、逆にステージ内容自体の問題を見逃したりしうる。
+# git stash --keep-index でステージ済みの内容(=実際にコミットされる内容)だけを
+# 一時的にワーキングツリーへ反映させてから lint し、完了後に必ず元へ戻す
+# (trap で lint 中に異常終了しても確実に復元する)。
+lint_fail=0
+repo_root=$(git rev-parse --show-toplevel)
+if [ -x "$repo_root/scripts/lint.sh" ]; then
+  stashed=0
+  if ! git diff --quiet && git stash push --keep-index -q -m "pre-commit-lint (auto)"; then
+    stashed=1
+  fi
+  restore_stash() {
+    if [ "$stashed" -eq 1 ]; then
+      stashed=0
+      git stash pop -q
+    fi
+  }
+  trap restore_stash EXIT
+
+  if ! "$repo_root/scripts/lint.sh"; then
+    echo "ERROR: lint に失敗しました(ステージされる内容のみを検査)。" >&2
+    lint_fail=1
+  fi
+
+  restore_stash
+  trap - EXIT
+fi
+
+if [ "$fail" -ne 0 ]; then
+  cat >&2 <<'EOF'
+
+コミットをブロックしました。機密情報が含まれていないか確認してください。
+  - 本物の機密の場合: ステージから外し、環境変数や *.local(gitignore 対象)に分離する。
+  - 誤検知の場合: 該当行に secrets-allow コメントを付けて再コミットする。
+EOF
+fi
+
+if [ "$fail" -ne 0 ] || [ "$lint_fail" -ne 0 ]; then
+  exit 1
+fi

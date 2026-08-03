@@ -1,0 +1,82 @@
+[
+  {
+    "query": "packages/Brewfileにripgrep追加しといて",
+    "should_trigger": true
+  },
+  {
+    "query": "atuin入れたいんだけど、どうすればいい?macとWSL両方で使いたい",
+    "should_trigger": true
+  },
+  {
+    "query": "starshipをこのdotfilesに組み込みたいんだけど、どう追加するのがいい?",
+    "should_trigger": true
+  },
+  {
+    "query": "packages/apt.txtのfzf、まだこれで大丈夫?ちょっと前に追加したきり放置してる",
+    "should_trigger": true
+  },
+  {
+    "query": "zoxideの導入方法、もう古くなってたりしない?最近確認してないから心配",
+    "should_trigger": true
+  },
+  {
+    "query": "新しいツールeza使いたいんだけど、Brewfileに1行足すだけでいいのかな",
+    "should_trigger": true
+  },
+  {
+    "query": "batをpackagesに追加する場合、macOSとLinuxでのベストな入れ方教えて",
+    "should_trigger": true
+  },
+  {
+    "query": "このツールまだメンテされてる?アーカイブされてたりしない?tmuxなんだけど",
+    "should_trigger": true
+  },
+  {
+    "query": "direnvをdotfilesに追加したい。brewとaptどっちがいいか判断して",
+    "should_trigger": true
+  },
+  {
+    "query": "packages/配下、しばらく見てないから一通り古くなってないかチェックしてほしい",
+    "should_trigger": true
+  },
+  {
+    "query": "brewでripgrep入れて",
+    "should_trigger": true
+  },
+  {
+    "query": "Brewfileの書き方(bundle DSLの構文)を教えて",
+    "should_trigger": false
+  },
+  {
+    "query": "npmでglobalインストールしてるパッケージ管理、なんかいい方法ある?",
+    "should_trigger": false
+  },
+  {
+    "query": "Dockerfileのapt installを整理してイメージサイズ減らしたい",
+    "should_trigger": false
+  },
+  {
+    "query": "shellcheckで怒られてるこのスクリプトのエラー直して",
+    "should_trigger": false
+  },
+  {
+    "query": "このPythonプロジェクトのrequirements.txtに新しいライブラリ追加したい",
+    "should_trigger": false
+  },
+  {
+    "query": "brew updateとbrew upgrade、今の環境で実行して",
+    "should_trigger": false
+  },
+  {
+    "query": "READMEにバッジ追加して",
+    "should_trigger": false
+  },
+  {
+    "query": "tmuxの設定ファイル(.tmux.conf)のprefixキー変えたい",
+    "should_trigger": false
+  },
+  {
+    "query": "新しいnpmパッケージ調べて、package.jsonに追加して",
+    "should_trigger": false
+  }
+]

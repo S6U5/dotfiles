@@ -1,0 +1,62 @@
+# Git 共通設定のテンプレート。~/.gitconfig にコピーして使う(templates/git/README.md 参照)。
+#
+# user.name / user.email はこのファイルに書かない(公開リポジトリのため)。
+# 各マシンで ~/.gitconfig.local を作成すること:
+#   [user]
+#     name = あなたの名前
+#     email = あなたのメールアドレス
+
+[init]
+	# 新規リポジトリのデフォルトブランチ
+	defaultBranch = main
+
+[core]
+	# 日本語ファイル名をエスケープ表示しない
+	quotepath = false
+	# 改行コードは LF に統一(Windows/WSL とのやり取りでも安全)
+	autocrlf = input
+	# delta があれば使う(git diff 等をシンタックスハイライト表示)。無ければ
+	# less にフォールバックする(delta は home.nix で任意導入のツールのため、
+	# 未導入の環境でも壊れないようにする)
+	pager = "if command -v delta >/dev/null 2>&1; then delta; else less; fi"
+	# editor は設定しない($EDITOR にフォールバックさせる。
+	#  マシン固有のエディタ指定は ~/.gitconfig.local へ)
+
+[interactive]
+	# git add -p 等の対話操作でも delta の色付けを使う。無ければ素通しする
+	diffFilter = "if command -v delta >/dev/null 2>&1; then delta --color-only; else cat; fi"
+
+[delta]
+	# 差分中のファイル間をジャンプできるナビゲーション(n/N)を有効化
+	navigate = true
+	# 行番号を表示する
+	line-numbers = true
+
+[pull]
+	# fast-forward できない pull は失敗させる(意図しないマージコミットを防ぐ)
+	ff = only
+
+[push]
+	# 初回 push 時に上流ブランチを自動設定(git 2.37+。古い git では無視される)
+	autoSetupRemote = true
+
+[fetch]
+	# リモートで消えたブランチをローカルの追跡からも削除
+	prune = true
+
+[diff]
+	# 差分アルゴリズムを賢いものに(移動したブロックの検出が改善)
+	algorithm = histogram
+
+[merge]
+	# コンフリクト表示に共通祖先も出す(git 2.35+)
+	conflictstyle = zdiff3
+
+[alias]
+	st = status
+	lg = log --oneline --graph --decorate
+
+# マシン固有・個人情報の設定(名前・メール・エディタ等)。
+# ファイルが無ければ黙って無視される。最後に読むことでローカル側が勝つ
+[include]
+	path = ~/.gitconfig.local

@@ -1,0 +1,18 @@
+# GitHub Actions で使うアクションのバージョン更新を自動 PR 化する
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  # nix/flake.lock の入力(nixpkgs 等)のバージョン更新を自動 PR 化する
+  - package-ecosystem: nix
+    directory: /nix
+    schedule:
+      interval: monthly
+    groups:
+      flake-inputs:
+        patterns: ["*"]

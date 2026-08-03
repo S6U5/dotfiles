@@ -1,0 +1,3 @@
+# shellcheck のグローバル設定(全プロジェクト共通の個人設定)
+# source されるファイルの実体を追跡してチェックする(SC1091 の誤検知を減らす)
+external-sources=true
