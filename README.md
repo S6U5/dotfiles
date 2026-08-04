@@ -11,9 +11,9 @@ WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles
 > **注**: あくまで個人の設定(好みが濃いめ)です。そのまま使うより、構成や
 > スクリプトの作りを参考にしたり、フォークして自分用に育てるのに向いています。
 
-<img alt="dotfiles 実行時構造図: OS(macOS/WSL/Linux) → ターミナルエミュレータ → zsh → herdr → CLIアプリ(Neovim・fzf・zoxide)。herdrとCLIアプリを青枠の点線で囲み、Nix + Home Manager が導入・設定を管理する範囲を示す" src="docs/assets/stack.svg" width="620">
+<img alt="dotfiles 実行時構造図: OS(macOS/WSL/Linux) → ターミナルエミュレータ → zsh → herdr → CLIアプリ(Neovim・fzf・zoxide)。zsh(設定)・herdr・CLIアプリを青枠の点線で囲み、Nix + Home Manager が導入・設定を管理する範囲を示す(zsh バイナリ本体は点線の外)" src="docs/assets/stack.svg" width="620">
 
-<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが install.sh により $HOME へシンボリックリンクされる様子。zsh の .zshenv / .config/zsh/.zshrc も他のファイルと同様に home/ からシンボリックリンクされる" src="docs/assets/config-placement.svg" width="600">
+<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが home-manager(home.file / mkOutOfStoreSymlink)により $HOME へシンボリックリンクされる様子。zsh の .zshenv / .config/zsh/.zshrc も他のファイルと同様に home/ からシンボリックリンクされる" src="docs/assets/config-placement.svg" width="600">
 
 ## 目次
 
@@ -30,23 +30,19 @@ WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles
 ## 特徴
 
 - **クロスプラットフォーム** — zsh / bash 両対応。macOS・WSL・Linux(Raspberry Pi 含む)で同じコマンド・設定が動きます
-- **既存環境を侵略しない** — 既存ファイルは絶対に上書きせず(スキップ+警告)、置き換えは明示した時だけ・必ず退避してから。何度実行しても安全(冪等)
-- **依存が無くても壊れない** — fzf や各アプリが無い環境でも、エラーを出さず動くか、親切に案内して終了します
+- **Nix + home-manager に一本化** — パッケージ導入・dotfiles 配布(`home/` 以下のシンボリックリンク)を単一の経路にまとめています(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。**Nix が使えない環境ではこの dotfiles は機能しません**(意図的にフォールバックは作っていません)
+- **home/ を直接編集すればすぐ反映される** — `home.file` は `mkOutOfStoreSymlink` で配布しているため、Nix store へコピーする通常の方式と違い、`home/` 配下のファイルを編集すればそのまま `$HOME` 側に反映されます(`home-manager switch` の再実行は不要)
 - **機密ゼロ方針** — API キー・個人情報はリポジトリに置かず、git 管理外のローカルファイル(`*.local` / `local.sh`)へ分離。pre-commit フック+ CI の二段でコミット前後に機密混入を検査します
-- **テスト済み** — インストール動作(リンク・冪等性・非侵略・掃除)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
+- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash ブートストラップ等)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
 
 ## クイックスタート
 
 ```sh
 git clone https://github.com/S6U5/dotfiles.git
 cd dotfiles
-./backup.sh   # 既存の設定を ~/.dotfiles-backup/backup-<日時>/ に退避(推奨)
-./install.sh  # home/ 以下を同じ構造で $HOME にシンボリックリンク
 ```
 
-### パッケージ導入(Nix + home-manager)
-
-ツール一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship / zsh-autosuggestions / zsh-syntax-highlighting 等)は **Nix + home-manager** でまとめて導入します。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` 参照)。
+パッケージ導入・dotfiles 配布は **Nix + home-manager** に一本化しています(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship 等のツール一式、および `home/` 配下の設定ファイル配布の両方)。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` / `docs/decisions/dotfiles-distribution.md` 参照)。
 
 前提として Nix 本体のインストールが必要です。[NixOS/nix-installer](https://github.com/NixOS/nix-installer)(NixOS 公式が管理する、Determinate Nix Installer のフォーク。商用企業ではなく NixOS 自体が管理している点、flakes が扱える点、アンインストールが `nix-installer uninstall` で綺麗に戻せる点から、公式のクラシックインストーラより推奨)を使います:
 
@@ -54,9 +50,13 @@ cd dotfiles
 curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes
 ```
 
-インストール後、シェルを再起動(または新しいターミナルを開く)してから、環境に合わせて実行します(`#` の後ろが対象システム)。
+インストール後、シェルを再起動(または新しいターミナルを開く)してから、リポジトリのルートで `DOTFILES_DIR` を設定します(`nix/home.nix` が `home/` の実体パスを解決するために必要):
 
-**初回は `home-manager` コマンドがまだ存在しない**ため、いきなり `home-manager switch ...` を打つと `command not found` になります。`nix run home-manager -- switch ...` のように `nix run` 経由で実行してください:
+```sh
+export DOTFILES_DIR=$(pwd)
+```
+
+**初回は `home-manager` コマンドがまだ存在しない**ため、いきなり `home-manager switch ...` を打つと `command not found` になります。`nix run home-manager -- switch ...` のように `nix run` 経由で実行してください(`#` の後ろが対象システム):
 
 ```sh
 nix run home-manager -- switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
@@ -65,7 +65,7 @@ nix run home-manager -- switch --flake ./nix#x86_64-darwin --impure   # macOS(In
 nix run home-manager -- switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon)
 ```
 
-`nix/home.nix` で `programs.home-manager.enable = true` としているため、この初回の `switch` が完了すると home-manager 自体もインストールされ、`home-manager` コマンドが PATH に入ります。2回目以降はこの短い形で実行できます:
+`nix/home.nix` で `programs.home-manager.enable = true` としているため、この初回の `switch` が完了すると home-manager 自体もインストールされ、`home-manager` コマンドが PATH に入ります。2回目以降はこの短い形で実行できます(`DOTFILES_DIR` は毎回のシェルセッションで設定してください):
 
 ```sh
 home-manager switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
@@ -76,42 +76,41 @@ home-manager switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon
 
 `nix/flake.lock` はバージョンを固定するためリポジトリにコミット済みなので、通常は生成不要です。`nixpkgs` / `home-manager` のバージョンを更新したいときだけ `nix flake update ./nix` を実行してください。
 
-WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマンドを実行してください(Nix自体もWSL内にインストールします)。dotfiles 自体(`home/` 以下)にはどのシステムを選んでも影響しません。
+WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマンドを実行してください(Nix自体もWSL内にインストールします)。
 
-`--impure` が必要なのは、実際のユーザー名をリポジトリにハードコードしないため `nix/home.nix` が `builtins.getEnv "USER"` で実行時に解決しているためです(flake の pure 評価では環境変数を読めません)。
+`--impure` が必要なのは、実際のユーザー名やリポジトリパスをコミットにハードコードしないため、`nix/home.nix` が `builtins.getEnv` で実行時に解決しているためです(flake の pure 評価では環境変数を読めません)。
 
-zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は `docs/decisions/login-shell.md` 参照)。`.zshrc` / `.zshenv` の**内容**は bash と同様 `home/` からのシンボリックリンクで管理し、Nix(home-manager)には依存しません。プロンプト(Starship)・zsh-autosuggestions・zsh-syntax-highlighting は Nix の `home.packages` で導入したものを `.zshrc` 側が存在チェックの上で読み込む構成のため、`home-manager switch` 未実行でも zsh 自体は壊れません(oh-my-zsh は低速マウント上での起動遅延を理由に廃止しました)。
+zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は `docs/decisions/login-shell.md` 参照)。`.zshrc` / `.zshenv` の**内容**は他の `home/` 配下のファイルと同じく home-manager の `home.file` で配布します。
 
 古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです(`home-manager expire-generations` や `nix-collect-garbage -d` 等)。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください。
+
+#### Nerd Font をターミナルで有効にする(Starship・Neovim のアイコン表示に必要)
+
+Starship のプロンプト(セパレーター記号や言語アイコン)や Neovim(LazyVim)のファイルツリーアイコンは Nerd Font 専用のグリフを使います。`nerd-fonts.jetbrains-mono` は `home-manager switch` で自動導入されますが、**フォントファイルを置くだけでは表示されません**。ターミナルエミュレータ側で明示的にそのフォントを選ぶ設定が別途必要です。
+
+- **WSL の場合は特に注意**: `home-manager switch` は WSL 内(Linux 側)にフォントを入れるだけで、Windows Terminal は Windows ネイティブのアプリのため WSL 内のフォントを参照できません。**Windows 側にも別途 Nerd Font をインストール**する必要があります。[Nerd Fonts 公式サイト](https://www.nerdfonts.com/) から `JetBrainsMono Nerd Font` をダウンロードし、Windows 側でインストールしてください。
+- **Windows Terminal**: 設定 → プロファイル(既定または対象プロファイル) → 外観 → フォントフェイス を `JetBrainsMono Nerd Font` に変更します。
+- **VS Code の統合ターミナル**(Windows / macOS 共通): `settings.json` の `terminal.integrated.fontFamily` を `"JetBrainsMono Nerd Font"` に設定します。
+- **macOS のターミナル(Terminal.app / iTerm2 等)**: 環境設定のフォントを `JetBrainsMono Nerd Font` に変更します。
+
+設定後もアイコンが崩れる場合は、フォントが正しく選択されているか(ターミナルの再起動が必要な場合があります)を確認してください。
 
 #### zsh をログインシェルにする場合(任意)
 
 - macOS: 標準で zsh が入っているため何もする必要はありません。
 - WSL / Linux: Windows 自体には zsh が入っていないため、WSL の Linux ディストリビューション側で別途インストールが必要です。パッケージマネージャ(Ubuntu/Debian 系なら `sudo apt install zsh` 等。パッケージ名・コマンドはディストリごとに異なるため配布元の公式ドキュメントを参照。zsh 公式の [Installing zsh(FAQ)](https://zsh.sourceforge.io/FAQ/zshfaq01.html) も参考になります)でインストールしたら、`chsh -s $(which zsh)` でログインシェルに設定してください。反映にはログアウト→再ログイン(WSL の場合はターミナルの再起動でも可)が必要です(`man chsh` も参照)。
 
-パッケージ導入(Nix)と設定のリンク(`install.sh`)は基本的に独立していて、Nix を実行しなくても dotfiles 自体は壊れず動きます。zsh も bash と同じく `.zshrc`/`.zshenv` を `home/` から直接シンボリックリンクするため、`home-manager switch` を実行していなくてもエイリアス・関数・PATH追加(`~/.local/bin` 等)は `install.sh` だけで有効になります(Starship・zsh-autosuggestions・zsh-syntax-highlighting など Nix 経由の機能だけは `home-manager switch` 適用後に有効になります)。
+### 既存の設定ファイルとぶつかったとき
 
-### 既存の設定ファイルとぶつかったとき(初回導入の正規ルート)
+`~/.bashrc`(Ubuntu / WSL では OS が最初から設置)や `~/.tmux.conf` など、既存ファイルがある状態で `home-manager switch` を実行すると、home-manager は衝突を検知して**エラーで停止**します(黙って上書きしません)。対処法:
 
-`~/.bashrc`(Ubuntu / WSL では OS が最初から設置)や `~/.tmux.conf` など、**主要ファイルは初回導入時にほぼ必ず「スキップ+警告」になります**。これは異常ではなく、既存環境を黙って壊さないための設計です。警告された各ファイルはこう判断します:
+1. 中身が不要、またはこのリポジトリに取り込み済み → `home-manager switch --flake ./nix#<system> --impure -b bak`(既存ファイルを `<ファイル名>.bak` に退避してから上書き)
+2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `-b bak` を付けて再実行
+3. 判断に迷う → 事前に `cp -a ~/.対象ファイル ~/.対象ファイル.manual-backup` のように手動で退避してから進めてください
 
-1. 中身が不要、またはこのリポジトリに取り込み済み → `./install.sh --force`(`*.bak.<日時>` に退避してから置き換え)
-2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `--force`
-3. 判断に迷う → `backup.sh` の退避があるのでいつでも戻せます
+(`~/.gitconfig` は home-manager 配布の対象外です。`templates/git/README.md` の手順で手動セットアップしてください。)
 
-(`~/.gitconfig` は home/ 自動リンクの対象外です。`templates/git/README.md` の手順で手動セットアップしてください。)
-
-### install.sh のオプション
-
-| オプション | 動作 |
-|---|---|
-| (なし) | リンクを張る。既存ファイルはスキップ+警告 |
-| `--dry-run` | 何が行われるかの表示のみ(変更しない) |
-| `--force` | 既存ファイルを `*.bak.<日時>` に退避してからリンク |
-| `--prune` | リポジトリ側で削除されたファイルの「リンク切れ」を掃除(このリポジトリ由来のリンクのみ対象) |
-| `--uninstall` | このリポジトリが作成したリンク・ブートストラップファイル(`.bashrc`/`.bash_profile`)を削除。手を加えたブートストラップファイルは保護してスキップ。nix/home.nix が管理するパッケージは対象外 |
-
-リポジトリを別の場所へ移動した場合も、再実行すれば古いリンクが自動で張り替わります(他ツール由来のリンクには触れません)。
+リポジトリを別の場所へ移動した場合は、その都度 `export DOTFILES_DIR=$(pwd)` を設定し直してから `home-manager switch` を再実行してください。
 
 ## 収録コマンド・関数
 
@@ -145,7 +144,7 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update [--prune]` | どこからでもこのリポジトリを更新(pull + 再リンク。`nix/` に変更があれば `home-manager switch` の実行を促すメッセージを表示。実行はしない) |
+| `dotfiles-update` | どこからでもこのリポジトリを更新(`git pull`。更新があれば `home-manager switch` の実行を促すメッセージを表示。実行はしない) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
@@ -166,46 +165,45 @@ home/              $HOME に同じ構造でリンクされる設定ファイル�
 ├── .tmux.conf / .npmrc                各ツールの共通設定
 └── ...
 
-install.sh が生成するもの($HOME に直接置くが home/ には対応物が無い)
-├── ~/.bashrc / ~/.bash_profile        dotfiles 管理外の実ファイル。~/.config/bash/bashrc を
-│                                      読み込むだけの1行(判断根拠は docs/decisions/zshrc-pollution.md)
+home-manager が生成するもの($HOME に直接置くが home/ には対応物が無い)
+├── ~/.bashrc / ~/.bash_profile        dotfiles 管理外の実ファイル。home.activation が
+│                                      ~/.config/bash/bashrc を読み込むだけの1行として生成
+│                                      (判断根拠は docs/decisions/zshrc-pollution.md)
 docs/              ドキュメント
 ├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md)
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)
 └── assets/          README 掲載図等
-nix/               Nix + home-manager によるパッケージ管理(一本化)
-templates/         新プロジェクトや機密を含みうる単一設定ファイルの雛形($HOME にはリンクされない)
+nix/               Nix + home-manager(パッケージ導入 + home/ 配下の dotfiles 配布、一本化)
+templates/         機密を含みうる単一設定ファイルの雛形($HOME にはリンクされない)
 ├── project/         開発プロジェクト用(AGENTS.md / CLAUDE.md / .editorconfig など)
 ├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
 ├── vscode/          VS Code 設定の雛形
 ├── claude/          Claude Code 設定の雛形
 └── git/             git 設定の雛形(.gitconfig.template。手動コピーして使う。判断根拠は docs/decisions/gitconfig-management.md)
-scripts/           lint(shellcheck / shfmt)・インストールテスト・push ロック
+scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
-マシン固有・プライベートな値は `~/.config/shell/local.sh` / `~/.gitconfig.local` / `~/.tmux.conf.local`(いずれも git 管理外)に置くと、共通設定の後に読み込まれて上書きできます。`~/.config/shell/local.sh` と `~/.tmux.conf.local` は home/ 自動リンクされた共通設定への上書きですが、`~/.gitconfig` 自体は home/ 自動リンクではなく `templates/git/` からの手動コピー配布です(理由は `docs/decisions/gitconfig-management.md` 参照)。
+マシン固有・プライベートな値は `~/.config/shell/local.sh` / `~/.gitconfig.local` / `~/.tmux.conf.local`(いずれも git 管理外)に置くと、共通設定の後に読み込まれて上書きできます。`~/.config/shell/local.sh` と `~/.tmux.conf.local` は home-manager 配布された共通設定への上書きですが、`~/.gitconfig` 自体は home-manager 配布ではなく `templates/git/` からの手動コピー配布です(理由は `docs/decisions/gitconfig-management.md` 参照)。
 
 ## 更新
 
 ```sh
-./update.sh            # 最新化(fast-forward のみ)+ 新規ファイルのリンク
-./update.sh --prune    # あわせてリンク切れも掃除
+git pull --ff-only
+home-manager switch --flake ./nix#<system> --impure
 ```
 
-どこからでも `dotfiles-update` コマンドで同じことができます。未コミットのローカル変更がある場合は安全のため中断します。`nix/` に変更が入った pull だった場合は `home-manager switch` の実行を促すメッセージが表示されます(自動実行はしません。パッケージ導入は明示実行のみという方針のため)。
+どこからでも `dotfiles-update` コマンドで `git pull` 相当を実行できます。未コミットのローカル変更がある場合は安全のため中断します。更新があれば `home-manager switch` の実行を促すメッセージが表示されます(自動実行はしません。パッケージ導入・dotfiles反映は明示実行のみという方針のため)。
 
 ## テスト
 
 ```sh
-./scripts/test-install.sh
+./scripts/test-home-manager.sh
 ```
 
-一時ディレクトリを HOME に見立てて、リンク配置・冪等性・既存ファイル非侵略・`--force` の退避・`--prune` の掃除範囲などを検証します(実際の `$HOME` は変更しません)。まっさらな環境で試すなら:
+`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` を実行してください(実 `$HOME` を書き換えます)。
 
-```sh
-docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-install.sh
-```
+まっさらな環境で試すなら、`.devcontainer/` でこのリポジトリをコンテナとして開くと、Nix導入から `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` までが自動実行されます。
 
 ## push を無効化する(誤 push 防止)
 
@@ -215,8 +213,6 @@ fetch/pull だけ使い、この clone からは push しないようにした�
 ./scripts/lock-push.sh           # push を無効化
 ./scripts/lock-push.sh --unlock  # push を元に戻す
 ```
-
-または `.devcontainer/` でコンテナとして開くと自動実行されます。
 
 スクリプトを使わず手動で同じことをしたい場合は、push URL を直接書き換えても構いません:
 

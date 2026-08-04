@@ -26,7 +26,9 @@ $rust\
 $scala\
 [](fg:#FFFFFF bg:#EFA0C2)\
 $docker_context\
-[](fg:#EFA0C2 bg:#E1C2F6)\
+[](fg:#EFA0C2 bg:#FFD59E)\
+$cmd_duration\
+[](fg:#FFD59E bg:#E1C2F6)\
 $time\
 [ ](fg:#E1C2F6)\
 """
@@ -154,6 +156,11 @@ format = '[ $symbol ($version) ]($style)'
 symbol = " "
 style = "bg:#FFFFFF fg:#333333"
 format = '[ $symbol ($version) ]($style)'
+
+[cmd_duration]
+min_time = 5000
+style = "bg:#FFD59E fg:#333333"
+format = '[  $duration ]($style)'
 
 [time]
 disabled = false

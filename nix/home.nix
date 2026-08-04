@@ -1,4 +1,40 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
+let
+  # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
+  # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
+  # pure 評価では空文字になるため、呼び出し側は `--impure` を付けたうえで、事前に
+  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある(README 参照)。
+  dotfilesDir =
+    let e = builtins.getEnv "DOTFILES_DIR";
+    in if e != "" then e
+       else throw "DOTFILES_DIR が未設定です。リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
+
+  homeSrcDir = dotfilesDir + "/home";
+
+  # home/<relPath> を Nix store にコピーせず、リポジトリ内の実体ファイルへ直接シンボリックリンクする。
+  # これにより home/ を直接編集すればすぐ $HOME 側に反映される(store コピー方式だと read-only になり
+  # 編集のたびに switch が必要になってしまう。LazyVim の lazy-lock.json のようにツール自身が実行時に
+  # 書き込むファイルも、この方式でなければ壊れる)。
+  outOfStore = relPath: config.lib.file.mkOutOfStoreSymlink "${homeSrcDir}/${relPath}";
+
+  # home/ を再帰的に走査し、$HOME 相対パス -> home.file 定義を機械的に生成する(install.sh の
+  # `find "$HOME_SRC" -type f` ループの Nix 版)。新規ファイルを home/ に追加するだけで自動的に
+  # 配布対象になる。.gitignore されている local.sh / *.local は home/ に実体が無いため readDir にも
+  # 現れず、何も特別扱いしなくても自動的にスキップされる。
+  walkHome = dir: prefix:
+    lib.concatMapAttrs
+      (name: type:
+        let rel = if prefix == "" then name else "${prefix}/${name}";
+        in
+        if type == "directory" then
+          walkHome "${dir}/${name}" rel
+        else if name == ".gitkeep" then
+          { }
+        else
+          { ${rel} = { source = outOfStore rel; }; }
+      )
+      (builtins.readDir dir);
+in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
   # 実行時に環境から解決する。`builtins.getEnv` は flake の pure 評価では空文字になるため、
@@ -9,12 +45,60 @@
   # home-manager 自体の互換性バージョン。初回導入時に固定し、以後は変更しない(home-manager の作法)。
   home.stateVersion = "24.11";
 
+  # home/ 配下(dotfiles本体)の配布。判断根拠・設計は docs/decisions/dotfiles-distribution.md 参照。
+  # programs.zsh / programs.bash は使わない(home-managerの設定生成に依存すると、switch 未実行時に
+  # 何も効かなくなるという過去の失敗があるため。docs/decisions/zshrc-pollution.md の履歴参照)。
+  # ~/.bashrc / ~/.bash_profile だけは home.file にせず下記の home.activation で生成する(nvm/pyenv 等の
+  # インストーラによる追記を書き込みエラーにしないため)。
+  home.file = walkHome homeSrcDir "";
+
+  # ~/.bashrc / ~/.bash_profile を「dotfiles 管理外の実ファイル」として生成する。旧 install.sh の
+  # bootstrap_file() の移植(判断根拠は docs/decisions/zshrc-pollution.md 参照)。home.file にしない
+  # 理由は上記コメントの通り。$VERBOSE_ECHO / $DRY_RUN_CMD / $HOME_MANAGER_BACKUP_EXT は
+  # home-manager のアクティベーションスクリプトが提供する規約(-v / -n / -b <拡張子> にそれぞれ対応)。
+  home.activation.dotfilesBashBootstrap = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    _dotfiles_bash_bootstrap_content='# このファイルは dotfiles の管理外です(意図的にシンボリックリンクにしていません)。
+    # nvm/pyenv/Homebrew 等のインストーラがここへ自動追記しても、
+    # 実体の設定(~/.config/bash/bashrc、dotfiles 管理下)には影響しません。
+    # 判断根拠は docs/decisions/zshrc-pollution.md 参照。
+    [ -r "$HOME/.config/bash/bashrc" ] && . "$HOME/.config/bash/bashrc"
+    '
+
+    for _dotfiles_bootstrap_dest in "$HOME/.bashrc" "$HOME/.bash_profile"; do
+      if [ -f "$_dotfiles_bootstrap_dest" ] && [ ! -L "$_dotfiles_bootstrap_dest" ] \
+        && grep -qF '.config/bash/bashrc' "$_dotfiles_bootstrap_dest" 2>/dev/null; then
+        $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest は既にブートストラップ済みです"
+        continue
+      fi
+
+      if [ -e "$_dotfiles_bootstrap_dest" ] || [ -L "$_dotfiles_bootstrap_dest" ]; then
+        if [ -n "''${HOME_MANAGER_BACKUP_EXT:-}" ]; then
+          $DRY_RUN_CMD mv "$_dotfiles_bootstrap_dest" "$_dotfiles_bootstrap_dest.$HOME_MANAGER_BACKUP_EXT"
+          $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest を $_dotfiles_bootstrap_dest.$HOME_MANAGER_BACKUP_EXT に退避しました"
+        else
+          $VERBOSE_ECHO "dotfiles: スキップ: $_dotfiles_bootstrap_dest は既に存在します(home-manager switch -b <拡張子> で退避して上書きできます)"
+          continue
+        fi
+      fi
+
+      $DRY_RUN_CMD sh -c "printf '%s' \"\$1\" > \"\$2\"" _ "$_dotfiles_bash_bootstrap_content" "$_dotfiles_bootstrap_dest"
+      $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest を生成しました(ブートストラップ、dotfiles管理外の実ファイル)"
+    done
+  '';
+
+  # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化する。
+  # 旧 install.sh 末尾のロジックの移植。dotfilesDir は Nix 側の値をそのまま文字列補間する
+  # (bash 変数ではない)。
+  home.activation.dotfilesGitHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if command -v git >/dev/null 2>&1 \
+      && [ -d "${dotfilesDir}/.git" ] \
+      && [ -d "${dotfilesDir}/.githooks" ]; then
+      $DRY_RUN_CMD git -C "${dotfilesDir}" config core.hooksPath .githooks
+      $VERBOSE_ECHO "dotfiles: ${dotfilesDir} の pre-commit フックを有効化しました(core.hooksPath = .githooks)"
+    fi
+  '';
+
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
-  # dotfiles 自体は基本的にここでは配布しない(home/ のシンボリックリンクに任せ、
-  # install.sh との責務重複を避ける)。zsh の設定内容(.zshrc/.zshenv)も含め home/ 側で
-  # 管理する(oh-my-zsh 廃止に伴い、home.file 書き込みによる手動シンボリックリンクとの
-  # 衝突が解消されたため。判断根拠は docs/decisions/zshrc-pollution.md の履歴、
-  # docs/decisions/package-management.md の履歴参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。
   # zsh-autosuggestions / zsh-syntax-highlighting は zsh の起動設定(home/.config/zsh/.zshrc)から
@@ -24,8 +108,11 @@
   # (docs/decisions/editor.md 参照)。ruff は mason(LazyVim側のツールインストーラ)経由だと
   # このMacのHomebrew Python由来のpip/venv不具合で導入に失敗するため、Nix管理に切り替えて
   # mason管理からは除外している(home/.config/nvim/lua/plugins/ 参照)。
-  # nerd-fonts.jetbrains-mono は LazyVim のアイコン表示用。導入だけでは効かず、
-  # ターミナルエミュレータ側でこのフォントを選択する設定も別途必要。
+  # nerd-fonts.jetbrains-mono は LazyVim・Starship のアイコン表示用。導入だけでは効かず、
+  # ターミナルエミュレータ側でこのフォントを選択する設定も別途必要(README の
+  # 「Nerd Font をターミナルで有効にする」参照)。WSL の場合、この home-manager が
+  # 入れるのは WSL 内(Linux 側)のみで、Windows ネイティブの Windows Terminal 等からは
+  # 見えないため、Windows 側にも別途インストールが必要。
   # lazygit は LazyVim のgit連携キーマップ(<leader>gg 等)が使うgit TUI。
   # delta は git diff/log/blame のシンタックスハイライトページャ。設定は
   # templates/git/.gitconfig.template 側(delta が無くても less にフォールバックする)。

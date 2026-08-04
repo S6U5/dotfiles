@@ -24,7 +24,7 @@
 
 ## リポジトリ保護・PR 運用の方針
 
-- **main のブランチ保護を導入する**(直push禁止・PR経由必須、CI(`lint`/`install-test (ubuntu-latest)`/`install-test (macos-latest)`/`gitleaks`)を required status check に)。ただし admin(自分)への強制(`enforce_admins`)はしない(緊急時の直push退路を残す)。個人リポジトリでレビュー必須化はしない(自分以外にレビュアーがいない構造上不可能なため)。
+- **main のブランチ保護を導入する**(直push禁止・PR経由必須、CI(`lint`/`home-manager-test (ubuntu-latest)`/`home-manager-test (macos-latest)`/`gitleaks`)を required status check に)。ただし admin(自分)への強制(`enforce_admins`)はしない(緊急時の直push退路を残す)。個人リポジトリでレビュー必須化はしない(自分以外にレビュアーがいない構造上不可能なため)。
 - **GitHub の仕様上の制約**: branch protection・repository ruleset のいずれも、プライベートリポジトリの無料プランでは設定できない(`403: Upgrade to GitHub Pro or make this repository public`)。実際の設定は公開切り替えのタイミングで行う。
 - **外部からの PR は受け付けない、Issue は受け付ける**。GitHub の repository 設定 `pull_request_creation_policy` を `collaborators_only` にすることで技術的に実現できる(2026-02 追加のGitHub新機能、公式ドキュメントで確認済み)。実際の設定は公開切り替え時に行う。
 - **ローカル側の補完策として、pre-commit フック(`.githooks/pre-commit`)で main ブランチへの直接コミットをブロックする**(実装済み、公開状態に関係なく既に有効)。サーバー側のブランチ保護だけだと push した時点で初めて弾かれ手戻りが大きい。特にエージェント(Claude Code等)がブランチルールを見落として main のまま作業してしまう事故を、コミット時点で早期に検知する狙い。`git commit --no-verify` で回避可能なため、ローカルフックのみでは不十分(バイパス可能)であり、公開切り替え後のサーバー側ブランチ保護と併用する。

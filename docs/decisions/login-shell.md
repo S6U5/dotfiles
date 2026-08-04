@@ -21,4 +21,5 @@
 - (Nix 管理下でログインシェルまで揃える案 → OS標準のzshを使う案、本ADR): 上記の理由により決定
 - (混同防止の注記を追加): この決定は zsh **バイナリ**(ログインシェル本体)についてのものであり、zsh の**設定内容**(`.zshrc`/`.zshenv`)を home-manager の `programs.zsh` で管理することとは独立している。後者は 2026-08 に導入した(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照)が、ログインシェル本体は引き続き OS 標準のままで、本 ADR の結論は変わっていない。
 - (zsh の設定内容の管理方式が変更): oh-my-zsh 廃止に伴い、zsh の設定内容(`.zshrc`/`.zshenv`)は home-manager の `programs.zsh` から `home/` の手動シンボリックリンクに戻った(判断根拠は `docs/decisions/zshrc-pollution.md` / `docs/decisions/package-management.md` の履歴参照)。上記の混同防止の注記どおり、これは zsh バイナリ(ログインシェル本体)の話とは独立しており、本 ADR の結論(ログインシェル本体は OS 標準のまま)自体は変わっていない。
+- (dotfiles 配布全体の home-manager 統合後も本 ADR の結論は変わらない): `home/` の配布経路を再び home-manager(`home.file` + `mkOutOfStoreSymlink`)に統合したが(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)、これも設定**内容**の配布経路の話であり、zsh バイナリ(ログインシェル本体)を Nix 管理しないという本 ADR の結論には抵触しない。
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)

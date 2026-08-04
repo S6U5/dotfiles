@@ -10,12 +10,19 @@ permissions:
   contents: read
 
 jobs:
-  install-test:
+  home-manager-test:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Run install test
-        run: ./scripts/test-install.sh
+      - name: Install Nix
+        run: curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes --no-confirm
+      - name: Run home-manager test
+        # CI ランナーは使い捨てなので、DOTFILES_TEST_SWITCH=1 で実際の switch(activate)まで検証する。
+        # nix-installer 導入直後は同一シェルにまだ nix コマンドが乗っていないため、
+        # nix-daemon のプロファイルスクリプトを明示的に source してから実行する。
+        run: |
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh
