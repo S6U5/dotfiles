@@ -1,0 +1,42 @@
+#!/bin/sh
+# Windows ネイティブ側の WezTerm(winget 等で別途インストール)が、WSL 側の
+# home/.config/wezterm/wezterm.lua(home-manager 配布・git 管理下)をそのまま設定ファイルとして
+# 使うように、Windows の環境変数 WEZTERM_CONFIG_FILE を設定する(判断根拠は
+# docs/decisions/terminal-emulator.md、手順の詳細は README「WezTerm を使う」参照)。
+# setx はユーザー環境変数として永続化するが、既に開いている Windows 側のプロセスには反映されない。
+# 設定後は WezTerm を再起動(新しいプロセスとして起動)する必要がある。
+# 使い方: wsl-wezterm-setup
+set -eu
+
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wsl-wezterm-setup: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 0
+fi
+
+if ! command -v setx.exe >/dev/null 2>&1 || ! command -v wslpath >/dev/null 2>&1; then
+  echo "wsl-wezterm-setup: setx.exe / wslpath が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+config_path="$HOME/.config/wezterm/wezterm.lua"
+if [ ! -e "$config_path" ]; then
+  echo "wsl-wezterm-setup: $config_path が見つかりません(home-manager switch は実行済みですか?)" >&2
+  exit 1
+fi
+
+winpath=$(
+  cd /mnt/c 2>/dev/null || cd /
+  wslpath -w "$config_path"
+)
+if [ -z "$winpath" ]; then
+  echo "wsl-wezterm-setup: $config_path の Windows 側パスへの変換に失敗しました" >&2
+  exit 1
+fi
+
+(
+  cd /mnt/c 2>/dev/null || cd /
+  setx.exe WEZTERM_CONFIG_FILE "$winpath" >/dev/null
+)
+
+echo "設定しました: WEZTERM_CONFIG_FILE=$winpath"
+echo "反映には WezTerm を再起動(新しいプロセスとして起動)してください(既存ウィンドウには反映されません)。"

@@ -17,9 +17,13 @@ config.check_for_updates = false
 -- Windows ネイティブ側の WezTerm から、インストール済み WSL ディストリビューションを自動検出して
 -- デフォルトドメインにする(WSL/macOS/Linux 統一の要。判断根拠は docs/decisions/terminal-emulator.md
 -- 参照)。ディストリ名をハードコードせず動的に取得する(環境ごとに異なりうるため)。
+-- default_prog を明示的に zsh にする(WSL ディストリ側のログインシェル設定(chsh)に依存させない。
+-- 未指定のままだと WSL ディストリのデフォルトシェル(多くの場合 bash)が起動してしまう)。
 if wezterm.target_triple:find 'windows' then
   local wsl_domains = wezterm.default_wsl_domains()
   if wsl_domains and #wsl_domains > 0 then
+    wsl_domains[1].default_prog = { 'zsh' }
+    config.wsl_domains = wsl_domains
     config.default_domain = wsl_domains[1].name
   end
 end
