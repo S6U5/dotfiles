@@ -1,5 +1,5 @@
 {
   "name": "dotfiles-test",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-  "postCreateCommand": "bash scripts/test-install.sh"
+  "postCreateCommand": "curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes --no-confirm && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && DOTFILES_TEST_SWITCH=1 bash scripts/test-home-manager.sh"
 }

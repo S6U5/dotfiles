@@ -76,7 +76,7 @@ nixpkgs側で `broken` フラグが付いている、更新が長期間止まっ
 ## 注意点
 
 - `nix/home.nix` の変更は `home-manager switch --flake ./nix#<system>` を **明示的に実行した
-  ときだけ**反映される(CLAUDE.md の「明示的に実行したときだけ動く」方針。install.sh /
-  update.sh からは呼ばれない)。
+  ときだけ**反映される(CLAUDE.md の「明示的に実行したときだけ動く」方針。update.sh からは
+  呼ばれない)。
 - 機密情報・個人情報を一切コメントに含めない(CLAUDE.md 最重要ルール)。
 - 迷ったら `references/repo-conventions.md` にこのリポジトリの関連方針をまとめてあるので参照する。

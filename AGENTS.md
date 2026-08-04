@@ -33,17 +33,16 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 ## リポジトリ構成
 
-- `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.tmux.conf` → `~/.tmux.conf`)。新しい設定ファイルは基本ここに置く。**bash / zsh のエントリポイントは例外**で、`home/.config/bash/bashrc` は対応する `$HOME` 上のパスにリンクされるが、`~/.bashrc` / `~/.bash_profile` 自体は home/ 側に対応物が無い(install.sh が生成する管理外の実ファイル)。zsh は `home/.zshenv`(ZDOTDIR 設定のみ)と `home/.config/zsh/.zshrc`(設定本体)がどちらも通常どおり home/ からシンボリックリンクされる(理由は後述の「シェル設定の構成」、および `docs/decisions/zshrc-pollution.md` 参照)。
-- `install.sh` — `home/` 以下を `$HOME` にシンボリックリンクするスクリプト。zsh の設定ファイルも他の home/ ファイルと同様にこれでリンクされる。
-- `nix/` — Nix + home-manager によるパッケージ管理(`flake.nix` + `home.nix`)。パッケージ導入は**これに一本化**しており、導入は明示実行のみ(`home-manager switch --flake ./nix#<system>`。install.sh / update.sh からは呼ばない)。対象は基本的にパッケージのみで、dotfiles 配布(`home.file`)は原則書かない(`home/` のシンボリックリンクとの責務重複を避けるため)。zsh の設定内容(`.zshrc`/`.zshenv`)も home/ 管理に統一しており、Nix 側の例外は無い(理由: oh-my-zsh 廃止によって、home-manager の oh-my-zsh モジュールが `home.file` で `.zshenv` に書き込む設計との衝突が解消されたため。判断根拠は `docs/decisions/package-management.md` の履歴、`docs/decisions/zshrc-pollution.md` の履歴参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。
+- `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.tmux.conf` → `~/.tmux.conf`)。新しい設定ファイルは基本ここに置く。配布は `nix/home.nix` の `walkHome` ヘルパーが `home/` を再帰的に走査して自動的に行う(新規ファイルを置くだけで対象になる)。**bash / zsh のエントリポイントは例外**で、`home/.config/bash/bashrc` は対応する `$HOME` 上のパスに配布されるが、`~/.bashrc` / `~/.bash_profile` 自体は home/ 側に対応物が無い(`nix/home.nix` の `home.activation` が生成する管理外の実ファイル)。zsh は `home/.zshenv`(ZDOTDIR 設定のみ)と `home/.config/zsh/.zshrc`(設定本体)がどちらも通常どおり home/ から配布される(理由は後述の「シェル設定の構成」、および `docs/decisions/zshrc-pollution.md` 参照)。
+- `nix/` — Nix + home-manager による**パッケージ導入 + dotfiles 配布の一本化**(`flake.nix` + `home.nix`)。導入・反映は明示実行のみ(`home-manager switch --flake ./nix#<system> --impure`)。`home/` 配下は `home.file`(`config.lib.file.mkOutOfStoreSymlink`)で `home/` の実体ファイルへ直接シンボリックリンクする(Nix store へコピーしないため、`home/` を直接編集すればすぐ反映される)。`programs.zsh`/`programs.bash` のような設定生成モジュールは使わない(home-managerの生成ロジックに依存すると `switch` 未実行時に何も効かなくなるという過去の失敗があるため。判断根拠は `docs/decisions/zshrc-pollution.md` の履歴、`docs/decisions/dotfiles-distribution.md` 参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。**Nix が使えない環境ではこの dotfiles は機能しない**(フォールバックは意図的に作らない)。
   - **`nix/home.nix` にツールを追加・変更する前に、必ず公式リポジトリのメンテナンス状況(アーカイブされていないか、直近のコミット)と nixpkgs 側のパッケージが `broken` 等のフラグ付きでないかを確認する。**「〇〇を入れて」のように依頼側で決まっているように見える場合や、一見1行追記するだけの単純な依頼に見える場合でも省略しない。手順は `package-researcher` スキル(`.claude/skills/package-researcher/`)を参照。
-- `templates/` — 新プロジェクトにコピーして使う雛形置き場。`$HOME` にはリンクされない(home/ と分離)。プロジェクト用のエージェント指示は `AGENTS.md` を本体とし、`CLAUDE.md` は `@AGENTS.md` 参照のみの薄いファイルにする(二重管理を避ける)。
+- `templates/` — 機密を含みうる単一設定ファイルの雛形置き場。`$HOME` にはリンクされない(home/ と分離)。プロジェクト用のエージェント指示は `AGENTS.md` を本体とし、`CLAUDE.md` は `@AGENTS.md` 参照のみの薄いファイルにする(二重管理を避ける)。
 
 ## シェル設定の構成
 
 - **zsh / bash 両対応。ただし2つの入口の構造は異なる**(判断の詳細は `docs/decisions/zshrc-pollution.md` 参照):
-  - **zsh**: `home/.zshenv`(`~/.zshenv` にリンク)が ZDOTDIR を `~/.config/zsh` に切り替えるだけの薄いファイル(ZDOTDIR方式)。設定本体は `home/.config/zsh/.zshrc`(`~/.config/zsh/.zshrc` にリンク)に書く。`$HOME` 直下には実質 `.zshenv` しか置かれないため、nvm/pyenv/Homebrew 等のインストーラが `~/.zshrc` に自動追記しても、それは孤立ファイルになるだけで実際に読み込まれる設定は汚れない。Starship(プロンプト)・zsh-autosuggestions・zsh-syntax-highlighting は Nix の `home.packages` で導入し、`.zshrc` 側で `command -v` / ファイル存在チェックの上で読み込む(`home-manager switch` 未実行でも壊れないように)。oh-my-zsh は廃止済み(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照。低速マウント上での起動遅延が理由)。
-  - **bash**: bash には ZDOTDIR 相当の一括退避機構が無いため、**ブートストラップ方式**を採る。`~/.bashrc` / `~/.bash_profile` は `install.sh` が生成する dotfiles 管理外の実ファイル(シンボリックリンクではない)で、中身は `~/.config/bash/bashrc`(`home/.config/bash/bashrc` にリンク。実際の設定本体)を読み込むだけの1行。nvm/pyenv/Homebrew 等が `~/.bashrc` に自動追記しても、この2ファイルは元から管理対象外なので実害が無い。
+  - **zsh**: `home/.zshenv`(`~/.zshenv` に配布)が ZDOTDIR を `~/.config/zsh` に切り替えるだけの薄いファイル(ZDOTDIR方式)。設定本体は `home/.config/zsh/.zshrc`(`~/.config/zsh/.zshrc` に配布)に書く。`$HOME` 直下には実質 `.zshenv` しか置かれないため、nvm/pyenv/Homebrew 等のインストーラが `~/.zshrc` に自動追記しようとしても、追記先は Nix store 経由の read-only シンボリックリンクなので書き込みエラーになるか、孤立ファイルになるだけで実際に読み込まれる設定は汚れない。Starship(プロンプト)・zsh-autosuggestions・zsh-syntax-highlighting は Nix の `home.packages` で導入し、`.zshrc` 側で `command -v` / ファイル存在チェックの上で読み込む。oh-my-zsh は廃止済み(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照。低速マウント上での起動遅延が理由)。
+  - **bash**: bash には ZDOTDIR 相当の一括退避機構が無いため、**ブートストラップ方式**を採る。`~/.bashrc` / `~/.bash_profile` は `nix/home.nix` の `home.activation` が生成する dotfiles 管理外の実ファイル(シンボリックリンクではない。`home.file` にすると read-only になり、後述のインストーラ追記が失敗するため意図的に対象外にしている)で、中身は `~/.config/bash/bashrc`(`home/.config/bash/bashrc` から配布。実際の設定本体)を読み込むだけの1行。nvm/pyenv/Homebrew 等が `~/.bashrc` に自動追記しても、この2ファイルは元から管理対象外なので実害が無い。
   - どちらも共通設定 `home/.config/shell/init.sh` を source する(zsh 側は `home/.config/zsh/.zshrc` の先頭で source する)。
 - `home/.config/shell/` 以下(共通部)は **POSIX sh 互換**で書く。zsh / bash 固有の書き方が必要な設定は、共通部ではなく各エントリポイント(zsh は `home/.config/zsh/.zshrc` / bash は `home/.config/bash/bashrc`)側に書く。
 - 読み込み順(init.sh が制御):
@@ -62,17 +61,10 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 ## 運用方針
 
-- **「設定の配置」と「パッケージ導入」を分離する**:
-  - `install.sh` は**リンクを張るだけ**に保つ(冪等。例外は自リポジトリの pre-commit フック有効化のみ)。更新(`git pull && ./install.sh`)は何度実行しても安全であること。
-  - apt / dnf / brew などのパッケージ導入は OS ごとに別スクリプト・別リストに分け、**明示的に実行したときだけ**動かす。install.sh や更新フローに混ぜない。
+- **「設定の配置」と「パッケージ導入」は同じ経路(Nix + home-manager)に一本化する**(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。導入・反映は明示実行のみ(`home-manager switch --flake ./nix#<system> --impure`。自動実行はしない)。
 - リポジトリは単一で「共通レイヤー + OS別レイヤー」構造とする。OS別の管理が辛くなったら、リポジトリ分割も選択肢として残す(TODO.md 参照)。
-- **実行前のバックアップを確実に**。`backup.sh` で既存設定を退避してから `install.sh` を実行するのが推奨フロー(README 参照)。`backup.sh` は退避のみで `$HOME` 側を一切変更しない。
-- インストールは `install.sh` で行う。方針は「**既存設定を侵略しない**」:
-  - 既存ファイルは絶対に上書きしない(スキップ+警告)。
-  - `--force` 指定時のみ `*.bak.<timestamp>` に退避してから上書き。
-  - 冪等(何度実行しても安全)。`--dry-run` あり。
-  - **非対話・sudo 不要・高速を維持する**(GitHub Codespaces / devcontainer が起動時に自動実行する前提のため)。
-- パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)は Nix の管理対象外(zsh の設定内容も含め、`home/` のシンボリックリンクに統一。判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照)。
+- **既存ファイルとの衝突は home-manager 本体が検知する**。home.file が管理しようとするパスに既存ファイルがあると `home-manager switch` はエラーで停止する(黙って上書きしない)。`-b <拡張子>` オプションで既存ファイルを退避してから上書きできる(判断根拠・詳細は README「既存の設定ファイルとぶつかったとき」参照)。
+- パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)も Nix(home-manager の `home.file`)で配布する(zsh の設定内容も含む。判断根拠は `docs/decisions/dotfiles-distribution.md`、`docs/decisions/zshrc-pollution.md` の履歴参照)。**Nix が使えない環境ではこの dotfiles は機能しない**(意図的にフォールバックは作らない)。
 - **OSS として公開する方針で決定済み**(現在はプライベート)。公開は「TODO.md の残項目を全て片付ける → Git の全履歴を1コミットに圧縮する → 公開に切り替える」の順で行う(判断の詳細・履歴圧縮が必要な理由は `docs/decisions/oss-publish-plan.md` 参照)。以下は絶対にコミットしない:
   - APIキー、トークン、パスワードなどの機密情報
   - プライベートなパス(実際のユーザー名を含む絶対パスなど)
@@ -83,7 +75,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
   - **呼び出し OK**: アプリ操作コマンド(`word` / `excel` / `ov` 等)が Office や Obsidian などの商用・プロプライエタリアプリを起動・操作するのは問題ない。ユーザー環境に既にあるものを呼び出すだけで、無い環境でも親切メッセージで正常終了する設計のため、依存にはならない。
   - 他リポジトリのコードを取り込む場合はライセンス互換に注意し、MIT と非互換のコードはコミットしない。
 - **GitHub Actions のアクションはコミットハッシュで固定する**(`uses: owner/repo@<フル SHA> # vX.Y.Z` 形式。タグは後から書き換え可能でサプライチェーン攻撃の入口になるため)。バージョン更新は Dependabot がハッシュごと PR してくる。
-- APIキー等は pre-commit フック(`.githooks/pre-commit`)で**コミット前に自動ブロック**される。gitleaks があれば併用、無くても内蔵パターンで検査。誤検知は該当行に `secrets-allow` コメントで回避(要目視確認)。フックは `install.sh` 実行時に `core.hooksPath` として自動有効化。
+- APIキー等は pre-commit フック(`.githooks/pre-commit`)で**コミット前に自動ブロック**される。gitleaks があれば併用、無くても内蔵パターンで検査。誤検知は該当行に `secrets-allow` コメントで回避(要目視確認)。フックは `nix/home.nix` の `home.activation`(`home-manager switch` 実行時)に `core.hooksPath` として自動有効化。
 - 機密だけでなく**個人的なこと・特定の文脈が分かることは一切含めない(最重要ルール)**。設定内容に好みが出るのは当然だが、コメント・コミットメッセージ・設定値のどこにも、個人の事情・生活・所属や、置かれている状況が特定できる記述を書かない。
 - **プロンプトテンプレートは特に要注意**。プロンプトには書いた人物の状況が特定できる文脈が極めて混ざりやすい。コミット前に必ず全文を精査し、少しでも疑わしければ入れない。
 
@@ -97,15 +89,15 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 - **入れる**: `$HOME` 配下に置かれる「個人のグローバル設定」(例: `~/.shellcheckrc`、`~/.config/ruff/ruff.toml`、エディタのユーザー設定)。どのプロジェクトでも効かせたい個人の好みは dotfiles の領分。
 - **入れない**: プロジェクトルートに置いてチームで共有する設定(`.eslintrc`、`.prettierrc`、`.editorconfig` 等)。これは各プロジェクトに属する。雛形として配りたい場合は `templates/` に置く。
-- 注意: アプリによっては設定パスが OS で異なる(例: VS Code は Linux `~/.config/Code/User/`、macOS `~/Library/Application Support/Code/User/`)。現状の `home/` → `$HOME` 直マッピングでは吸収できないため、必要になったら OS 別マッピングか Nix + home-manager への移行(`docs/decisions/package-management.md` 参照)で対応する。
+- 注意: アプリによっては設定パスが OS で異なる(例: VS Code は Linux `~/.config/Code/User/`、macOS `~/Library/Application Support/Code/User/`)。現状の `home/` → `$HOME` 直マッピング(`walkHome` による機械的な配布)では吸収できないため、必要になったら `nix/home.nix` 側で `pkgs.stdenv.isDarwin` 等による OS 別分岐を追加して対応する。
 
-### 管理方式の選択(home/ 自動リンク か templates/ 配布か)
+### 管理方式の選択(home-manager 配布 か templates/ 配布か)
 
 入れると決めた設定ファイルは、**機密を書き込みうるかどうか**で方式を分ける:
 
-- **home/ 自動リンク**: 機密が混ざらないもの、またはツールが**分離機構を持ち、かつ実運用でその分離が確実に守られる**もの(ssh の `Include`、シェルの `local.sh` 読み込みのように、機密・マシン固有分を git 管理外ファイルへ逃がせるもの)。
+- **home-manager 配布**(`home/` 配下に置き、`nix/home.nix` の `home.file` で配布): 機密が混ざらないもの、またはツールが**分離機構を持ち、かつ実運用でその分離が確実に守られる**もの(ssh の `Include`、シェルの `local.sh` 読み込みのように、機密・マシン固有分を git 管理外ファイルへ逃がせるもの)。
 - **templates/ 配布(テンプレート方式に統一)**: **API キー等の機密を書き込みうる単一ファイル**(例: Claude Code の `settings.json`、VS Code の `settings.json`、MCP 設定、git の `.gitconfig` など)。雛形をコミットし、各マシンへ手動コピー。キー・マシン固有値はコピー先でのみ記入し、雛形には絶対に書かない。`.gitconfig` は `[include]` という分離機構を持つが、シンボリックリンク先(=リポジトリ管理下ファイル)に直接書いてしまう運用事故が起きうるため、こちらに分類している(判断根拠: `docs/decisions/gitconfig-management.md`)。
-  - 理由: 自動リンクだと「実機であとからキーを足した」瞬間に git 管理下ファイルへの書き込みになり、コミット事故の入口になる。テンプレート方式なら実機の設定とリポジトリが物理的に切り離される。
+  - 理由: home-manager 配布だと「実機であとからキーを足した」瞬間に git 管理下ファイルへの書き込みになり、コミット事故の入口になる。テンプレート方式なら実機の設定とリポジトリが物理的に切り離される。
   - 実機の設定を雛形へ還元するときが唯一の混入ポイントなので、その際は必ず全文精査する(特に `env` 欄)。
 
 ## ドキュメント
@@ -137,7 +129,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 ## リポジトリ保護・PR 運用
 
-- main は直push禁止・PR経由必須のブランチ保護を設定する(admin である自分への強制はしない。緊急時の直push退路を残すため)。CI(lint / install-test / gitleaks)を required status check にする。個人リポジトリのためレビュー必須化はしない。
+- main は直push禁止・PR経由必須のブランチ保護を設定する(admin である自分への強制はしない。緊急時の直push退路を残すため)。CI(lint / home-manager-test / gitleaks)を required status check にする。個人リポジトリのためレビュー必須化はしない。
 - 外部からの Pull Request は受け付けない(GitHub の `pull_request_creation_policy` を `collaborators_only` にして技術的に制限する)。Issue は受け付ける。
 - 上記はいずれも GitHub の実設定としては**公開に切り替えるタイミングで行う**(branch protection・repository ruleset ともプライベートリポジトリの無料プランでは設定できない仕様のため)。判断の詳細は `docs/decisions/oss-publish-plan.md` 参照。
 - **ローカル側では pre-commit フック(`.githooks/pre-commit`)が main ブランチへの直接コミットを検知してブロックする**(実装済み)。サーバー側のブランチ保護は push した時点で初めて弾かれるため手戻りが大きく、特にエージェント(Claude Code等)がブランチルールを見落として main のまま作業を進めてしまう事故を、コミット時点で早期に検知する狙い。緊急時は `git commit --no-verify` で回避できる。
