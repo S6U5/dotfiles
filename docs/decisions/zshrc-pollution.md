@@ -1,6 +1,6 @@
 # ログインシェルの汚染対策(zsh は ZDOTDIR 方式、bash はブートストラップ方式)
 
-> **現状(2026-08〜)**: 以下の背景・検討した代替・選んだ理由は、zsh 側を手動シンボリックリンクで実装していた当時の記録。zsh の**実装**はその後 home-manager 生成に変わったが、ここで採用した「ZDOTDIR方式による構造的な汚染防止」という**設計思想は変わっていない**(詳細は履歴節の該当エントリ参照)。bash 側(ブートストラップ方式)は変更なし。
+> **現状(2026-08〜)**: 以下の背景・検討した代替・選んだ理由は、zsh 側を手動シンボリックリンクで実装していた当時の記録。zsh の**実装**は一時期 home-manager 生成に変わったが(oh-my-zsh 導入のため)、oh-my-zsh 廃止に伴い手動シンボリックリンクに戻っている(詳細は履歴節の該当エントリ参照)。ここで採用した「ZDOTDIR方式による構造的な汚染防止」という**設計思想は一貫して変わっていない**。bash 側(ブートストラップ方式)は変更なし。
 
 ## 背景
 
@@ -31,4 +31,5 @@
 - (境界コメント → ZDOTDIR方式(zshのみ)、本ADR): 上記の理由により決定
 - (bash も対象に追加): 「bash は実運用していないので軽い対策で十分」という当初の判断を見直し、bash にも構造的な対策を追加することにした。bash には ZDOTDIR 相当の一括退避機構が無いため、代わりに **ブートストラップ方式** を採用: `~/.bashrc` / `~/.bash_profile` をシンボリックリンクにせず、`~/.config/bash/bashrc`(dotfiles 管理下)を読み込むだけの薄い実ファイルとして `install.sh` が生成する(旧方式のシンボリックリンクが残っていれば自動で置き換える)。これにより `$HOME` 直下の2ファイルはインストーラに汚されても実害が無く、zsh の ZDOTDIR 方式と同じ「$HOME 直下は薄いブートストラップのみ、本体は `~/.config/<shell>/` 配下」という構造に揃った。境界コメント方式は不要になったため `home/.config/bash/bashrc` から削除した。
 - (zsh 側の実装を手動 ZDOTDIR シンボリックリンクから home-manager 生成に変更): oh-my-zsh を Nix(home-manager の `programs.zsh.oh-my-zsh`)で管理しようとしたところ、このモジュールが `.zshenv` に `home.file` で書き込む設計になっており、既存の手動シンボリックリンク(`home/.zshenv`)と衝突して `home-manager switch` が失敗することが判明した。対策として `home/.zshenv` / `home/.config/zsh/.zshrc` を廃止し、`nix/home.nix` の `programs.zsh`(`dotDir = ".config/zsh"`)に生成を委ねた。home-manager 自身が `~/.zshenv` に ZDOTDIR 設定+source のみのスタブを自動生成する仕組みを持っており、これは本 ADR が採用した「ZDOTDIR方式」と同じ発想(`$HOME` 直下には汚染されても実害の無い薄いファイルしか置かない)を home-manager 側の実装で実現したものであり、汚染防止という目的自体は変わらず達成されている。bash 側の実装(ブートストラップ方式)は変更していない。判断の詳細・トレードオフは `docs/decisions/package-management.md` の履歴も参照。
+- (oh-my-zsh 廃止に伴い、zsh 側の実装を home-manager 生成から手動 ZDOTDIR シンボリックリンクに戻した): oh-my-zsh のプラグイン読み込み処理が /mnt 配下など低速マウントで起動遅延を起こすことが判明し、oh-my-zsh 自体を廃止して Starship に置き換えた。これにより上記エントリで問題になっていた「oh-my-zsh の `home.file` 書き込みと手動シンボリックリンクの衝突」という制約自体が無くなったため、`home/.zshenv`(ZDOTDIR切り替えのみ)・`home/.config/zsh/.zshrc`(設定本体)を復活させ、`nix/home.nix` の `programs.zsh` は削除した。副作用として、`home-manager switch` を一度も実行していない初期状態で zsh の PATH追加・エイリアス・関数が一切効かないという不具合(zsh の設定生成自体が home-manager 依存になっていたことが原因)も同時に解消された。zsh-autosuggestions / zsh-syntax-highlighting / starship は引き続き Nix の `home.packages` で導入し、`.zshrc` 側で `~/.nix-profile` 配下のファイルを存在チェックの上 source する形に変更した(`programs.zsh.plugins` は使わない)。line 26 のトレードオフ(`~/.zshenv` が git 管理下ファイルへの直接書き込みリスクを持つ)は、home-manager 生成前の状態に戻ったことで再び該当する。
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)
