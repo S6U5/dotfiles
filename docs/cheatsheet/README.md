@@ -8,3 +8,4 @@
 - [tmux](tmux.md)
 - [Neovim(LazyVim)](nvim.md)
 - [WezTerm](wezterm.md)
+- [Starship](starship.md)
