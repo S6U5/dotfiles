@@ -102,8 +102,8 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 - **macOS / Linux**: `home-manager switch` で WezTerm 本体・設定とも自動導入されます。
 - **WSL**: 実際に画面を描画する WezTerm は Windows ネイティブ側で動きます。`home-manager switch` は WSL 内(Linux 側)にしか配布できないため、Windows 側で以下を手動対応してください。
   1. WezTerm 本体を Windows 側にインストール(例: `winget install wez.wezterm`)。
-  2. 設定ファイルは WSL 側の `~/.config/wezterm/wezterm.lua` をそのまま使えます。Windows の環境変数 `WEZTERM_CONFIG_FILE` に WSL 側パスへの UNC パス(例: `\\wsl.localhost\<ディストリ名>\home\<ユーザー名>\.config\wezterm\wezterm.lua`)を設定してください。
-  3. `wezterm.lua` 側で WSL ドメインを自動検出し `default_domain` に設定するため、起動すると WSL 内のシェルに接続されます。
+  2. 設定ファイルは WSL 側の `~/.config/wezterm/wezterm.lua` をそのまま使えます。Windows の環境変数 `WEZTERM_CONFIG_FILE` に WSL 側パスへの UNC パス(例: `\\wsl.localhost\<ディストリ名>\home\<ユーザー名>\.config\wezterm\wezterm.lua`)を設定してください。WSL 内で `wsl-wezterm-setup` を実行すると自動設定できます(`setx.exe` でユーザー環境変数として永続化。反映には WezTerm の再起動が必要)。
+  3. `wezterm.lua` 側で WSL ドメインを自動検出し `default_domain` に設定するため、起動すると WSL 内のシェルに接続されます。起動するシェルは zsh を明示指定しているため、WSL ディストリ側に zsh のインストールが必要です(未インストールだとペインの起動に失敗します。インストール手順は後述「zsh をログインシェルにする場合」参照。`chsh` でのログインシェル変更までは必須ではありません)。
 
 壁紙はデフォルト OFF です。有効にする場合は `~/.config/wezterm/wallpaper.local.lua`(git 管理外、`*.local` は `.gitignore` 対象)を作成し、画像への絶対パスを1行で `return` してください(例: `return '/path/to/wallpaper.png'`)。画像ファイル自体はこのリポジトリの管理外なので置き場所は自由です(例: `~/Pictures/` 配下)。パスさえ `wallpaper.local.lua` に書けば反映されます。
 
@@ -160,6 +160,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
+| `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。
