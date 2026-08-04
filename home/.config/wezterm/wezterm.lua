@@ -8,11 +8,42 @@ config.enable_tab_bar = true
 config.window_close_confirmation = 'NeverPrompt'
 config.scrollback_lines = 5000
 
+-- アクティブタブに色をつけて現在のタブを判別しやすくする。fancy tab bar(デフォルト)でも
+-- colors.tab_bar.active_tab の bg_color / fg_color は有効(タブバー全体の背景色は
+-- window_frame 側の管轄で別物)。
+config.colors = {
+  tab_bar = {
+    active_tab = {
+      bg_color = '#2b6cb0',
+      fg_color = '#ffffff',
+    },
+  },
+}
+
 -- 組み込みの自動更新チェック(デフォルト有効。24時間ごとにGitHubのリリースAPIへ通信する)は
 -- 全環境で無効化する。「導入・反映は明示実行のみ」というこのdotfiles全体の方針(Nixの
 -- home-manager switchも自動実行しない)に揃える。Windows側で更新したい場合は
 -- `winget upgrade wez.wezterm` を手動で実行する。
 config.check_for_updates = false
+
+-- 初期ウィンドウサイズをディスプレイの実サイズから比率で決める(FHD と 4K/ウルトラワイドで
+-- 見た目の大きさを揃えるため。initial_cols / initial_rows はセル数指定なのでディスプレイに
+-- よって占有率が変わりすぎる)。gui-startup は起動時の最初のウィンドウにだけ発火する。
+-- set_inner_size は装飾(タイトルバー等)を除いた内側のサイズ指定なので、中央配置は厳密ではなく
+-- 数十px ずれうるが実用上問題ない。
+local screen_ratio = 0.5
+wezterm.on('gui-startup', function(cmd)
+  local screen = wezterm.gui.screens().active
+  local width = math.floor(screen.width * screen_ratio)
+  local height = math.floor(screen.height * screen_ratio)
+  local _tab, _pane, window = wezterm.mux.spawn_window(cmd or {})
+  local gui_window = window:gui_window()
+  gui_window:set_inner_size(width, height)
+  gui_window:set_position(
+    screen.x + math.floor((screen.width - width) / 2),
+    screen.y + math.floor((screen.height - height) / 2)
+  )
+end)
 
 -- Windows ネイティブ側の WezTerm から、インストール済み WSL ディストリビューションを自動検出して
 -- デフォルトドメインにする(WSL/macOS/Linux 統一の要。判断根拠は docs/decisions/terminal-emulator.md
