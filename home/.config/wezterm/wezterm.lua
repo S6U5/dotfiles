@@ -32,12 +32,19 @@ end
 -- 局所的に残って文字が読みにくくなることがあるため、上に半透明の黒レイヤーを重ねて均一に暗くする
 -- (background のレイヤーは配列の後ろのものほど上に重なる。公式ドキュメント記載の手法)。
 local wallpaper_ok, wallpaper_path = pcall(dofile, wezterm.config_dir .. '/wallpaper.local.lua')
-if wallpaper_ok and type(wallpaper_path) == 'string' and wallpaper_path ~= '' then
-  config.background = {
+local wallpaper_enabled = wallpaper_ok and type(wallpaper_path) == 'string' and wallpaper_path ~= ''
+
+-- image_opacity を引数にするのは、Ctrl+Shift+O でのウィンドウ透過切り替え(下記)のときに
+-- レイヤーごと作り直す必要があるため。config.background のレイヤーが完全に不透明(alpha=1)だと
+-- window_background_opacity を下げてもデスクトップへの透過が効かないため、一番下の画像レイヤー
+-- 自体の opacity を下げることで透過を実現する。
+local function wallpaper_background(image_opacity)
+  return {
     {
       source = { File = wallpaper_path },
       width = 'Cover',
       height = 'Cover',
+      opacity = image_opacity,
       hsb = { brightness = 0.3, hue = 1.0, saturation = 1.0 },
     },
     {
@@ -47,6 +54,30 @@ if wallpaper_ok and type(wallpaper_path) == 'string' and wallpaper_path ~= '' th
       opacity = 0.78,
     },
   }
+end
+
+-- デフォルトは不透明(壁紙レイヤー・ウィンドウとも opacity 1.0)。Ctrl+Shift+O でデスクトップへの
+-- 透過ありの状態にトグルできる。
+if wallpaper_enabled then
+  config.window_background_opacity = 1.0
+  config.background = wallpaper_background(1.0)
+
+  config.keys = config.keys or {}
+  table.insert(config.keys, {
+    key = 'O',
+    mods = 'CTRL|SHIFT',
+    action = wezterm.action_callback(function(window, _pane)
+      local overrides = window:get_config_overrides() or {}
+      if overrides.window_background_opacity == 0.4 then
+        overrides.window_background_opacity = 1.0
+        overrides.background = wallpaper_background(1.0)
+      else
+        overrides.window_background_opacity = 0.4
+        overrides.background = wallpaper_background(0.45)
+      end
+      window:set_config_overrides(overrides)
+    end),
+  })
 end
 
 return config
