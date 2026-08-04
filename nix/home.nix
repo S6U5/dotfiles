@@ -116,6 +116,11 @@ in
   # lazygit は LazyVim のgit連携キーマップ(<leader>gg 等)が使うgit TUI。
   # delta は git diff/log/blame のシンタックスハイライトページャ。設定は
   # templates/git/.gitconfig.template 側(delta が無くても less にフォールバックする)。
+  # wezterm はターミナルエミュレータ本体(判断根拠は docs/decisions/terminal-emulator.md 参照)。
+  # macOS・Linux ではこれがそのままターミナルエミュレータとして動く。WSL の場合、実際に画面を
+  # 描画する WezTerm は Windows ネイティブ側(winget 等で別途手動インストール、README 参照)で
+  # 動くため、ここで入る WSL 内(Linux 側)の wezterm バイナリは(nerd-fonts と同様に)使わない。
+  # 設定ファイルは home/.config/wezterm/wezterm.lua。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -133,6 +138,7 @@ in
     starship
     zsh-autosuggestions
     zsh-syntax-highlighting
+    wezterm
   ];
 
   programs.home-manager.enable = true;
