@@ -108,8 +108,11 @@ in
   # (docs/decisions/editor.md 参照)。ruff は mason(LazyVim側のツールインストーラ)経由だと
   # このMacのHomebrew Python由来のpip/venv不具合で導入に失敗するため、Nix管理に切り替えて
   # mason管理からは除外している(home/.config/nvim/lua/plugins/ 参照)。
-  # nerd-fonts.jetbrains-mono は LazyVim のアイコン表示用。導入だけでは効かず、
-  # ターミナルエミュレータ側でこのフォントを選択する設定も別途必要。
+  # nerd-fonts.jetbrains-mono は LazyVim・Starship のアイコン表示用。導入だけでは効かず、
+  # ターミナルエミュレータ側でこのフォントを選択する設定も別途必要(README の
+  # 「Nerd Font をターミナルで有効にする」参照)。WSL の場合、この home-manager が
+  # 入れるのは WSL 内(Linux 側)のみで、Windows ネイティブの Windows Terminal 等からは
+  # 見えないため、Windows 側にも別途インストールが必要。
   # lazygit は LazyVim のgit連携キーマップ(<leader>gg 等)が使うgit TUI。
   # delta は git diff/log/blame のシンタックスハイライトページャ。設定は
   # templates/git/.gitconfig.template 側(delta が無くても less にフォールバックする)。
