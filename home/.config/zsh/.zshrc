@@ -1,0 +1,54 @@
+# 履歴設定
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=10000
+SAVEHIST=10000
+setopt HIST_IGNORE_ALL_DUPS
+setopt SHARE_HISTORY
+
+# 共通設定(bash と共有)を読み込む
+[ -r "$HOME/.config/shell/init.sh" ] && . "$HOME/.config/shell/init.sh"
+
+# 補完(自作コマンドの補完定義は ~/.config/zsh/completions/ に置く)
+fpath=("$HOME/.config/zsh/completions" $fpath)
+autoload -Uz compinit
+# キャッシュ(.zcompdump)が24時間以内なら検査を省略(-C)して高速起動。
+# glob 修飾子 (#q...) には EXTENDED_GLOB が必要なため、対話シェル全体の
+# glob 挙動を変えないよう無名関数 + localoptions の中でだけ有効化する
+() {
+  setopt localoptions extendedglob
+  if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+    compinit
+  else
+    compinit -C
+  fi
+}
+
+# zoxide(賢い cd)。compinit の後に初期化する必要がある
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
+
+# fzf のキーバインド(Ctrl-R: 履歴検索 / Ctrl-T: ファイル / Alt-C: ディレクトリ移動)
+if command -v fzf >/dev/null 2>&1; then
+  if _fzf_init=$(fzf --zsh 2>/dev/null); then
+    eval "$_fzf_init"
+  elif [ -r /usr/share/doc/fzf/examples/key-bindings.zsh ]; then
+    # apt 版など古い fzf(0.48 未満は --zsh 非対応)向けフォールバック
+    source /usr/share/doc/fzf/examples/key-bindings.zsh
+  fi
+  unset _fzf_init
+fi
+
+# starship プロンプト(Nix の home.packages で導入。無ければ静かにスキップ)
+command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+
+# zsh-autosuggestions(Nix の home.packages 経由で ~/.nix-profile に入る。
+# home-manager 未適用ならファイルが無いため存在チェックでスキップする)
+_dotfiles_zsh_autosuggestions="$HOME/.nix-profile/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+[ -r "$_dotfiles_zsh_autosuggestions" ] && source "$_dotfiles_zsh_autosuggestions"
+unset _dotfiles_zsh_autosuggestions
+
+# zsh-syntax-highlighting は公式が「.zshrc の一番最後に読み込むこと」を必須要件としている
+# (それより後にウィジェットを追加・変更する設定があるとハイライトの再トリガーが効かない)。
+# そのため zoxide/fzf/starship(ウィジェットを追加しうる)より後、ファイルの最後に置く
+_dotfiles_zsh_syntax_highlighting="$HOME/.nix-profile/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+[ -r "$_dotfiles_zsh_syntax_highlighting" ] && source "$_dotfiles_zsh_syntax_highlighting"
+unset _dotfiles_zsh_syntax_highlighting

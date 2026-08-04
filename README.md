@@ -13,7 +13,7 @@ WSL / macOS / Linux で同じ環境を再現するための、個人用 dotfiles
 
 <img alt="dotfiles 実行時構造図: OS(macOS/WSL/Linux) → ターミナルエミュレータ → zsh → herdr → CLIアプリ(Neovim・fzf・zoxide)。herdrとCLIアプリを青枠の点線で囲み、Nix + Home Manager が導入・設定を管理する範囲を示す" src="docs/assets/stack.svg" width="620">
 
-<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが install.sh により $HOME へシンボリックリンクされる様子。zsh の .zshenv / .config/zsh/.zshrc は nix/home.nix(programs.zsh)が生成する" src="docs/assets/config-placement.svg" width="600">
+<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが install.sh により $HOME へシンボリックリンクされる様子。zsh の .zshenv / .config/zsh/.zshrc も他のファイルと同様に home/ からシンボリックリンクされる" src="docs/assets/config-placement.svg" width="600">
 
 ## 目次
 
@@ -46,7 +46,7 @@ cd dotfiles
 
 ### パッケージ導入(Nix + home-manager)
 
-ツール一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / zsh-autosuggestions / zsh-syntax-highlighting 等)は **Nix + home-manager** でまとめて導入します。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` 参照)。
+ツール一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship / zsh-autosuggestions / zsh-syntax-highlighting 等)は **Nix + home-manager** でまとめて導入します。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` 参照)。
 
 前提として Nix 本体のインストールが必要です。[NixOS/nix-installer](https://github.com/NixOS/nix-installer)(NixOS 公式が管理する、Determinate Nix Installer のフォーク。商用企業ではなく NixOS 自体が管理している点、flakes が扱える点、アンインストールが `nix-installer uninstall` で綺麗に戻せる点から、公式のクラシックインストーラより推奨)を使います:
 
@@ -54,19 +54,22 @@ cd dotfiles
 curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes
 ```
 
-インストール後、シェルを再起動(または新しいターミナルを開く)してから:
+インストール後、シェルを再起動(または新しいターミナルを開く)してから、環境に合わせて実行します(`#` の後ろが対象システム):
 
 ```sh
-home-manager switch --flake ./nix#aarch64-darwin --impure     # 適用(Apple Silicon Mac の例)
+home-manager switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
+home-manager switch --flake ./nix#aarch64-linux --impure   # WSL / Linux(ARM。例: Raspberry Pi)
+home-manager switch --flake ./nix#x86_64-darwin --impure   # macOS(Intel)
+home-manager switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon)
 ```
 
 `nix/flake.lock` はバージョンを固定するためリポジトリにコミット済みなので、通常は生成不要です。`nixpkgs` / `home-manager` のバージョンを更新したいときだけ `nix flake update ./nix` を実行してください。
 
-`#` の後ろは環境に応じて `x86_64-linux` / `aarch64-linux` / `x86_64-darwin` / `aarch64-darwin` から選びます。dotfiles 自体(`home/` 以下)には影響しません。
+WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマンドを実行してください(Nix自体もWSL内にインストールします)。dotfiles 自体(`home/` 以下)にはどのシステムを選んでも影響しません。
 
 `--impure` が必要なのは、実際のユーザー名をリポジトリにハードコードしないため `nix/home.nix` が `builtins.getEnv "USER"` で実行時に解決しているためです(flake の pure 評価では環境変数を読めません)。
 
-zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は `docs/decisions/login-shell.md` 参照)。一方で `.zshrc` / `.zshenv` の**内容**は `programs.zsh`(`nix/home.nix`)が生成します。oh-my-zsh・zsh-autosuggestions・zsh-syntax-highlighting もここで宣言的に管理しており、`home-manager switch` だけで新しい PC でも同じ状態が再現できます(bash 側は引き続き `home/` のシンボリックリンクで共通管理)。
+zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は `docs/decisions/login-shell.md` 参照)。`.zshrc` / `.zshenv` の**内容**は bash と同様 `home/` からのシンボリックリンクで管理し、Nix(home-manager)には依存しません。プロンプト(Starship)・zsh-autosuggestions・zsh-syntax-highlighting は Nix の `home.packages` で導入したものを `.zshrc` 側が存在チェックの上で読み込む構成のため、`home-manager switch` 未実行でも zsh 自体は壊れません(oh-my-zsh は低速マウント上での起動遅延を理由に廃止しました)。
 
 古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです(`home-manager expire-generations` や `nix-collect-garbage -d` 等)。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください。
 
@@ -75,7 +78,7 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 - macOS: 標準で zsh が入っているため何もする必要はありません。
 - WSL / Linux: zsh はディストリビューションの公式ドキュメントに従ってインストールし、`chsh` でログインシェルに設定してください(パッケージ名やコマンドはディストリごとに異なるため、配布元の公式ドキュメント・`man chsh` を参照)。
 
-パッケージ導入(Nix)と設定のリンク(`install.sh`)は基本的に独立していて、Nix を実行しなくても dotfiles 自体は壊れず動きます。**ただし zsh だけは例外**です。zsh の `.zshrc`/`.zshenv` 自体を `programs.zsh` が生成するため、`home-manager switch` を一度も実行していない場合、zsh はエイリアス・関数・PATH追加(`~/.local/bin` 等)を含め設定ゼロの状態になります。zsh を使うなら `home-manager switch` は実質必須です(bash は引き続き `home/` 経由で Nix 無しでも機能します)。
+パッケージ導入(Nix)と設定のリンク(`install.sh`)は基本的に独立していて、Nix を実行しなくても dotfiles 自体は壊れず動きます。zsh も bash と同じく `.zshrc`/`.zshenv` を `home/` から直接シンボリックリンクするため、`home-manager switch` を実行していなくてもエイリアス・関数・PATH追加(`~/.local/bin` 等)は `install.sh` だけで有効になります(Starship・zsh-autosuggestions・zsh-syntax-highlighting など Nix 経由の機能だけは `home-manager switch` 適用後に有効になります)。
 
 ### 既存の設定ファイルとぶつかったとき(初回導入の正規ルート)
 
@@ -95,7 +98,7 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 | `--dry-run` | 何が行われるかの表示のみ(変更しない) |
 | `--force` | 既存ファイルを `*.bak.<日時>` に退避してからリンク |
 | `--prune` | リポジトリ側で削除されたファイルの「リンク切れ」を掃除(このリポジトリ由来のリンクのみ対象) |
-| `--uninstall` | このリポジトリが作成したリンク・ブートストラップファイル(`.bashrc`/`.bash_profile`)を削除。手を加えたブートストラップファイルは保護してスキップ。nix/home.nix が管理する zsh 設定・パッケージは対象外 |
+| `--uninstall` | このリポジトリが作成したリンク・ブートストラップファイル(`.bashrc`/`.bash_profile`)を削除。手を加えたブートストラップファイルは保護してスキップ。nix/home.nix が管理するパッケージは対象外 |
 
 リポジトリを別の場所へ移動した場合も、再実行すれば古いリンクが自動で張り替わります(他ツール由来のリンクには触れません)。
 
@@ -143,8 +146,8 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 
 ```
 home/              $HOME に同じ構造でリンクされる設定ファイル群
-             ※ zsh の .zshenv / .config/zsh/.zshrc は home/ の対象外(nix/home.nix の
-               programs.zsh が生成。理由は「パッケージ導入(Nix + home-manager)」の節参照)
+├── .zshenv                            zsh 本体の設定(ZDOTDIR を .config/zsh に切り替えるだけ)
+├── .config/zsh/.zshrc                 zsh 本体の設定(実際の設定本体)
 ├── .config/bash/bashrc                bash 本体の設定(ブートストラップ方式)
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)
 │   └── os/                            OS 固有の起動時設定(macos / wsl / linux)

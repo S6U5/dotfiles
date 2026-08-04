@@ -7,7 +7,7 @@
 
 ## 選んだ理由
 
-- `.zshrc` の中身自体はリポジトリ経由(zsh は home-manager の `programs.zsh`、bash は `home/` のシンボリックリンク)で Mac・WSL 間ですでに共通化されている。揃えたいことの本質(設定内容)は zsh バイナリの出どころに関係なくすでに達成できており、バイナリのバージョンまで揃えるメリットは小さい。
+- `.zshrc` の中身自体はリポジトリ経由(zsh・bash とも `home/` のシンボリックリンク)で Mac・WSL 間ですでに共通化されている。揃えたいことの本質(設定内容)は zsh バイナリの出どころに関係なくすでに達成できており、バイナリのバージョンまで揃えるメリットは小さい。
 - Nix 管理の zsh をログインシェルにすると、将来 Nix をやめて `/nix` を削除した際にログインシェル(`~/.nix-profile/bin/zsh`)の実体が消え、ロックアウトするリスクがある。日常のガベージコレクションでは現在の generation が GC root として保護されるため起きないが、「Nix をやめる」操作と組み合わさると起こり得る。
 - home-manager 単体(NixOS でも nix-darwin でもない)構成でログインシェルまで Nix に委ねるのは、コミュニティの一般的な運用からも外れる。NixOS/nix-darwin ならシェル登録も宣言的・安全に扱えるが、本リポジトリは nix-darwin を対象外としている(`package-management.md` 参照)ため、home-manager だけでその領域に踏み込む理由が薄い。
 - zsh 用プラグイン(補完・シンタックスハイライト等)は zsh バイナリの出どころ(apt / Homebrew / macOS 標準)に関係なく動作するため、Nix 管理にしないことによる機能的な損失はない。
@@ -20,4 +20,5 @@
 
 - (Nix 管理下でログインシェルまで揃える案 → OS標準のzshを使う案、本ADR): 上記の理由により決定
 - (混同防止の注記を追加): この決定は zsh **バイナリ**(ログインシェル本体)についてのものであり、zsh の**設定内容**(`.zshrc`/`.zshenv`)を home-manager の `programs.zsh` で管理することとは独立している。後者は 2026-08 に導入した(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照)が、ログインシェル本体は引き続き OS 標準のままで、本 ADR の結論は変わっていない。
+- (zsh の設定内容の管理方式が変更): oh-my-zsh 廃止に伴い、zsh の設定内容(`.zshrc`/`.zshenv`)は home-manager の `programs.zsh` から `home/` の手動シンボリックリンクに戻った(判断根拠は `docs/decisions/zshrc-pollution.md` / `docs/decisions/package-management.md` の履歴参照)。上記の混同防止の注記どおり、これは zsh バイナリ(ログインシェル本体)の話とは独立しており、本 ADR の結論(ログインシェル本体は OS 標準のまま)自体は変わっていない。
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)
