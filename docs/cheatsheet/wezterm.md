@@ -5,6 +5,8 @@
 設定ファイル: `home/.config/wezterm/wezterm.lua`
 
 - 組み込みの自動更新チェック(`check_for_updates`)は全環境で無効化(プライバシー上の理由。判断根拠は `docs/decisions/terminal-emulator.md` 参照)
+- 初期ウィンドウサイズはディスプレイの実サイズの 50% で画面中央に配置(`gui-startup` イベント。FHD と 4K/ウルトラワイドで見た目の占有率を揃えるため。比率は `wezterm.lua` 冒頭の `screen_ratio` で変更可)
+- アクティブタブは青背景+白文字で色付け(`colors.tab_bar.active_tab`)
 - Windows ネイティブ側では、インストール済み WSL ディストリビューションを自動検出して `default_domain` に設定(WSL/macOS/Linux 統一)。起動するシェルは WSL 側の `chsh` 設定に関わらず `zsh` を明示指定
 - 壁紙はデフォルト OFF。`~/.config/wezterm/wallpaper.local.lua`(git 管理外)を作成すると有効化(詳細は README「WezTerm を使う」参照)
 - 設定変更を反映するには: `Cmd+Shift+R`(反映されない場合は完全終了して再起動)
