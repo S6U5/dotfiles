@@ -52,18 +52,28 @@ else
   HOME_MANAGER=(nix run home-manager --)
 fi
 
+# 失敗時の原因調査用に、握りつぶしていた出力をログへ退避して失敗時だけ表示する
+# (CI のフレーク(一時的失敗)なのか実バグなのかをログから判別できるようにする)
+show_log_tail() {
+  echo "  ---- 失敗時の出力(末尾40行) ----" >&2
+  tail -40 "$1" >&2
+  echo "  ---------------------------------" >&2
+}
+
 echo "== 1) nix flake check"
-if nix flake check ./nix --impure >/dev/null 2>&1; then
+if nix flake check ./nix --impure >"$BUILD_DIR/flake-check.log" 2>&1; then
   ok "flake評価にエラーなし"
 else
   ng "flake評価エラー"
+  show_log_tail "$BUILD_DIR/flake-check.log"
 fi
 
 echo "== 2) home-manager build(実 HOME には触れない)"
-if (cd "$BUILD_DIR" && "${HOME_MANAGER[@]}" build --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure >/dev/null 2>&1); then
+if (cd "$BUILD_DIR" && "${HOME_MANAGER[@]}" build --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure >"$BUILD_DIR/build.log" 2>&1); then
   ok "build 成功"
 else
   ng "build 失敗"
+  show_log_tail "$BUILD_DIR/build.log"
   echo ""
   echo "結果: ok=$pass NG=$fail"
   exit 1
