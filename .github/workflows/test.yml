@@ -23,6 +23,12 @@ jobs:
         # CI ランナーは使い捨てなので、DOTFILES_TEST_SWITCH=1 で実際の switch(activate)まで検証する。
         # nix-installer 導入直後は同一シェルにまだ nix コマンドが乗っていないため、
         # nix-daemon のプロファイルスクリプトを明示的に source してから実行する。
+        # NIX_CONFIG の access-tokens は、Nix が github:... の flake 入力を取得する際の
+        # api.github.com 呼び出しを認証付きにするため。共有ランナー(特に macos)の IP は
+        # 未認証のレート制限(60回/時)を高頻度で使い果たしており、断続的な
+        # 「HTTP 403: API rate limit exceeded」で build が落ちる原因になっていた。
+        env:
+          NIX_CONFIG: "access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}"
         run: |
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
           DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh
