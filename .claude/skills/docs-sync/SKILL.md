@@ -2,10 +2,10 @@
 name: docs-sync
 description: >-
   README.md / CLAUDE.md / TODO.md / docs/decisions/*.md の記述が、実際のコード
-  (install.sh・update.sh・home/・nix/・scripts/ 等)の挙動と食い違って
+  (update.sh・home/・nix/・scripts/ 等)の挙動と食い違って
   いないかを横断的に検証し、見つかったズレをユーザーに確認した上で修正するスキル。
   新しいコマンド・オプションの追加、home/・nix/ の構成変更、
-  install.sh/update.sh/scripts/ の挙動変更など、非自明な実装変更をひとつでも
+  update.sh/scripts/ の挙動変更など、非自明な実装変更をひとつでも
   完了した直後は、指示されなくても必ずこのスキルの使用を提案すること。
   「READMEを実態に合わせて」「ドキュメントの整合性を確認して」「ドキュメントが
   古くなっていないか確認して」「READMEにこう書いてあるけど本当?」といった
@@ -49,7 +49,7 @@ description: >-
 
 - ユーザーから明示的に依頼されたとき。
 - 実装系タスク(新しいコマンド・関数・オプションの追加、`home/`・`nix/`
-  の構成変更、`install.sh`/`update.sh`/`scripts/` の挙動変更)を完了した直後。
+  の構成変更、`update.sh`/`scripts/` の挙動変更)を完了した直後。
   `verify` スキル(実際に動くかどうかの確認)とセットで使うことが多いが役割は別:
   `verify` は「動くか」、`docs-sync` は「書いてあることと動きが一致しているか」を見る。
 - ドキュメントのみの修正(誤字・リンク切れ)、比較対象となる実装変更が存在しない

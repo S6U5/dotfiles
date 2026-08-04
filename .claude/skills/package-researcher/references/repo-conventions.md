@@ -6,14 +6,15 @@
 ## 導入は「明示実行のみ」
 
 - `home-manager switch --flake ./nix#<system> --impure` は **ユーザーが明示的に実行した
-  ときだけ**動く。`install.sh`(home/ のリンク配置)や `update.sh`(pull + relink)からは
-  絶対に呼ばれない。「設定の配置」と「パッケージ導入」を分離する、という運用方針そのもの。
+  ときだけ**動く。`update.sh`(pull のみ)からは絶対に呼ばれない。
 
 ## `nix/home.nix` の役割
 
 - `home.packages` に導入したいパッケージ名を列挙する形式(`with pkgs; [ ... ]`)。
-- 対象はパッケージのみで、dotfiles 配布(`home.file`)は書かない(`home/` のシンボリック
-  リンクとの責務重複を避けるため)。
+- パッケージ導入だけでなく、`home/` 配下の dotfiles 配布(`home.file` + `mkOutOfStoreSymlink`)
+  も同じファイルで一本化している(判断根拠は `docs/decisions/dotfiles-distribution.md`)。
+  package-researcher スキルが対象とするのは `home.packages` の追加・変更のみで、
+  dotfiles 配布(`walkHome`)側のロジックは対象外。
 - zsh 本体(ログインシェル)はここでは管理しない(判断根拠は `docs/decisions/login-shell.md`)。
 
 ## 商用ツールの扱い
