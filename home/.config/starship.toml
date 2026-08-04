@@ -1,36 +1,35 @@
 "$schema" = 'https://starship.rs/config-schema.json'
 
 format = """
-[](#F2A9C4)\
+[](#F2A9C4)\
 $os\
 $username\
-[](bg:#FDE2C0 fg:#F2A9C4)\
+[](bg:#FDE2C0 fg:#F2A9C4)\
 $directory\
-[](fg:#FDE2C0 bg:#F6C4D9)\
+[](fg:#FDE2C0 bg:#F6C4D9)\
 $git_branch\
 $git_status\
-[](fg:#F6C4D9 bg:#FFFFFF)\
-$c\
-$elixir\
-$elm\
+$git_state\
+[](fg:#F6C4D9 bg:#FFFFFF)\
 $golang\
-$gradle\
-$haskell\
-$java\
-$julia\
-$maven\
 $nodejs\
 $bun\
-$nim\
 $rust\
-$scala\
-[](fg:#FFFFFF bg:#EFA0C2)\
-$docker_context\
-[](fg:#EFA0C2 bg:#FFD59E)\
+$python\
+$nix_shell\
+[ ](fg:#FFFFFF)\
+$line_break\
+$character\
+"""
+
+# 実行時間と時刻は右プロンプト(入力行の右端)に表示する。入力がそこまで伸びると自動で消える。
+# 左プロンプトは1行目に情報、2行目($character)でコマンド入力する2行スタイル。
+right_format = """
+$status\
+[ ](fg:#FFD59E)\
 $cmd_duration\
-[](fg:#FFD59E bg:#E1C2F6)\
+[  ](fg:#E1C2F6)\
 $time\
-[ ](fg:#E1C2F6)\
 """
 
 # Disable the blank line at the start of the prompt
@@ -39,7 +38,8 @@ $time\
 # You can also replace your username with a neat symbol like   or disable this
 # and use the os module below
 [username]
-show_always = true
+# 主流のデフォルト挙動に合わせ、root か SSH 接続時のみ表示(ローカルの通常ユーザーでは非表示)
+show_always = false
 style_user = "bg:#F2A9C4 fg:#333333"
 style_root = "bg:#F2A9C4 fg:#333333"
 format = '[$user ]($style)'
@@ -49,11 +49,26 @@ disabled = false
 # represents the current operating system
 [os]
 style = "bg:#F2A9C4 fg:#333333"
-disabled = true # Disabled by default
+disabled = false
+
+# グリフは starship preset nerd-font-symbols 由来。対象環境(macOS / WSL / Linux)+
+# 代表的なディストリだけ定義し、それ以外はデフォルトのシンボルに任せる
+[os.symbols]
+Macos = " "
+Windows = "󰍲 "
+Linux = " "
+Ubuntu = " "
+Debian = " "
+Arch = " "
+Fedora = " "
+Alpine = " "
+NixOS = " "
+Unknown = " "
 
 [directory]
 style = "bg:#FDE2C0 fg:#333333"
-format = "[ $path ]($style)"
+format = "[  $path ]($style)"
+read_only = " 󰌾"
 truncation_length = 3
 truncation_symbol = "…/"
 
@@ -61,42 +76,17 @@ truncation_symbol = "…/"
 # similar to mapped_locations in Oh My Posh:
 [directory.substitutions]
 "Documents" = "󰈙 "
-"Downloads" = " "
-"Music" = " "
-"Pictures" = " "
+"Downloads" = " "
+"Music" = " "
+"Pictures" = " "
 # Keep in mind that the order matters. For example:
 # "Important Documents" = " 󰈙 "
 # will not be replaced, because "Documents" was already substituted before.
 # So either put "Important Documents" before "Documents" or use the substituted version:
 # "Important 󰈙 " = " 󰈙 "
 
-[c]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[cpp]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[docker_context]
-symbol = " "
-style = "bg:#EFA0C2 fg:#333333"
-format = '[ $symbol $context ]($style)'
-
-[elixir]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[elm]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
 [git_branch]
-symbol = ""
+symbol = ""
 style = "bg:#F6C4D9 fg:#333333"
 format = '[ $symbol $branch ]($style)'
 
@@ -104,66 +94,72 @@ format = '[ $symbol $branch ]($style)'
 style = "bg:#F6C4D9 fg:#333333"
 format = '[$all_status$ahead_behind ]($style)'
 
+# rebase / merge / cherry-pick 進行中にその旨と進捗を表示する
+[git_state]
+style = "bg:#F6C4D9 fg:#333333"
+format = '[\($state( $progress_current/$progress_total)\) ]($style)'
+
 [golang]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[gradle]
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[haskell]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[java]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[julia]
-symbol = " "
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[maven]
+symbol = " "
 style = "bg:#FFFFFF fg:#333333"
 format = '[ $symbol ($version) ]($style)'
 
 [nodejs]
-symbol = ""
+symbol = ""
 style = "bg:#FFFFFF fg:#333333"
 format = '[ $symbol ($version) ]($style)'
 
 [bun]
-symbol = ""
-style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
-
-[nim]
-symbol = "󰆥 "
+symbol = ""
 style = "bg:#FFFFFF fg:#333333"
 format = '[ $symbol ($version) ]($style)'
 
 [rust]
-symbol = ""
+symbol = ""
 style = "bg:#FFFFFF fg:#333333"
 format = '[ $symbol ($version) ]($style)'
 
-[scala]
-symbol = " "
+[python]
+symbol = " "
 style = "bg:#FFFFFF fg:#333333"
-format = '[ $symbol ($version) ]($style)'
+# venv に入っているときは venv 名も表示する
+format = '[ $symbol ($version)( \($virtualenv\)) ]($style)'
+
+# nix shell / nix develop の中にいるとき表示(pure / impure)
+[nix_shell]
+symbol = " "
+style = "bg:#FFFFFF fg:#333333"
+format = '[ $symbol $state ]($style)'
 
 [cmd_duration]
-min_time = 5000
-style = "bg:#FFD59E fg:#333333"
-format = '[  $duration ]($style)'
+# 0 にするとどんなに速いコマンドでも実行時間を常に表示する(デフォルトは 2000ms 以上のみ)。
+# show_milliseconds でミリ秒単位まで表示(750ms / 1s500ms / 1m35s0ms のように桁が上がると
+# 単位も自動で繰り上がる)。これが無いと min_time = 0 でも 1 秒未満は「0s」としか出ない。
+min_time = 0
+show_milliseconds = true
+style = "fg:#FFD59E"
+format = '[  $duration ]($style)'
 
 [time]
 disabled = false
 time_format = "%R" # Hour:Minute Format
-style = "bg:#E1C2F6 fg:#333333"
+style = "fg:#E1C2F6"
 format = '[  $time ]($style)'
+
+# 入力記号は形を変えず色だけ変える(成功: 緑 / 失敗: 赤)。失敗の詳細(exit code)は
+# 右プロンプトの status モジュールに出す(入力行の記号を ✗ にすると「これから打つコマンドが
+# 間違っている」ように見えるため)
+[character]
+success_symbol = '[❯](bold green)'
+error_symbol = '[❯](bold red)'
+
+# 直前のコマンドの exit code を右プロンプトに常時表示する(成功: 緑の✓ 0 / 失敗: 赤の✗ code)。
+# デフォルトでは無効のモジュールなので disabled = false で有効化する
+[status]
+disabled = false
+# シンボル文字列の中で $status を展開すると exit code の数字ごと色指定できる
+# (style は成功/失敗で分岐できないため空にして、色はシンボル側で持つ)
+format = '[$symbol ]($style)'
+success_symbol = '[✓ $status](bold green)'
+symbol = '[✗ $status](bold red)'
+style = ''

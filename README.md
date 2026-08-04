@@ -42,7 +42,7 @@ git clone https://github.com/S6U5/dotfiles.git
 cd dotfiles
 ```
 
-パッケージ導入・dotfiles 配布は **Nix + home-manager** に一本化しています(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship / wezterm 等のツール一式、および `home/` 配下の設定ファイル配布の両方)。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` / `docs/decisions/dotfiles-distribution.md` 参照)。
+パッケージ導入・dotfiles 配布は **Nix + home-manager** に一本化しています(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / eza / starship / wezterm 等のツール一式、および `home/` 配下の設定ファイル配布の両方)。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` / `docs/decisions/dotfiles-distribution.md` 参照)。
 
 前提として Nix 本体のインストールが必要です。[NixOS/nix-installer](https://github.com/NixOS/nix-installer)(NixOS 公式が管理する、Determinate Nix Installer のフォーク。商用企業ではなく NixOS 自体が管理している点、flakes が扱える点、アンインストールが `nix-installer uninstall` で綺麗に戻せる点から、公式のクラシックインストーラより推奨)を使います:
 
@@ -163,7 +163,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
-このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。
+このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。`ls` / `ll` / `la` / `lt`(ツリー表示)は eza があればアイコン・色付き表示になります(無い環境では色付き ls にフォールバック。判断根拠は `docs/decisions/ls-replacement.md` 参照)。
 
 ## リポジトリ構成
 

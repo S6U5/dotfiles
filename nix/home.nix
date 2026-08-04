@@ -121,6 +121,8 @@ in
   # 描画する WezTerm は Windows ネイティブ側(winget 等で別途手動インストール、README 参照)で
   # 動くため、ここで入る WSL 内(Linux 側)の wezterm バイナリは(nerd-fonts と同様に)使わない。
   # 設定ファイルは home/.config/wezterm/wezterm.lua。
+  # eza は ls の代替(アイコン・色付き表示)。ls/ll/la/lt エイリアスとして使う
+  # (home/.config/shell/aliases.sh 側。無い環境では色付き ls にフォールバック)。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -130,6 +132,7 @@ in
     neovim
     ripgrep
     fd
+    eza
     ruff
     herdr
     nerd-fonts.jetbrains-mono
