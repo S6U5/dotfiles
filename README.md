@@ -54,15 +54,18 @@ cd dotfiles
 curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes
 ```
 
-インストール後、シェルを再起動(または新しいターミナルを開く)してから:
+インストール後、シェルを再起動(または新しいターミナルを開く)してから、環境に合わせて実行します(`#` の後ろが対象システム):
 
 ```sh
-home-manager switch --flake ./nix#aarch64-darwin --impure     # 適用(Apple Silicon Mac の例)
+home-manager switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
+home-manager switch --flake ./nix#aarch64-linux --impure   # WSL / Linux(ARM。例: Raspberry Pi)
+home-manager switch --flake ./nix#x86_64-darwin --impure   # macOS(Intel)
+home-manager switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon)
 ```
 
 `nix/flake.lock` はバージョンを固定するためリポジトリにコミット済みなので、通常は生成不要です。`nixpkgs` / `home-manager` のバージョンを更新したいときだけ `nix flake update ./nix` を実行してください。
 
-`#` の後ろは環境に応じて `x86_64-linux` / `aarch64-linux` / `x86_64-darwin` / `aarch64-darwin` から選びます。dotfiles 自体(`home/` 以下)には影響しません。
+WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマンドを実行してください(Nix自体もWSL内にインストールします)。dotfiles 自体(`home/` 以下)にはどのシステムを選んでも影響しません。
 
 `--impure` が必要なのは、実際のユーザー名をリポジトリにハードコードしないため `nix/home.nix` が `builtins.getEnv "USER"` で実行時に解決しているためです(flake の pure 評価では環境変数を読めません)。
 
