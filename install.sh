@@ -7,9 +7,6 @@
 #   home/.tmux.conf         -> ~/.tmux.conf
 #   home/.config/foo/bar    -> ~/.config/foo/bar
 #
-# zsh の .zshenv / .config/zsh/.zshrc は対象外(nix/home.nix の programs.zsh が生成。
-# 判断根拠は docs/decisions/zshrc-pollution.md の履歴参照)。
-#
 # 例外: ~/.bashrc と ~/.bash_profile はシンボリックリンクにせず、実体を
 # ~/.config/bash/bashrc から読み込むだけの薄いブートストラップの実ファイルとして生成する。
 # nvm/pyenv/Homebrew 等のインストーラがここへ自動追記しても、dotfiles 管理下の
@@ -182,8 +179,8 @@ bootstrap_file() {
 #     だけを対象にする(有効・リンク切れを問わず削除。他ツールのリンクには触れない)。
 #   - ブートストラップファイルは、内容が生成時のものと完全一致する場合だけ削除する
 #     (ユーザーが手を加えていたら、誤って消さないようスキップして警告する)。
-#   - nix/home.nix が管理する zsh 設定(.zshenv 等)やパッケージ、このリポジトリ自身の
-#     .githooks 設定はこのコマンドの対象外(install.sh が作ったものではないため)。
+#   - nix/home.nix が管理するパッケージや、このリポジトリ自身の .githooks 設定は
+#     このコマンドの対象外(install.sh が作ったものではないため)。
 uninstall() {
   if [ ! -d "$HOME_SRC" ]; then
     warn "home/ ディレクトリがありません。削除対象なし。"
@@ -225,7 +222,7 @@ uninstall() {
     log "uninstall: ${removed} 件を削除しました。"
   fi
   log ""
-  log "注意: nix/home.nix が管理する zsh 設定・パッケージや、このリポジトリ自身の"
+  log "注意: nix/home.nix が管理するパッケージや、このリポジトリ自身の"
   log "      .githooks 設定(git config core.hooksPath)はこのコマンドの対象外です。"
 }
 

@@ -33,19 +33,19 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 ## リポジトリ構成
 
-- `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.tmux.conf` → `~/.tmux.conf`)。新しい設定ファイルは基本ここに置く。**bash のエントリポイントは例外**で、`home/.config/bash/bashrc` は対応する `$HOME` 上のパスにリンクされるが、`~/.bashrc` / `~/.bash_profile` 自体は home/ 側に対応物が無い(install.sh が生成する管理外の実ファイル)。**zsh のエントリポイント(`.zshenv` / `.config/zsh/.zshrc`)は home/ の対象外**で、`nix/home.nix` の `programs.zsh` が生成する(理由は後述の「シェル設定の構成」、および `docs/decisions/zshrc-pollution.md` 参照)。
-- `install.sh` — `home/` 以下を `$HOME` にシンボリックリンクするスクリプト。zsh の設定ファイルは home/ の対象外のため関与しない。
-- `nix/` — Nix + home-manager によるパッケージ管理(`flake.nix` + `home.nix`)。パッケージ導入は**これに一本化**しており、導入は明示実行のみ(`home-manager switch --flake ./nix#<system>`。install.sh / update.sh からは呼ばない)。対象は基本的にパッケージのみで、dotfiles 配布(`home.file`)は原則書かない(`home/` のシンボリックリンクとの責務重複を避けるため)。**ただし zsh の設定内容(`.zshrc`/`.zshenv`)だけは例外**で `programs.zsh` により Nix 管理する(理由: oh-my-zsh 等のフレームワークが `home.file` で `.zshenv` に書き込む設計のため、手動シンボリックリンクと構造的に衝突する。判断根拠は `docs/decisions/package-management.md` の履歴、`docs/decisions/zshrc-pollution.md` の履歴参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。
+- `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.tmux.conf` → `~/.tmux.conf`)。新しい設定ファイルは基本ここに置く。**bash / zsh のエントリポイントは例外**で、`home/.config/bash/bashrc` は対応する `$HOME` 上のパスにリンクされるが、`~/.bashrc` / `~/.bash_profile` 自体は home/ 側に対応物が無い(install.sh が生成する管理外の実ファイル)。zsh は `home/.zshenv`(ZDOTDIR 設定のみ)と `home/.config/zsh/.zshrc`(設定本体)がどちらも通常どおり home/ からシンボリックリンクされる(理由は後述の「シェル設定の構成」、および `docs/decisions/zshrc-pollution.md` 参照)。
+- `install.sh` — `home/` 以下を `$HOME` にシンボリックリンクするスクリプト。zsh の設定ファイルも他の home/ ファイルと同様にこれでリンクされる。
+- `nix/` — Nix + home-manager によるパッケージ管理(`flake.nix` + `home.nix`)。パッケージ導入は**これに一本化**しており、導入は明示実行のみ(`home-manager switch --flake ./nix#<system>`。install.sh / update.sh からは呼ばない)。対象は基本的にパッケージのみで、dotfiles 配布(`home.file`)は原則書かない(`home/` のシンボリックリンクとの責務重複を避けるため)。zsh の設定内容(`.zshrc`/`.zshenv`)も home/ 管理に統一しており、Nix 側の例外は無い(理由: oh-my-zsh 廃止によって、home-manager の oh-my-zsh モジュールが `home.file` で `.zshenv` に書き込む設計との衝突が解消されたため。判断根拠は `docs/decisions/package-management.md` の履歴、`docs/decisions/zshrc-pollution.md` の履歴参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。
   - **`nix/home.nix` にツールを追加・変更する前に、必ず公式リポジトリのメンテナンス状況(アーカイブされていないか、直近のコミット)と nixpkgs 側のパッケージが `broken` 等のフラグ付きでないかを確認する。**「〇〇を入れて」のように依頼側で決まっているように見える場合や、一見1行追記するだけの単純な依頼に見える場合でも省略しない。手順は `package-researcher` スキル(`.claude/skills/package-researcher/`)を参照。
 - `templates/` — 新プロジェクトにコピーして使う雛形置き場。`$HOME` にはリンクされない(home/ と分離)。プロジェクト用のエージェント指示は `AGENTS.md` を本体とし、`CLAUDE.md` は `@AGENTS.md` 参照のみの薄いファイルにする(二重管理を避ける)。
 
 ## シェル設定の構成
 
 - **zsh / bash 両対応。ただし2つの入口の構造は異なる**(判断の詳細は `docs/decisions/zshrc-pollution.md` 参照):
-  - **zsh**: `.zshenv` / `.config/zsh/.zshrc` は `nix/home.nix` の `programs.zsh`(`dotDir = ".config/zsh"`)が生成する。home-manager 自身が `~/.zshenv` に ZDOTDIR 設定+`.config/zsh/.zshenv` を source するだけのスタブを自動生成するため、`$HOME` 直下には実質そのスタブしか置かれず、nvm/pyenv/Homebrew 等のインストーラが `~/.zshrc` に自動追記しても、それは孤立ファイルになるだけで実際に読み込まれる設定は汚れない(旧来の手動 ZDOTDIR シンボリックリンク方式と同じ効果を home-manager の仕組みで実現。oh-my-zsh・zsh-autosuggestions・zsh-syntax-highlighting もここで宣言的に管理する)。zsh 固有の設定本体は `nix/home.nix` の `programs.zsh.initContent` 等に書く(`home/` 側には無い)。
+  - **zsh**: `home/.zshenv`(`~/.zshenv` にリンク)が ZDOTDIR を `~/.config/zsh` に切り替えるだけの薄いファイル(ZDOTDIR方式)。設定本体は `home/.config/zsh/.zshrc`(`~/.config/zsh/.zshrc` にリンク)に書く。`$HOME` 直下には実質 `.zshenv` しか置かれないため、nvm/pyenv/Homebrew 等のインストーラが `~/.zshrc` に自動追記しても、それは孤立ファイルになるだけで実際に読み込まれる設定は汚れない。Starship(プロンプト)・zsh-autosuggestions・zsh-syntax-highlighting は Nix の `home.packages` で導入し、`.zshrc` 側で `command -v` / ファイル存在チェックの上で読み込む(`home-manager switch` 未実行でも壊れないように)。oh-my-zsh は廃止済み(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照。低速マウント上での起動遅延が理由)。
   - **bash**: bash には ZDOTDIR 相当の一括退避機構が無いため、**ブートストラップ方式**を採る。`~/.bashrc` / `~/.bash_profile` は `install.sh` が生成する dotfiles 管理外の実ファイル(シンボリックリンクではない)で、中身は `~/.config/bash/bashrc`(`home/.config/bash/bashrc` にリンク。実際の設定本体)を読み込むだけの1行。nvm/pyenv/Homebrew 等が `~/.bashrc` に自動追記しても、この2ファイルは元から管理対象外なので実害が無い。
-  - どちらも共通設定 `home/.config/shell/init.sh` を source する(zsh 側は `programs.zsh.initContent` の先頭で source する)。
-- `home/.config/shell/` 以下(共通部)は **POSIX sh 互換**で書く。zsh / bash 固有の書き方が必要な設定は、共通部ではなく各エントリポイント(zsh は `nix/home.nix` の `programs.zsh` / bash は `home/.config/bash/bashrc`)側に書く。
+  - どちらも共通設定 `home/.config/shell/init.sh` を source する(zsh 側は `home/.config/zsh/.zshrc` の先頭で source する)。
+- `home/.config/shell/` 以下(共通部)は **POSIX sh 互換**で書く。zsh / bash 固有の書き方が必要な設定は、共通部ではなく各エントリポイント(zsh は `home/.config/zsh/.zshrc` / bash は `home/.config/bash/bashrc`)側に書く。
 - 読み込み順(init.sh が制御):
   1. `env.sh` — 環境変数
   2. その他の `*.sh` — アルファベット順(`aliases.sh`、`fzf.sh`、`functions.sh`、…)。ファイルを追加すれば自動で読み込まれる
@@ -72,7 +72,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
   - `--force` 指定時のみ `*.bak.<timestamp>` に退避してから上書き。
   - 冪等(何度実行しても安全)。`--dry-run` あり。
   - **非対話・sudo 不要・高速を維持する**(GitHub Codespaces / devcontainer が起動時に自動実行する前提のため)。
-- パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)は引き続き Nix の管理対象外だが、**zsh の設定内容だけは例外的に Nix(`programs.zsh`)で管理する**(判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照)。
+- パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)は Nix の管理対象外(zsh の設定内容も含め、`home/` のシンボリックリンクに統一。判断根拠は `docs/decisions/zshrc-pollution.md` の履歴参照)。
 - **OSS として公開する方針で決定済み**(現在はプライベート)。公開は「TODO.md の残項目を全て片付ける → Git の全履歴を1コミットに圧縮する → 公開に切り替える」の順で行う(判断の詳細・履歴圧縮が必要な理由は `docs/decisions/oss-publish-plan.md` 参照)。以下は絶対にコミットしない:
   - APIキー、トークン、パスワードなどの機密情報
   - プライベートなパス(実際のユーザー名を含む絶対パスなど)

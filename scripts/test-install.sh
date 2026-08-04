@@ -31,11 +31,9 @@ else
 fi
 
 echo "== 2) 代表ファイルがリンクされているか"
-# zsh の .zshenv / .config/zsh/.zshrc は home-manager(nix/home.nix の
-# programs.zsh)が生成するため、install.sh のリンク対象ではない(判断根拠は
-# docs/decisions/zshrc-pollution.md 履歴参照)。ここでは検証しない
 for f in .config/bash/bashrc .tmux.conf .npmrc \
-  .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update; do
+  .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update \
+  .zshenv .config/zsh/.zshrc; do
   if [ -L "$TEST_HOME/$f" ] && [ -e "$TEST_HOME/$f" ]; then
     ok "リンク: $f"
   else
@@ -80,9 +78,13 @@ if HOME="$TEST_HOME" bash -ic 'type mkcd >/dev/null && type cdov >/dev/null' >/d
 else
   ng "bash: ブートストラップ経由での関数定義に失敗"
 fi
-# zsh の設定読み込みは home-manager(nix/home.nix の programs.zsh)が生成する
-# .zshenv/.zshrc に依存するため、install.sh 単体のテストであるこのスクリプトでは
-# 検証できない(home-manager switch を伴う動作確認は別途手動で行う)
+if command -v zsh >/dev/null 2>&1; then
+  if HOME="$TEST_HOME" zsh -ic 'type mkcd >/dev/null && type cdov >/dev/null' >/dev/null 2>&1; then
+    ok "zsh: ZDOTDIR(~/.zshenv)経由で関数が定義される(home-manager 未適用でも動く)"
+  else
+    ng "zsh: ZDOTDIR経由での関数定義に失敗"
+  fi
+fi
 
 echo "== 6) 自作コマンド(アプリの無い環境でも壊れないか)"
 if HOME="$TEST_HOME" PATH="$TEST_HOME/.local/bin:$PATH" word >/dev/null 2>&1; then
@@ -215,6 +217,11 @@ if command -v zsh >/dev/null 2>&1; then
     ok "zsh 補完: 構文OK"
   else
     ng "zsh 補完: 構文エラー"
+  fi
+  if zsh -n "$DOTFILES_DIR/home/.config/zsh/.zshrc" 2>/dev/null; then
+    ok "zsh .zshrc: 構文OK"
+  else
+    ng "zsh .zshrc: 構文エラー"
   fi
 fi
 
