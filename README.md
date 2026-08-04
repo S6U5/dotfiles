@@ -192,6 +192,8 @@ home-manager switch --flake ./nix#<system> --impure
 
 `home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` を実行してください(実 `$HOME` を書き換えます)。
 
+まっさらな環境で試すなら、`.devcontainer/` でこのリポジトリをコンテナとして開くと、Nix導入から `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` までが自動実行されます。
+
 ## push を無効化する(誤 push 防止)
 
 fetch/pull だけ使い、この clone からは push しないようにしたい環境向けです。ローカルの `.git/config` だけを変更するので、他の clone やリモート側には影響しません。仕組みは `origin` の push 先 URL だけを無効な値に差し替えるというシンプルなもので、fetch URL には触れないため pull はそのまま使えます。
@@ -200,8 +202,6 @@ fetch/pull だけ使い、この clone からは push しないようにした�
 ./scripts/lock-push.sh           # push を無効化
 ./scripts/lock-push.sh --unlock  # push を元に戻す
 ```
-
-または `.devcontainer/` でコンテナとして開くと自動実行されます。
 
 スクリプトを使わず手動で同じことをしたい場合は、push URL を直接書き換えても構いません:
 
