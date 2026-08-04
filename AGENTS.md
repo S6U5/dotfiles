@@ -65,7 +65,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - リポジトリは単一で「共通レイヤー + OS別レイヤー」構造とする。OS別の管理が辛くなったら、リポジトリ分割も選択肢として残す(TODO.md 参照)。
 - **既存ファイルとの衝突は home-manager 本体が検知する**。home.file が管理しようとするパスに既存ファイルがあると `home-manager switch` はエラーで停止する(黙って上書きしない)。`-b <拡張子>` オプションで既存ファイルを退避してから上書きできる(判断根拠・詳細は README「既存の設定ファイルとぶつかったとき」参照)。
 - パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)も Nix(home-manager の `home.file`)で配布する(zsh の設定内容も含む。判断根拠は `docs/decisions/dotfiles-distribution.md`、`docs/decisions/zshrc-pollution.md` の履歴参照)。**Nix が使えない環境ではこの dotfiles は機能しない**(意図的にフォールバックは作らない)。
-- **OSS として公開する方針で決定済み**(現在はプライベート)。公開は「TODO.md の残項目を全て片付ける → Git の全履歴を1コミットに圧縮する → 公開に切り替える」の順で行う(判断の詳細・履歴圧縮が必要な理由は `docs/decisions/oss-publish-plan.md` 参照)。以下は絶対にコミットしない:
+- **OSS として公開済み**(「TODO.md の残項目を全て片付ける → Git の全履歴を1コミットに圧縮する → 公開に切り替える」の手順で実施済み。判断の詳細・履歴圧縮が必要だった理由は `docs/decisions/oss-publish-plan.md` 参照)。以下は絶対にコミットしない:
   - APIキー、トークン、パスワードなどの機密情報
   - プライベートなパス(実際のユーザー名を含む絶対パスなど)
   - メールアドレスや個人情報を含む設定(公開しても問題ないものは除く)
@@ -131,7 +131,8 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 - main は直push禁止・PR経由必須のブランチ保護を設定する(admin である自分への強制はしない。緊急時の直push退路を残すため)。CI(lint / home-manager-test / gitleaks)を required status check にする。個人リポジトリのためレビュー必須化はしない。
 - 外部からの Pull Request は受け付けない(GitHub の `pull_request_creation_policy` を `collaborators_only` にして技術的に制限する)。Issue は受け付ける。
-- 上記はいずれも GitHub の実設定としては**公開に切り替えるタイミングで行う**(branch protection・repository ruleset ともプライベートリポジトリの無料プランでは設定できない仕様のため)。判断の詳細は `docs/decisions/oss-publish-plan.md` 参照。
+- 上記はいずれも GitHub の実設定として**設定済み**(公開への切り替え時に実施。main の branch protection は required status checks = lint / gitleaks / home-manager-test ×2、`pull_request_creation_policy` は `collaborators_only`)。判断の詳細は `docs/decisions/oss-publish-plan.md` 参照。
+- コミットメッセージ・PR 本文に、Claude Code のセッション URL(`Claude-Session:` 行)や `Co-authored-by: Claude` 行、「Generated with Claude Code」等のフッターを**含めない**(作業文脈を残さない方針の一環。公開後に混入が発覚し、履歴書き換えで除去した経緯がある)。
 - **ローカル側では pre-commit フック(`.githooks/pre-commit`)が main ブランチへの直接コミットを検知してブロックする**(実装済み)。サーバー側のブランチ保護は push した時点で初めて弾かれるため手戻りが大きく、特にエージェント(Claude Code等)がブランチルールを見落として main のまま作業を進めてしまう事故を、コミット時点で早期に検知する狙い。緊急時は `git commit --no-verify` で回避できる。
 
 ## 命名規則

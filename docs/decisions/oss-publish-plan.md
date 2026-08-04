@@ -38,4 +38,6 @@
 ## 履歴
 
 - (公開する方向・TODO消化後に履歴圧縮して公開、本ADR): 上記の理由により決定
+- (公開実施済み): 本ADRの手順(TODO消化 → 全履歴を1コミットに圧縮 → 公開切り替え)を実施した。branch protection(required status checks)と `pull_request_creation_policy: collaborators_only` も公開時に設定済み
+- (公開後のセッションリンク再混入と除去): 2026-08-05、公開後に積まれたコミットのメッセージに `Claude-Session:` 行が再混入していたことが発覚。`git filter-branch --msg-filter` で main 全体から `Claude-Session:` / `Co-authored-by: Claude` 行を除去し force push した(ブランチ保護の force push 禁止を一時解除して実施・完了後に復元)。PR ページに紐づく書き換え前のコミットは GitHub 側に残り、削除には GitHub Support への依頼が必要(セッション URL 自体は所有者以外閲覧不可)。再発防止として、コミット・PR に Claude 関連フッターを一切含めない運用に変更(AGENTS.md に明文化)
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)

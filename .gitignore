@@ -13,6 +13,9 @@ local.sh
 # OS が作る不要ファイル
 .DS_Store
 
+# Nix のビルド出力シンボリックリンク(home-manager build 等が作業ディレクトリに作る)
+result
+
 # skill-creator によるスキル検証時の一時ワークスペース(評価ログ・レポート等。
 # スキル本体の動作には不要なので追跡しない)
 .claude/skills/*-workspace/
