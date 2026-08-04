@@ -54,7 +54,18 @@ cd dotfiles
 curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes
 ```
 
-インストール後、シェルを再起動(または新しいターミナルを開く)してから、環境に合わせて実行します(`#` の後ろが対象システム):
+インストール後、シェルを再起動(または新しいターミナルを開く)してから、環境に合わせて実行します(`#` の後ろが対象システム)。
+
+**初回は `home-manager` コマンドがまだ存在しない**ため、いきなり `home-manager switch ...` を打つと `command not found` になります。`nix run home-manager -- switch ...` のように `nix run` 経由で実行してください:
+
+```sh
+nix run home-manager -- switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
+nix run home-manager -- switch --flake ./nix#aarch64-linux --impure   # WSL / Linux(ARM。例: Raspberry Pi)
+nix run home-manager -- switch --flake ./nix#x86_64-darwin --impure   # macOS(Intel)
+nix run home-manager -- switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon)
+```
+
+`nix/home.nix` で `programs.home-manager.enable = true` としているため、この初回の `switch` が完了すると home-manager 自体もインストールされ、`home-manager` コマンドが PATH に入ります。2回目以降はこの短い形で実行できます:
 
 ```sh
 home-manager switch --flake ./nix#x86_64-linux --impure    # WSL / Linux(Intel・AMD)
@@ -76,7 +87,7 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 #### zsh をログインシェルにする場合(任意)
 
 - macOS: 標準で zsh が入っているため何もする必要はありません。
-- WSL / Linux: zsh はディストリビューションの公式ドキュメントに従ってインストールし、`chsh` でログインシェルに設定してください(パッケージ名やコマンドはディストリごとに異なるため、配布元の公式ドキュメント・`man chsh` を参照)。
+- WSL / Linux: Windows 自体には zsh が入っていないため、WSL の Linux ディストリビューション側で別途インストールが必要です。パッケージマネージャ(Ubuntu/Debian 系なら `sudo apt install zsh` 等。パッケージ名・コマンドはディストリごとに異なるため配布元の公式ドキュメントを参照。zsh 公式の [Installing zsh(FAQ)](https://zsh.sourceforge.io/FAQ/zshfaq01.html) も参考になります)でインストールしたら、`chsh -s $(which zsh)` でログインシェルに設定してください。反映にはログアウト→再ログイン(WSL の場合はターミナルの再起動でも可)が必要です(`man chsh` も参照)。
 
 パッケージ導入(Nix)と設定のリンク(`install.sh`)は基本的に独立していて、Nix を実行しなくても dotfiles 自体は壊れず動きます。zsh も bash と同じく `.zshrc`/`.zshenv` を `home/` から直接シンボリックリンクするため、`home-manager switch` を実行していなくてもエイリアス・関数・PATH追加(`~/.local/bin` 等)は `install.sh` だけで有効になります(Starship・zsh-autosuggestions・zsh-syntax-highlighting など Nix 経由の機能だけは `home-manager switch` 適用後に有効になります)。
 
@@ -198,7 +209,7 @@ docker run --rm -v "$PWD":/dotfiles -w /dotfiles ubuntu:24.04 bash scripts/test-
 
 ## push を無効化する(誤 push 防止)
 
-fetch/pull だけ使い、この clone からは push しないようにしたい環境向けです。ローカルの `.git/config` だけを変更するので、他の clone やリモート側には影響しません。
+fetch/pull だけ使い、この clone からは push しないようにしたい環境向けです。ローカルの `.git/config` だけを変更するので、他の clone やリモート側には影響しません。仕組みは `origin` の push 先 URL だけを無効な値に差し替えるというシンプルなもので、fetch URL には触れないため pull はそのまま使えます。
 
 ```sh
 ./scripts/lock-push.sh           # push を無効化
@@ -206,6 +217,13 @@ fetch/pull だけ使い、この clone からは push しないようにした�
 ```
 
 または `.devcontainer/` でコンテナとして開くと自動実行されます。
+
+スクリプトを使わず手動で同じことをしたい場合は、push URL を直接書き換えても構いません:
+
+```sh
+git remote set-url --push origin DISABLED                        # 無効化
+git remote set-url --push origin "$(git remote get-url origin)"  # 元に戻す(fetch URL と揃える)
+```
 
 ## 対応環境
 
