@@ -7,6 +7,9 @@ local.sh
 # *.local にマッチしないため明示指定)
 .claude/settings.local.json
 
+# マシン固有・個人的なファイル置き場(壁紙画像など、コミットしないがリポジトリ配下に置きたいもの)
+/local/
+
 # OS が作る不要ファイル
 .DS_Store
 

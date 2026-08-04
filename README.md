@@ -42,7 +42,7 @@ git clone https://github.com/S6U5/dotfiles.git
 cd dotfiles
 ```
 
-パッケージ導入・dotfiles 配布は **Nix + home-manager** に一本化しています(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship 等のツール一式、および `home/` 配下の設定ファイル配布の両方)。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` / `docs/decisions/dotfiles-distribution.md` 参照)。
+パッケージ導入・dotfiles 配布は **Nix + home-manager** に一本化しています(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / starship / wezterm 等のツール一式、および `home/` 配下の設定ファイル配布の両方)。OS 非依存のマニフェストで管理でき、`nixpkgs-unstable` を追跡しているため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は `docs/decisions/package-management.md` / `docs/decisions/dotfiles-distribution.md` 参照)。
 
 前提として Nix 本体のインストールが必要です。[NixOS/nix-installer](https://github.com/NixOS/nix-installer)(NixOS 公式が管理する、Determinate Nix Installer のフォーク。商用企業ではなく NixOS 自体が管理している点、flakes が扱える点、アンインストールが `nix-installer uninstall` で綺麗に戻せる点から、公式のクラシックインストーラより推奨)を使います:
 
@@ -94,6 +94,18 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 - **macOS のターミナル(Terminal.app / iTerm2 等)**: 環境設定のフォントを `JetBrainsMono Nerd Font` に変更します。
 
 設定後もアイコンが崩れる場合は、フォントが正しく選択されているか(ターミナルの再起動が必要な場合があります)を確認してください。
+
+#### WezTerm を使う
+
+ターミナルエミュレータは [WezTerm](https://wezterm.org/) を採用しています(判断根拠は `docs/decisions/terminal-emulator.md` 参照)。設定ファイルは `home/.config/wezterm/wezterm.lua`。
+
+- **macOS / Linux**: `home-manager switch` で WezTerm 本体・設定とも自動導入されます。
+- **WSL**: 実際に画面を描画する WezTerm は Windows ネイティブ側で動きます。`home-manager switch` は WSL 内(Linux 側)にしか配布できないため、Windows 側で以下を手動対応してください。
+  1. WezTerm 本体を Windows 側にインストール(例: `winget install wez.wezterm`)。
+  2. 設定ファイルは WSL 側の `~/.config/wezterm/wezterm.lua` をそのまま使えます。Windows の環境変数 `WEZTERM_CONFIG_FILE` に WSL 側パスへの UNC パス(例: `\\wsl.localhost\<ディストリ名>\home\<ユーザー名>\.config\wezterm\wezterm.lua`)を設定してください。
+  3. `wezterm.lua` 側で WSL ドメインを自動検出し `default_domain` に設定するため、起動すると WSL 内のシェルに接続されます。
+
+壁紙はデフォルト OFF です。有効にする場合は `~/.config/wezterm/wallpaper.local.lua`(git 管理外、`*.local` は `.gitignore` 対象)を作成し、画像への絶対パスを1行で `return` してください(例: `return '/path/to/wallpaper.png'`)。画像ファイル自体はこのリポジトリの管理外なので置き場所は自由です(例: `~/Pictures/` 配下)。パスさえ `wallpaper.local.lua` に書けば反映されます。
 
 #### zsh をログインシェルにする場合(任意)
 
@@ -194,6 +206,12 @@ home-manager switch --flake ./nix#<system> --impure
 ```
 
 どこからでも `dotfiles-update` コマンドで `git pull` 相当を実行できます。未コミットのローカル変更がある場合は安全のため中断します。更新があれば `home-manager switch` の実行を促すメッセージが表示されます(自動実行はしません。パッケージ導入・dotfiles反映は明示実行のみという方針のため)。
+
+WezTerm はプライバシー上の理由で組み込みの自動更新チェックを無効化しています(判断根拠は `docs/decisions/terminal-emulator.md` 参照)。macOS / Linux(WSL 内)は `home-manager switch` で他のツールと同様に更新されますが、**Windows ネイティブ側だけは手動での更新が必要**です:
+
+```powershell
+winget upgrade wez.wezterm
+```
 
 ## テスト
 
