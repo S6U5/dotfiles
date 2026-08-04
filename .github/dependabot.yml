@@ -1,10 +1,13 @@
-# GitHub Actions で使うアクションのバージョン更新を自動 PR 化する
+# GitHub Actions で使うアクションのバージョン更新を自動 PR 化する。
+# 更新頻度は weekly(OSS 公開に伴い monthly から引き上げ。nixpkgs-unstable 追跡の
+# 思想に合わせる。脆弱性発覚時の修正 PR はこのスケジュールと無関係に即時来る
+# — リポジトリ設定の automated security fixes で有効化済み)
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     groups:
       actions:
         patterns: ["*"]
@@ -12,7 +15,7 @@ updates:
   - package-ecosystem: nix
     directory: /nix
     schedule:
-      interval: monthly
+      interval: weekly
     groups:
       flake-inputs:
         patterns: ["*"]
