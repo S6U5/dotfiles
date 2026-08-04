@@ -7,3 +7,4 @@
 - [herdr](herdr.md)
 - [tmux](tmux.md)
 - [Neovim(LazyVim)](nvim.md)
+- [WezTerm](wezterm.md)
