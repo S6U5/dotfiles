@@ -86,6 +86,18 @@ in
     done
   '';
 
+  # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化する。
+  # 旧 install.sh 末尾のロジックの移植。dotfilesDir は Nix 側の値をそのまま文字列補間する
+  # (bash 変数ではない)。
+  home.activation.dotfilesGitHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if command -v git >/dev/null 2>&1 \
+      && [ -d "${dotfilesDir}/.git" ] \
+      && [ -d "${dotfilesDir}/.githooks" ]; then
+      $DRY_RUN_CMD git -C "${dotfilesDir}" config core.hooksPath .githooks
+      $VERBOSE_ECHO "dotfiles: ${dotfilesDir} の pre-commit フックを有効化しました(core.hooksPath = .githooks)"
+    fi
+  '';
+
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。
