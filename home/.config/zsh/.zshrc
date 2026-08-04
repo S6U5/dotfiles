@@ -5,6 +5,10 @@ SAVEHIST=10000
 setopt HIST_IGNORE_ALL_DUPS
 setopt SHARE_HISTORY
 
+# 対話シェルでも # 以降をコメントとして扱う(bash と同じ挙動)。
+# README のコマンド例(末尾に「# 説明」付き)をそのままコピペできるようにするため
+setopt INTERACTIVE_COMMENTS
+
 # 共通設定(bash と共有)を読み込む
 [ -r "$HOME/.config/shell/init.sh" ] && . "$HOME/.config/shell/init.sh"
 
@@ -39,6 +43,24 @@ fi
 
 # starship プロンプト(Nix の home.packages で導入。無ければ静かにスキップ)
 command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+
+# 何も入力せず Enter しただけの再描画では exit code(✓/✗)を表示しないための橋渡し。
+# starship は空 Enter 時に STARSHIP_CMD_STATUS を unset する(preexec が発火しないため)が、
+# CLI 側の status モジュールは「未指定」を 0 扱いして ✓ 0 を出してしまう。そこで
+# 「コマンド実行があったときだけ値が入る」DOTFILES_LAST_STATUS に写し、
+# starship.toml 側の custom モジュール(exit_ok / exit_err)がこれを参照する。
+# add-zsh-hook は登録順に実行されるため、starship init(上の行)より後に登録すること
+if command -v starship >/dev/null 2>&1; then
+  _dotfiles_status_precmd() {
+    if [[ -n ${STARSHIP_CMD_STATUS-} ]]; then
+      export DOTFILES_LAST_STATUS=$STARSHIP_CMD_STATUS
+    else
+      unset DOTFILES_LAST_STATUS
+    fi
+  }
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _dotfiles_status_precmd
+fi
 
 # zsh-autosuggestions(Nix の home.packages 経由で ~/.nix-profile に入る。
 # home-manager 未適用ならファイルが無いため存在チェックでスキップする)
