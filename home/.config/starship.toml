@@ -25,10 +25,9 @@ $character\
 # 実行時間と時刻は右プロンプト(入力行の右端)に表示する。入力がそこまで伸びると自動で消える。
 # 左プロンプトは1行目に情報、2行目($character)でコマンド入力する2行スタイル。
 right_format = """
-$status\
-[ ](fg:#FFD59E)\
+${custom.exit_ok}\
+${custom.exit_err}\
 $cmd_duration\
-[  ](fg:#E1C2F6)\
 $time\
 """
 
@@ -138,28 +137,31 @@ format = '[ $symbol $state ]($style)'
 min_time = 0
 show_milliseconds = true
 style = "fg:#FFD59E"
-format = '[  $duration ]($style)'
+format = '[   $duration ]($style)'
 
 [time]
 disabled = false
 time_format = "%R" # Hour:Minute Format
 style = "fg:#E1C2F6"
-format = '[  $time ]($style)'
+format = '[    $time ]($style)'
 
 # 入力記号は形を変えず色だけ変える(成功: 緑 / 失敗: 赤)。失敗の詳細(exit code)は
-# 右プロンプトの status モジュールに出す(入力行の記号を ✗ にすると「これから打つコマンドが
-# 間違っている」ように見えるため)
+# 右プロンプトの exit code 表示(下の custom.exit_ok / exit_err)に出す(入力行の記号を
+# ✗ にすると「これから打つコマンドが間違っている」ように見えるため)
 [character]
 success_symbol = '[❯](bold green)'
 error_symbol = '[❯](bold red)'
 
-# 直前のコマンドの exit code を右プロンプトに常時表示する(成功: 緑の✓ 0 / 失敗: 赤の✗ code)。
-# デフォルトでは無効のモジュールなので disabled = false で有効化する
-[status]
-disabled = false
-# シンボル文字列の中で $status を展開すると exit code の数字ごと色指定できる
-# (style は成功/失敗で分岐できないため空にして、色はシンボル側で持つ)
-format = '[$symbol ]($style)'
-success_symbol = '[✓ $status](bold green)'
-symbol = '[✗ $status](bold red)'
-style = ''
+# 直前のコマンドの exit code を右プロンプトに表示する(成功: 緑の✓ 0 / 失敗: 赤の✗ code)。
+# 組み込みの status モジュールではなく custom モジュールを使うのは、「何も入力せず Enter
+# しただけの再描画では表示しない」ため(status モジュールは exit code 未指定=空 Enter を
+# 0 と区別できない)。DOTFILES_LAST_STATUS は zsh 側の precmd フックが「コマンド実行が
+# あったときだけ」セットする(home/.config/zsh/.zshrc 参照)
+[custom.exit_ok]
+when = '[ "$DOTFILES_LAST_STATUS" = 0 ]'
+format = '[✓ 0 ](bold green)'
+
+[custom.exit_err]
+when = '[ -n "$DOTFILES_LAST_STATUS" ] && [ "$DOTFILES_LAST_STATUS" != 0 ]'
+command = 'echo "✗ $DOTFILES_LAST_STATUS"'
+format = '[$output ](bold red)'
