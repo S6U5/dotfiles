@@ -26,6 +26,23 @@ config.colors = {
 -- `winget upgrade wez.wezterm` を手動で実行する。
 config.check_for_updates = false
 
+-- Windows ネイティブ側の WezTerm から、インストール済み WSL ディストリビューションを自動検出して
+-- デフォルトドメインにする(WSL/macOS/Linux 統一の要。判断根拠は docs/decisions/terminal-emulator.md
+-- 参照)。ディストリ名をハードコードせず動的に取得する(環境ごとに異なりうるため)。
+-- default_prog を明示的に zsh にする(WSL ディストリ側のログインシェル設定(chsh)に依存させない。
+-- 未指定のままだと WSL ディストリのデフォルトシェル(多くの場合 bash)が起動してしまう)。
+-- 採用したドメイン名は下の gui-startup でも参照するため local に控える。
+local wsl_default_domain
+if wezterm.target_triple:find 'windows' then
+  local wsl_domains = wezterm.default_wsl_domains()
+  if wsl_domains and #wsl_domains > 0 then
+    wsl_domains[1].default_prog = { 'zsh' }
+    config.wsl_domains = wsl_domains
+    config.default_domain = wsl_domains[1].name
+    wsl_default_domain = wsl_domains[1].name
+  end
+end
+
 -- 初期ウィンドウサイズをディスプレイの実サイズから比率で決める(FHD と 4K/ウルトラワイドで
 -- 見た目の大きさを揃えるため。initial_cols / initial_rows はセル数指定なのでディスプレイに
 -- よって占有率が変わりすぎる)。gui-startup は起動時の最初のウィンドウにだけ発火する。
@@ -36,7 +53,14 @@ wezterm.on('gui-startup', function(cmd)
   local screen = wezterm.gui.screens().active
   local width = math.floor(screen.width * screen_ratio)
   local height = math.floor(screen.height * screen_ratio)
-  local _tab, _pane, window = wezterm.mux.spawn_window(cmd or {})
+  local spawn = cmd or {}
+  -- gui-startup で mux.spawn_window を使うと config.default_domain が確実には反映されず、
+  -- Windows でローカルドメイン(PowerShell 等)が開いて WSL の zsh 明示起動が効かないことが
+  -- あるため、WSL ドメインを明示指定する(CLI 引数などで既にドメイン指定がある場合は触らない)
+  if wsl_default_domain and not spawn.domain then
+    spawn.domain = { DomainName = wsl_default_domain }
+  end
+  local _tab, _pane, window = wezterm.mux.spawn_window(spawn)
   local gui_window = window:gui_window()
   gui_window:set_inner_size(width, height)
   gui_window:set_position(
@@ -44,20 +68,6 @@ wezterm.on('gui-startup', function(cmd)
     screen.y + math.floor((screen.height - height) / 2)
   )
 end)
-
--- Windows ネイティブ側の WezTerm から、インストール済み WSL ディストリビューションを自動検出して
--- デフォルトドメインにする(WSL/macOS/Linux 統一の要。判断根拠は docs/decisions/terminal-emulator.md
--- 参照)。ディストリ名をハードコードせず動的に取得する(環境ごとに異なりうるため)。
--- default_prog を明示的に zsh にする(WSL ディストリ側のログインシェル設定(chsh)に依存させない。
--- 未指定のままだと WSL ディストリのデフォルトシェル(多くの場合 bash)が起動してしまう)。
-if wezterm.target_triple:find 'windows' then
-  local wsl_domains = wezterm.default_wsl_domains()
-  if wsl_domains and #wsl_domains > 0 then
-    wsl_domains[1].default_prog = { 'zsh' }
-    config.wsl_domains = wsl_domains
-    config.default_domain = wsl_domains[1].name
-  end
-end
 
 -- 壁紙はデフォルト OFF。画像パスはマシン固有・プライベートになりうるためコミットしない
 -- (CLAUDE.md の「機密になりうる値は環境変数や *.local ファイルから読む」方針)。有効にするには
