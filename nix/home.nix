@@ -112,7 +112,8 @@ in
   # ターミナルエミュレータ側でこのフォントを選択する設定も別途必要(README の
   # 「Nerd Font をターミナルで有効にする」参照)。WSL の場合、この home-manager が
   # 入れるのは WSL 内(Linux 側)のみで、Windows ネイティブの Windows Terminal 等からは
-  # 見えないため、Windows 側にも別途インストールが必要。
+  # 見えないため、Windows 側にも別途インストールが必要(WSL 内で wsl-font-setup を
+  # 実行すると自動化できる)。
   # lazygit は LazyVim のgit連携キーマップ(<leader>gg 等)が使うgit TUI。
   # delta は git diff/log/blame のシンタックスハイライトページャ。設定は
   # templates/git/.gitconfig.template 側(delta が無くても less にフォールバックする)。
