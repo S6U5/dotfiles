@@ -69,15 +69,33 @@ wezterm.on('gui-startup', function(cmd)
   )
 end)
 
--- 壁紙はデフォルト OFF。画像パスはマシン固有・プライベートになりうるためコミットしない
--- (CLAUDE.md の「機密になりうる値は環境変数や *.local ファイルから読む」方針)。有効にするには
--- ~/.config/wezterm/wallpaper.local.lua(*.local は .gitignore 対象)を作成し、画像への絶対パスを
--- 1行で return する(例: return '/path/to/wallpaper.png')。
+-- 壁紙はデフォルトでコミット済みの wallpaper.png を使う(プロンプトのパステル配色に合わせた
+-- AI 生成のテンプレート壁紙。生成メタデータは除去済み。個人の写真等マシン固有・プライベートに
+-- なりうる画像はコミットせず local 側で差し替える方針は従来どおり)。
+-- 差し替え・無効化は ~/.config/wezterm/wallpaper.local.lua(*.local は .gitignore 対象)で行う:
+--   差し替え: 画像への絶対パスを1行で return する(例: return '/path/to/wallpaper.png')
+--   無効化:   return false
+-- デフォルト壁紙は設定ディレクトリ相対で解決するため、WSL(Windows 側の WezTerm が UNC パス
+-- 経由で設定を読む構成)でもパス変換なしでそのまま表示できる。
 -- Cover で画面いっぱいに拡大表示。画像自体の hsb だけで暗くすると、画像内の明るい部分が
 -- 局所的に残って文字が読みにくくなることがあるため、上に半透明の黒レイヤーを重ねて均一に暗くする
 -- (background のレイヤーは配列の後ろのものほど上に重なる。公式ドキュメント記載の手法)。
-local wallpaper_ok, wallpaper_path = pcall(dofile, wezterm.config_dir .. '/wallpaper.local.lua')
-local wallpaper_enabled = wallpaper_ok and type(wallpaper_path) == 'string' and wallpaper_path ~= ''
+local wallpaper_path
+local wallpaper_local_ok, wallpaper_local = pcall(dofile, wezterm.config_dir .. '/wallpaper.local.lua')
+if wallpaper_local_ok then
+  -- local ファイルがある場合はその指定を最優先(文字列なら差し替え、false 等なら壁紙なし)
+  if type(wallpaper_local) == 'string' and wallpaper_local ~= '' then
+    wallpaper_path = wallpaper_local
+  end
+else
+  local default_wallpaper = wezterm.config_dir .. '/wallpaper.png'
+  local f = io.open(default_wallpaper, 'rb')
+  if f then
+    f:close()
+    wallpaper_path = default_wallpaper
+  end
+end
+local wallpaper_enabled = wallpaper_path ~= nil
 
 -- image_opacity を引数にするのは、Ctrl+Shift+O でのウィンドウ透過切り替え(下記)のときに
 -- レイヤーごと作り直す必要があるため。config.background のレイヤーが完全に不透明(alpha=1)だと

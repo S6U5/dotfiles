@@ -105,7 +105,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
   2. 設定ファイルは WSL 側の `~/.config/wezterm/wezterm.lua` をそのまま使えます。Windows の環境変数 `WEZTERM_CONFIG_FILE` に WSL 側パスへの UNC パス(例: `\\wsl.localhost\<ディストリ名>\home\<ユーザー名>\.config\wezterm\wezterm.lua`)を設定してください。WSL 内で `wsl-wezterm-setup` を実行すると自動設定できます(`setx.exe` でユーザー環境変数として永続化。反映には WezTerm の再起動が必要)。
   3. `wezterm.lua` 側で WSL ドメインを自動検出し `default_domain` に設定するため、起動すると WSL 内のシェルに接続されます。起動するシェルは zsh を明示指定しているため、WSL ディストリ側に zsh のインストールが必要です(未インストールだとペインの起動に失敗します。インストール手順は後述「zsh をログインシェルにする場合」参照。`chsh` でのログインシェル変更までは必須ではありません)。
 
-壁紙はデフォルト OFF です。有効にする場合は `~/.config/wezterm/wallpaper.local.lua`(git 管理外、`*.local` は `.gitignore` 対象)を作成し、画像への絶対パスを1行で `return` してください(例: `return '/path/to/wallpaper.png'`)。画像ファイル自体はこのリポジトリの管理外なので置き場所は自由です(例: `~/Pictures/` 配下)。パスさえ `wallpaper.local.lua` に書けば反映されます。
+壁紙はデフォルトで有効です(プロンプトの配色に合わせた AI 生成のテンプレート壁紙 `home/.config/wezterm/wallpaper.png` を同梱。設定ディレクトリ相対で解決するため WSL でもパス変換なしで表示されます)。差し替える場合は `~/.config/wezterm/wallpaper.local.lua`(git 管理外、`*.local` は `.gitignore` 対象)を作成し、画像への絶対パスを1行で `return` してください(例: `return '/path/to/wallpaper.png'`。WSL では画像を読むのは Windows 側の WezTerm なので、`\\wsl.localhost\...` 形式の UNC パスか Windows パスを指定します)。壁紙を無効にする場合は `return false` と書きます。個人の画像はコミットせず local 側で差し替える方針です(置き場所は自由。リポジトリ配下に置きたい場合は git 管理外の `local/` ディレクトリへ)。
 
 #### zsh をログインシェルにする場合(任意)
 
