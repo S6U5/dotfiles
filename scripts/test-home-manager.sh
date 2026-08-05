@@ -45,11 +45,14 @@ PROTECT_HOME=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME"' EXIT
 
 # 初回セットアップ時(CI含む)は home-manager コマンドがまだ存在しないため、
-# nix run home-manager -- 経由にフォールバックする(README 参照)。
+# 本リポジトリの flake が公開する home-manager CLI(flake.lock に固定)へ
+# フォールバックする。レジストリ経由の `nix run home-manager --` は毎回 HEAD を
+# 未認証の GitHub API で解決するため、共有 CI ランナーのレート制限(HTTP 403)で
+# 断続的に失敗する(認証トークンを CI に渡さずに済ませるための固定化でもある)。
 if command -v home-manager >/dev/null 2>&1; then
   HOME_MANAGER=(home-manager)
 else
-  HOME_MANAGER=(nix run home-manager --)
+  HOME_MANAGER=(nix run "$DOTFILES_DIR/nix#home-manager" --)
 fi
 
 # 失敗時の原因調査用に、握りつぶしていた出力をログへ退避して失敗時だけ表示する
