@@ -1,0 +1,77 @@
+#!/bin/sh
+# WSL 内に home-manager が導入した Nerd Font(JetBrainsMono Nerd Font)のうち、
+# この dotfiles が実際に使うファミリーだけを Windows 側にユーザーフォントとして
+# インストールする。Windows Terminal 等の Windows ネイティブアプリは WSL 内の
+# フォントを参照できないため(README「Nerd Font をターミナルで有効にする」参照)、
+# 従来は nerdfonts.com から手動ダウンロードが必要だった手順を1コマンド化する。
+# ユーザー単位のインストール(%LOCALAPPDATA%\Microsoft\Windows\Fonts + HKCU レジストリ
+# 登録)なので管理者権限は不要。再実行しても同じ結果になる(上書き)。
+# 使い方: wsl-font-setup
+set -eu
+
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wsl-font-setup: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 0
+fi
+
+if ! command -v powershell.exe >/dev/null 2>&1 || ! command -v wslpath >/dev/null 2>&1; then
+  echo "wsl-font-setup: powershell.exe / wslpath が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+# home-manager(nerd-fonts.jetbrains-mono)が入れたフォントから、設定が参照する
+# ベースファミリー(JetBrainsMono Nerd Font。Mono / Propo 亜種は除く)だけを対象にする
+font_src_dir="$HOME/.nix-profile/share/fonts"
+font_list=$(mktemp)
+trap 'rm -f "$font_list"' EXIT
+find -L "$font_src_dir" -name 'JetBrainsMonoNerdFont-*.ttf' >"$font_list" 2>/dev/null || true
+
+if [ ! -s "$font_list" ]; then
+  echo "wsl-font-setup: $font_src_dir に JetBrainsMono Nerd Font が見つかりません(home-manager switch は実行済みですか?)" >&2
+  exit 1
+fi
+
+# Windows のユーザーフォント置き場(%LOCALAPPDATA%\Microsoft\Windows\Fonts)を解決する。
+# cd /mnt/c は .exe 呼び出し時の UNC パス警告を避けるための定石(wsl-wezterm-setup と同様)
+localappdata=$(
+  cd /mnt/c 2>/dev/null || cd /
+  # shellcheck disable=SC2016  # $env:LOCALAPPDATA は sh ではなく PowerShell 側で展開させる意図
+  powershell.exe -NoProfile -Command 'Write-Output $env:LOCALAPPDATA' | tr -d '\r'
+)
+if [ -z "$localappdata" ]; then
+  echo "wsl-font-setup: Windows 側の LOCALAPPDATA を解決できませんでした" >&2
+  exit 1
+fi
+
+font_dest_dir=$(
+  cd /mnt/c 2>/dev/null || cd /
+  wslpath -u "$localappdata\\Microsoft\\Windows\\Fonts"
+)
+mkdir -p "$font_dest_dir"
+
+count=0
+while IFS= read -r ttf; do
+  cp -f "$ttf" "$font_dest_dir/"
+  count=$((count + 1))
+done <"$font_list"
+
+# コピーしただけではアプリのフォント一覧に出ないため、HKCU のフォントレジストリに登録する
+# (ユーザー単位フォントの正規の登録先。値名は慣例の「<ファイル名> (TrueType)」形式)
+ps_register=$(
+  cat <<'EOF'
+$dir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+$reg = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+New-Item -Path $reg -Force | Out-Null
+Get-ChildItem -Path $dir -Filter 'JetBrainsMonoNerdFont-*.ttf' | ForEach-Object {
+  New-ItemProperty -Path $reg -Name ($_.BaseName + ' (TrueType)') -Value $_.FullName -PropertyType String -Force | Out-Null
+}
+EOF
+)
+(
+  cd /mnt/c 2>/dev/null || cd /
+  powershell.exe -NoProfile -Command "$ps_register"
+)
+
+echo "インストールしました: JetBrainsMono Nerd Font($count ファイル)→ $localappdata\\Microsoft\\Windows\\Fonts"
+echo "反映にはアプリ(WezTerm / Windows Terminal 等)の再起動が必要です。"
+echo "Windows Terminal 等で使う場合は、アプリ側のフォント設定で「JetBrainsMono Nerd Font」を選択してください。"
