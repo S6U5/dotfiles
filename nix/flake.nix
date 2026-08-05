@@ -28,5 +28,13 @@
           modules = [ ./home.nix ];
         }
       );
+
+      # home-manager コマンド未導入の環境(CI 等)から、flake.lock に固定された
+      # home-manager CLI を実行するための出力(scripts/test-home-manager.sh が使う)。
+      # レジストリ経由の `nix run home-manager` は毎回 HEAD を未認証の GitHub API で
+      # 解決するため、共有 CI ランナーではレート制限(HTTP 403)で断続的に失敗する。
+      packages = forEachSystem (system: {
+        home-manager = home-manager.packages.${system}.home-manager;
+      });
     };
 }
