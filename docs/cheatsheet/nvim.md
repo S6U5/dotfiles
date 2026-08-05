@@ -8,6 +8,11 @@
 kickstart.nvim ではなく **LazyVim** を採用(学習コストの観点。判断の詳細は
 `docs/decisions/editor.md`)。
 
+プラグインのバージョンは `lazy-lock.json`(コミット済み)で固定する。新マシンの初回起動後は
+`:Lazy restore` でロックのバージョンへ揃える(揃えないとリポジトリの作業ツリーが汚れる。
+手順は README「Neovim(LazyVim)の初回セットアップ」参照)。意図的に更新したら
+`:Lazy update` → 変化した `lazy-lock.json` をコミットする。
+
 ## よく使うコマンド・キーバインド
 
 ### 保存・終了(Vim基本)

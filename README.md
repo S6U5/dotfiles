@@ -95,6 +95,12 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 
 設定後もアイコンが崩れる場合は、フォントが正しく選択されているか(ターミナルの再起動が必要な場合があります)を確認してください。
 
+#### Neovim(LazyVim)の初回セットアップ
+
+初回に `nvim` を開くと LazyVim がプラグインを自動インストールします。その際、コミット済みの `lazy-lock.json` と異なるバージョンが入ると、シンボリックリンク越しにリポジトリの作業ツリーが書き換わり `git status` が汚れます。**初回起動後に `:Lazy restore` を実行**して、ロックファイルに記録されたバージョンへ揃えてください(以後、差分は出なくなります)。
+
+プラグインを意図的に更新するときは `:Lazy update` を実行し、変化した `lazy-lock.json` を**そのままコミット**してください(ロックファイルの差分は「プラグイン更新の記録」であり、コミットするのが lazy.nvim の想定運用です)。
+
 #### WezTerm を使う
 
 ターミナルエミュレータは [WezTerm](https://wezterm.org/) を採用しています(判断根拠は `docs/decisions/terminal-emulator.md` 参照)。設定ファイルは `home/.config/wezterm/wezterm.lua`。
@@ -184,7 +190,7 @@ home-manager が生成するもの($HOME に直接置くが home/ には対応�
 │                                      ~/.config/bash/bashrc を読み込むだけの1行として生成
 │                                      (判断根拠は docs/decisions/zshrc-pollution.md)
 docs/              ドキュメント
-├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md / wezterm.md)
+├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md / wezterm.md / starship.md)
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)
 └── assets/          README 掲載図等
 nix/               Nix + home-manager(パッケージ導入 + home/ 配下の dotfiles 配布、一本化)
