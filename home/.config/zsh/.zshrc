@@ -24,19 +24,21 @@ _dotfiles_zsh_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/zsh"
 # init 出力キャッシュ: `eval "$(<tool> init zsh)"` の代わりに使う。
 #   使い方: _dotfiles_cached_eval <キャッシュ名> <コマンド> [引数...]
 # 出力を $_dotfiles_zsh_cache_dir/<キャッシュ名>.zsh に保存して source する。
-# Nix store のファイルは mtime が固定(1970年)で新旧比較に使えないため、シンボリック
-# リンク解決後の実体パス(パッケージ更新で store パスごと変わる)をキャッシュ先頭行に
-# 記録し、一致する限り再利用する。コマンドが無い・失敗したときは非0を返すだけ。
+# 再生成の判定キーは「シンボリックリンク解決後の実体パス + 実行コマンドライン」を
+# キャッシュ先頭行に記録して照合する。実体パスはパッケージ更新の検知用(Nix store の
+# ファイルは mtime が固定(1970年)で新旧比較に使えないため。store パスごと変わる)、
+# コマンドラインは .zshrc 側で init の引数を変えたときに古いキャッシュが使われ続ける
+# のを防ぐため。コマンドが無い・失敗したときは非0を返すだけ。
 _dotfiles_cached_eval() {
-  local name=$1 cache bin first
+  local name=$1 cache bin key first
   shift
   cache="$_dotfiles_zsh_cache_dir/$name.zsh"
   bin=$(command -v -- "$1") || return 1
-  bin=${bin:A}
+  key="${bin:A} $*"
   [[ -r $cache ]] && IFS= read -r first <"$cache"
-  if [[ $first != "# $bin" ]]; then
+  if [[ $first != "# $key" ]]; then
     mkdir -p "$_dotfiles_zsh_cache_dir"
-    { print -r -- "# $bin" && "$@"; } >|"$cache" 2>/dev/null \
+    { print -r -- "# $key" && "$@"; } >|"$cache" 2>/dev/null \
       || { rm -f "$cache" "$cache.zwc"; return 1; }
     zcompile "$cache" 2>/dev/null || rm -f "$cache.zwc"
   fi
