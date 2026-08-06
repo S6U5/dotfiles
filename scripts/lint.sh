@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# シェルスクリプトの lint(shellcheck)とフォーマットチェック(shfmt)。
-# CI と pre-commit フックの両方から使う。
+# シェルスクリプトの lint(shellcheck)とフォーマットチェック(shfmt)、
+# および zsh 設定の構文チェック(zsh -n)。CI と pre-commit フックの両方から使う。
 #
 #   ./scripts/lint.sh        # チェックのみ(問題があれば非0で終了)
 #   ./scripts/lint.sh --fix  # shfmt でフォーマットを自動修正
@@ -45,6 +45,25 @@ if command -v shfmt >/dev/null 2>&1; then
   fi
 else
   echo "WARN: shfmt が見つからないためスキップします。" >&2
+fi
+
+# zsh 設定の構文チェック。shellcheck は zsh 非対応のため対象外にしており、
+# ここで zsh 自身の -n(実行せず構文だけ検査)で最低限の検査を行う
+zsh_files=()
+while IFS= read -r f; do
+  zsh_files+=("$f")
+done < <(git ls-files -- 'home/.zshenv' 'home/.config/zsh/**')
+
+if [ "${#zsh_files[@]}" -gt 0 ]; then
+  if command -v zsh >/dev/null 2>&1; then
+    for f in "${zsh_files[@]}"; do
+      if ! zsh -n "$f"; then
+        status=1
+      fi
+    done
+  else
+    echo "WARN: zsh が見つからないため zsh 構文チェックをスキップします。" >&2
+  fi
 fi
 
 exit "$status"

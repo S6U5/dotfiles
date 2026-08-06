@@ -82,6 +82,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 ## lint・フォーマット
 
 - シェルスクリプトは shellcheck(lint)と shfmt(フォーマット、`-i 2 -ci`)に準拠する。
+- zsh 設定(`home/.zshenv`・`home/.config/zsh/` 配下)は shellcheck 非対応のため、`zsh -n` による構文チェックを lint.sh 内で行う。
 - チェックは `./scripts/lint.sh`、自動修正は `./scripts/lint.sh --fix`。
 - CI(`.github/workflows/lint.yml`)で必ず実行。ローカルの pre-commit フックでもツールがあれば実行される(無ければスキップ)。
 
