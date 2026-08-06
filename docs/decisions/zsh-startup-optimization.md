@@ -69,8 +69,8 @@
 ## トレードオフ
 
 - キャッシュ・.zwc という「生成物」が `$XDG_CACHE_HOME/dotfiles/zsh/` と設定ファイルの隣
-  (`~/.config/zsh/`・`~/.config/shell/` の `.zwc`)に増える。壊れた場合はキャッシュディレクトリと
-  `.zwc` を消せば次回起動時に再生成される。
+  (`~/.config/zsh/`・`~/.config/shell/` の `.zwc`)に増える。挙動が怪しいときは
+  `zsh-cache-reset --clean`(`home/.local/bin/`)で全て削除でき、次回起動時に再生成される。
 - 補完・プラグインはプロンプト表示直後まで効かない(体感できない程度の一瞬)。
 - `starship init zsh --print-full-init` の出力キャッシュはバイナリの絶対パスを含むため
   マシン間で共有できないが、キャッシュはマシンローカル(`$XDG_CACHE_HOME`)なので問題ない。

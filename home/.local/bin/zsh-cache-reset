@@ -1,0 +1,58 @@
+#!/bin/sh
+# zsh 起動高速化が生成するキャッシュ(init出力キャッシュ・zcompile済み .zwc・補完キャッシュ)を
+# リセットする。補完が効かない・設定変更が反映されないなど挙動が怪しいときの復旧手段。
+# 消しても害はなく、次回の zsh 起動時に必要な分だけ自動で再生成される
+# (判断根拠は docs/decisions/zsh-startup-optimization.md 参照)。
+#   zsh-cache-reset          # 対象と現在サイズを表示(何も消さない)
+#   zsh-cache-reset --clean  # 削除を実行
+set -eu
+
+MODE=report
+for arg in "$@"; do
+  case "$arg" in
+    --clean) MODE=clean ;;
+    -h | --help)
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+      exit 0
+      ;;
+    *)
+      echo "不明なオプション: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+zdotdir="${ZDOTDIR:-$HOME/.config/zsh}"
+eval_cache="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/zsh"
+
+# 対象を1行1パスで列挙する(report と clean で同じリストを使う)
+targets() {
+  [ -e "$eval_cache" ] && echo "$eval_cache"
+  [ -e "$zdotdir/.zcompdump" ] && echo "$zdotdir/.zcompdump"
+  for f in "$zdotdir"/*.zwc "$zdotdir"/.*.zwc "$HOME/.config/shell"/*.zwc "$HOME/.config/shell/os"/*.zwc; do
+    [ -e "$f" ] && echo "$f"
+  done
+  return 0
+}
+
+if [ -z "$(targets)" ]; then
+  echo "zsh のキャッシュはありません。"
+  exit 0
+fi
+
+echo "== zsh キャッシュの状態"
+targets | while IFS= read -r path; do
+  printf '  %8s  %s\n' "$(du -sh "$path" 2>/dev/null | cut -f1)" "$path"
+done
+
+if [ "$MODE" = report ]; then
+  echo ""
+  echo "削除するには: zsh-cache-reset --clean(次回の zsh 起動時に自動で再生成されます)"
+  exit 0
+fi
+
+echo ""
+targets | while IFS= read -r path; do
+  rm -rf "$path"
+done
+echo "削除しました。次回の zsh 起動時に必要な分だけ自動で再生成されます。"
