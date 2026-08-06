@@ -3,6 +3,12 @@
 対話 zsh の起動が遅い(特に低速マウント・低速ディスク環境で顕著)問題への対策として、
 `home/.config/zsh/.zshrc` に以下の3点を実装した。
 
+0. **Debian/Ubuntu のグローバル compinit の無効化**: `/etc/zsh/zshrc` は
+   `skip_global_compinit` が未設定だと毎起動フルの compinit(compaudit + dump 検査)を
+   実行する。補完初期化は .zshrc 側で自前管理(キャッシュ + 遅延実行)しているため
+   完全に二重であり、`home/.zshenv` で `skip_global_compinit=1` を設定して無効化する
+   (~/.zshenv はグローバル zshrc より先に読まれるためここに置く)。他の OS では未使用の
+   変数になるだけで無害。**計測上はこれが最大の支配的要因だった**(下記)。
 1. **init 出力のファイルキャッシュ**: `eval "$(starship init zsh)"` / `zoxide init zsh` /
    `fzf --zsh` は起動のたびにツールを起動して初期化スクリプトを生成していた。出力を
    `$XDG_CACHE_HOME/dotfiles/zsh/` にキャッシュし、ツールの実体が変わらない限り source
@@ -14,6 +20,21 @@
 3. **zsh-defer による遅延実行**: プロンプト表示に不要な初期化(compinit、zoxide/fzf、
    autosuggestions、syntax-highlighting)を最初のプロンプト表示後に回す。starship だけは
    プロンプトそのものなので同期のまま。
+
+## 計測(Ubuntu コンテナ、実ツール一式・プラグイン込み、hyperfine)
+
+プロンプト表示までの時間。「低速FS」は LD_PRELOAD で open/stat 1回に 0.5ms・プロセス起動に
++5ms を注入した擬似低速マウント(WSL の 9p マウント風)。
+
+| 構成 | 通常FS | 低速FS | ファイル系syscall数 |
+|---|---|---|---|
+| 最適化前 | 87ms | 1.38s | 2200回 |
+| キャッシュ + zcompile + zsh-defer | 49ms | 1.03s | 1682回 |
+| + skip_global_compinit | 29ms | **0.19s** | 298回 |
+| (参考)設定ゼロの `zsh -f` | 2ms | ー | ー |
+
+グローバル compinit だけで約1400回のファイル操作(fpath 配下全補完関数の compaudit)を
+毎起動行っていた。総仕事量(遅延分も同期実行した場合)も 2200回 → 約1000回に半減。
 
 ## 検討した代替
 
@@ -27,6 +48,15 @@
 - **zsh-defer のコード取り込み(vendoring)**: zsh-defer は GPL-3.0 のため、MIT の本リポジトリに
   コードをコミットするのはライセンス方針(「MIT と非互換のコードはコミットしない」)に反する。
   nixpkgs 経由の導入(呼び出すだけ)なら問題ない。
+- **`setopt no_global_rcs`(グローバル rc を全部読まない)**: skip_global_compinit より
+  さらに数 ms 速いが、macOS では `/etc/zprofile` の path_helper(`/etc/paths.d` の PATH 登録)まで
+  無効になり環境を壊しうるため不採用。skip_global_compinit は compinit だけを狙い撃ちでき副作用が無い。
+- **同期初期化の単一ブロブ化(共通シェル設定 + starship init を1個の zcompile 済みファイルに
+  連結し、鮮度チェック自体もプロンプト表示後に回す)**: プロトタイプ計測では通常FS 29ms→12ms、
+  低速FS 189ms→137ms とさらに速くなるが、(1) 「編集が次々回の起動まで反映されない」挙動になる、
+  (2) git 管理外の local.sh の内容までキャッシュファイルに複製される、(3) 生成・再検証ロジックの
+  複雑さが一段増える、に対して skip_global_compinit 適用後の残り改善幅が小さいため見送り。
+  将来さらに詰めたくなったときの選択肢として記録しておく。
 
 ## 選んだ理由
 
