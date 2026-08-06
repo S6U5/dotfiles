@@ -104,6 +104,9 @@ in
   # zsh-autosuggestions / zsh-syntax-highlighting は zsh の起動設定(home/.config/zsh/.zshrc)から
   # ~/.nix-profile 配下のファイルを直接 source する形で使う。starship は zsh のプロンプト
   # (home/.config/zsh/.zshrc で `starship init zsh` を呼ぶ)。
+  # zsh-defer は zsh 起動高速化用の遅延実行ヘルパー(compinit・プラグイン読み込みを最初の
+  # プロンプト表示後に回す。home/.config/zsh/.zshrc から source する。無い環境では同期実行に
+  # フォールバックする。判断根拠は docs/decisions/zsh-startup-optimization.md 参照)。
   # ripgrep / fd / ruff は LazyVim(home/.config/nvim)の検索機能・Python LSP が要求する依存
   # (docs/decisions/editor.md 参照)。ruff は mason(LazyVim側のツールインストーラ)経由だと
   # このMacのHomebrew Python由来のpip/venv不具合で導入に失敗するため、Nix管理に切り替えて
@@ -142,6 +145,7 @@ in
     starship
     zsh-autosuggestions
     zsh-syntax-highlighting
+    zsh-defer
     wezterm
   ];
 
