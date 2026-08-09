@@ -24,25 +24,40 @@ _dotfiles_zsh_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/zsh"
 # init 出力キャッシュ: `eval "$(<tool> init zsh)"` の代わりに使う。
 #   使い方: _dotfiles_cached_eval <キャッシュ名> <コマンド> [引数...]
 # 出力を $_dotfiles_zsh_cache_dir/<キャッシュ名>.zsh に保存して source する。
-# 再生成の判定キーは「シンボリックリンク解決後の実体パス + 実行コマンドライン」を
-# キャッシュ先頭行に記録して照合する。実体パスはパッケージ更新の検知用(Nix store の
-# ファイルは mtime が固定(1970年)で新旧比較に使えないため。store パスごと変わる)、
-# コマンドラインは .zshrc 側で init の引数を変えたときに古いキャッシュが使われ続ける
-# のを防ぐため。コマンドが無い・失敗したときは非0を返すだけ。
+# 再生成の判定は次の2つ:
+#   1. キャッシュ先頭行のキー「シンボリックリンク解決後の実体パス + 実行コマンドライン」の照合。
+#      実体パスはパッケージ更新の検知用(Nix store のファイルは mtime が固定(1970年)で
+#      新旧比較に使えないため。store パスごと変わる)、コマンドラインは .zshrc 側で init の
+#      引数を変えたときに古いキャッシュが使われ続けるのを防ぐため
+#   2. バイナリとキャッシュの mtime 比較(apt/brew 等、同一パスへの上書き更新の検知用)
+# 書き込みは一時ファイル + mv のアトミック置換(複数シェルの同時起動で、書きかけの
+# キャッシュを source しないため)。キャッシュ先に書き込めない環境では、キャッシュなしで
+# 直接 eval にフォールバックする(依存・権限が無い環境でも壊れない原則)。
+# コマンドが無い・失敗したときは非0を返すだけ。
 _dotfiles_cached_eval() {
-  local name=$1 cache bin key first
+  local name=$1 cache bin key first out
   shift
   cache="$_dotfiles_zsh_cache_dir/$name.zsh"
   bin=$(command -v -- "$1") || return 1
-  key="${bin:A} $*"
+  bin=${bin:A}
+  key="$bin $*"
   [[ -r $cache ]] && IFS= read -r first <"$cache"
-  if [[ $first != "# $key" ]]; then
-    mkdir -p "$_dotfiles_zsh_cache_dir"
-    { print -r -- "# $key" && "$@"; } >|"$cache" 2>/dev/null \
-      || { rm -f "$cache" "$cache.zwc"; return 1; }
-    zcompile "$cache" 2>/dev/null || rm -f "$cache.zwc"
+  if [[ $first == "# $key" && ! $bin -nt $cache ]]; then
+    source "$cache"
+    return 0
   fi
-  source "$cache"
+  out=$("$@" 2>/dev/null) || return 1
+  if { mkdir -p "$_dotfiles_zsh_cache_dir" \
+    && print -r -- "# $key"$'\n'"$out" >|"$cache.$$" \
+    && mv -f "$cache.$$" "$cache"; } 2>/dev/null; then
+    # -U: エイリアスを展開せずコンパイルする(コンパイル時のシェルに定義されている
+    # エイリアスが .zwc に焼き込まれるのを防ぐ。以降の zcompile も同じ)
+    zcompile -U "$cache" 2>/dev/null || rm -f "$cache.zwc"
+    source "$cache"
+  else
+    rm -f "$cache.$$" 2>/dev/null
+    eval "$out"
+  fi
 }
 
 # starship プロンプト(Nix の home.packages で導入。無ければ静かにスキップ)。
@@ -83,7 +98,10 @@ _dotfiles_deferred_init() {
   () {
     setopt localoptions extendedglob
     if [[ -n $1(#qN.mh+24) ]]; then
-      compinit
+      # -i: compaudit が安全でないと判定したディレクトリは黙って除外する。
+      # 既定の y/n プロンプトは、遅延実行中に出るとユーザーの打鍵を横取りして
+      # しまうため対話させない(除外なので -u のような無条件許可はしない)
+      compinit -i
       # 補完関数の増減が無いと compinit は dump を書き直さず mtime も更新されないため、
       # 明示的に touch して「フル検査は24時間に1回まで」を保証する
       touch "$1"
@@ -93,7 +111,7 @@ _dotfiles_deferred_init() {
   } "$dump"
   # 補完キャッシュは大きいので事前バイトコンパイルしておく(次回起動から効く)
   if [[ -s $dump && (! -s $dump.zwc || $dump -nt $dump.zwc) ]]; then
-    zcompile "$dump" 2>/dev/null || rm -f "$dump.zwc"
+    zcompile -U "$dump" 2>/dev/null || rm -f "$dump.zwc"
   fi
 
   # zoxide(賢い cd)。compdef を使うため compinit の後に初期化する
@@ -125,7 +143,7 @@ _dotfiles_deferred_init() {
   for src in "${ZDOTDIR:-$HOME}/.zshrc" "$HOME"/.config/shell/*.sh(N) "$HOME"/.config/shell/os/*.sh(N); do
     [[ $src == */local.sh ]] && continue
     if [[ ! -s $src.zwc || $src -nt $src.zwc ]]; then
-      zcompile "$src" 2>/dev/null || rm -f "$src.zwc"
+      zcompile -U "$src" 2>/dev/null || rm -f "$src.zwc"
     fi
   done
 }
