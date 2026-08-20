@@ -13,3 +13,8 @@ navigate_workspace_down = "j"
 
 [ui]
 agent_panel_sort = "priority"
+
+# サイドバーのスペース一覧はデフォルト(row_gap = 0)だと隣のスペースと行が密着して
+# 境目が分かりにくいため、エントリ間に空行を1行入れる(要 herdr v0.7.4 以上)
+[ui.sidebar.spaces]
+row_gap = 1
