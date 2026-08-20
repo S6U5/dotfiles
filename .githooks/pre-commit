@@ -49,20 +49,20 @@ fi
 
 # --- 内蔵パターン検査(gitleaks が無くても動く) -------------------------
 PATTERNS=(
-  'AKIA[0-9A-Z]{16}'                   # AWS アクセスキー
-  'ghp_[A-Za-z0-9]{36}'                # GitHub PAT (classic)
-  'github_pat_[A-Za-z0-9_]{22,}'       # GitHub PAT (fine-grained)
-  'gho_[A-Za-z0-9]{36}'                # GitHub OAuth トークン
-  'gh[sur]_[A-Za-z0-9]{36}'            # GitHub server/refresh/user-to-server トークン
-  'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack トークン
+  'AKIA[0-9A-Z]{16}'                             # AWS アクセスキー
+  'ghp_[A-Za-z0-9]{36}'                          # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{22,}'                 # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'                          # GitHub OAuth トークン
+  'gh[sur]_[A-Za-z0-9]{36}'                      # GitHub server/refresh/user-to-server トークン
+  'xox[baprs]-[A-Za-z0-9-]{10,}'                 # Slack トークン
   'hooks\.slack\.com/services/[A-Za-z0-9/]{20,}' # Slack Incoming Webhook URL
-  'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API キー
-  'sk-proj-[A-Za-z0-9_-]{20,}'         # OpenAI プロジェクトキー(新形式)
-  'sk-[A-Za-z0-9]{32,}'                # OpenAI 等の sk- 系キー(旧形式)
-  'sk_(live|test)_[A-Za-z0-9]{16,}'    # Stripe シークレットキー
-  'npm_[A-Za-z0-9]{36}'                # npm アクセストークン
-  'AIza[0-9A-Za-z_-]{35}'              # Google API キー
-  '-----BEGIN [A-Z ]*PRIVATE KEY-----' # 秘密鍵
+  'sk-ant-[A-Za-z0-9_-]{20,}'                    # Anthropic API キー
+  'sk-proj-[A-Za-z0-9_-]{20,}'                   # OpenAI プロジェクトキー(新形式)
+  'sk-[A-Za-z0-9]{32,}'                          # OpenAI 等の sk- 系キー(旧形式)
+  'sk_(live|test)_[A-Za-z0-9]{16,}'              # Stripe シークレットキー
+  'npm_[A-Za-z0-9]{36}'                          # npm アクセストークン
+  'AIza[0-9A-Za-z_-]{35}'                        # Google API キー
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'           # 秘密鍵
   '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
 )
 
