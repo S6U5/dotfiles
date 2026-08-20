@@ -200,12 +200,13 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
 ├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
 ├── vscode/          VS Code 設定の雛形
 ├── claude/          Claude Code 設定の雛形
+├── shell/           シェルのローカル設定(local.sh)の雛形(wincred ラッパー等の書き方見本)
 └── git/             git 設定の雛形(.gitconfig.template。手動コピーして使う。判断根拠は docs/decisions/gitconfig-management.md)
 scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
-マシン固有・プライベートな値は `~/.config/shell/local.sh` / `~/.gitconfig.local` / `~/.tmux.conf.local`(いずれも git 管理外)に置くと、共通設定の後に読み込まれて上書きできます。API キーのようなシークレットは、WSL では `local.sh` に平文で書く代わりに `wincred` で Windows の資格情報マネージャーに置き、`local.sh` には取得の呼び出し(`export FOO=$(wincred get foo)` を必要時に実行する関数など)だけを書く方法が使えます。`~/.config/shell/local.sh` と `~/.tmux.conf.local` は home-manager 配布された共通設定への上書きですが、`~/.gitconfig` 自体は home-manager 配布ではなく `templates/git/` からの手動コピー配布です(理由は `docs/decisions/gitconfig-management.md` 参照)。
+マシン固有・プライベートな値は `~/.config/shell/local.sh` / `~/.gitconfig.local` / `~/.tmux.conf.local`(いずれも git 管理外)に置くと、共通設定の後に読み込まれて上書きできます。API キーのようなシークレットは、WSL では `local.sh` に平文で書く代わりに `wincred` で Windows の資格情報マネージャーに置き、`local.sh` には取得の呼び出し(`export FOO=$(wincred get foo)` を必要時に実行する関数など)だけを書く方法が使えます。書き方の見本は `templates/shell/local.sh.template` にあります。`~/.config/shell/local.sh` と `~/.tmux.conf.local` は home-manager 配布された共通設定への上書きですが、`~/.gitconfig` 自体は home-manager 配布ではなく `templates/git/` からの手動コピー配布です(理由は `docs/decisions/gitconfig-management.md` 参照)。
 
 ## 更新
 
