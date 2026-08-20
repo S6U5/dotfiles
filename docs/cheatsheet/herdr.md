@@ -9,6 +9,7 @@
 - ペイン分割も **デフォルトのまま**: `prefix + %` で左右分割、`prefix + "` で上下分割。デフォルト値と同じだが `[keys]` の `split_vertical` / `split_horizontal` で明示指定している(tmuxのデフォルトに揃える意図を明文化するため)
 - ワークスペース選択(navigate mode)は、ペイン移動(`h`/`j`/`k`/`l`)はデフォルトで既に有効だが、ワークスペース上下だけデフォルトが矢印キーのみだったため `navigate_workspace_up = "k"` / `navigate_workspace_down = "j"` を追加
 - サイドバーのスペース一覧は `[ui.sidebar.spaces]` の `row_gap = 1` でエントリ間に空行を入れている(v0.7.4 からデフォルトが詰めたレイアウト `row_gap = 0` になり、隣のスペースとの境目が分かりにくかったため。worktree の親子はギャップを入れても密着したまま)。エージェント一覧側にも同様の `[ui.sidebar.agents]` `row_gap` がある(こちらは未変更)
+- スペース一覧の1行目(スペース名)は `rows` のトークンスタイル(v0.7.5 で追加)で色付き太字にしている: `{ token = "workspace", fg = "#89b4fa", bold = true }`。指定できるのは `fg`(`#RGB`/`#RRGGBB` のみ)・`bold`・`dim` の3つで、**行の背景色は変えられない**(選択行などのハイライト背景はテーマ側の管轄。`theme.custom.sidebar_bg` / `selection_bg` は v0.8.2 以降で追加予定の項目)。スペースごとに違う色を付けることもできない(スタイルは全スペース共通)
 - 設定変更を反映するには: `herdr server reload-config`(既存セッションを終了せずに反映できる)
 
 ## 概念(Workspace / Tab / Pane)

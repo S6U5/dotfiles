@@ -18,3 +18,10 @@ agent_panel_sort = "priority"
 # 境目が分かりにくいため、エントリ間に空行を1行入れる(要 herdr v0.7.4 以上)
 [ui.sidebar.spaces]
 row_gap = 1
+# スペース名の行を色付き太字にして、2行目(ブランチ・git状態)との区別を付ける
+# (行単位のスタイルはトークンごとの fg/bold/dim のみ。行の背景色は v0.7.5 では変更不可。
+#  fg は #RGB / #RRGGBB のみ受け付ける。#89b4fa はデフォルトテーマ catppuccin の blue)
+rows = [
+  ["state_icon", { token = "workspace", fg = "#89b4fa", bold = true }],
+  ["branch", "git_status"],
+]
