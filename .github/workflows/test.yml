@@ -18,7 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Nix
-        run: curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes --no-confirm
+        # nix-installer を未固定の curl|sh で取得する代わりに、SHA 固定した公式 action を使う。
+        # この action 自体が dependabot.yml の github-actions エコシステムで追跡され、
+        # actions/checkout と同様に SHA が自動更新される(固定しても更新は止まらない)。
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        with:
+          extra-conf: experimental-features = nix-command flakes
       - name: Run home-manager test
         # CI ランナーは使い捨てなので、DOTFILES_TEST_SWITCH=1 で実際の switch(activate)まで検証する。
         # nix-installer 導入直後は同一シェルにまだ nix コマンドが乗っていないため、

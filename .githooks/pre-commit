@@ -5,7 +5,10 @@
 #   2. 機密情報(APIキー・トークン等)の混入をブロック
 #   3. シェルスクリプトの lint
 #
-# 有効化: git config core.hooksPath .githooks (install.sh が自動で設定する)
+# 有効化: git config core.hooksPath .githooks
+#   (nix/home.nix の home.activation.dotfilesGitHooks が home-manager switch 実行時に自動設定する。
+#    switch 前のクローン・CI コンテナではフックは無効なので、最終防衛線は CI の secrets-scan と
+#    サーバー側 branch protection である点に注意)
 #
 # - gitleaks がインストールされていれば、まず gitleaks で検査する。
 # - 無くても動くよう、内蔵の簡易パターン検査を常に行う。
@@ -46,15 +49,20 @@ fi
 
 # --- 内蔵パターン検査(gitleaks が無くても動く) -------------------------
 PATTERNS=(
-  'AKIA[0-9A-Z]{16}'                   # AWS アクセスキー
-  'ghp_[A-Za-z0-9]{36}'                # GitHub PAT (classic)
-  'github_pat_[A-Za-z0-9_]{22,}'       # GitHub PAT (fine-grained)
-  'gho_[A-Za-z0-9]{36}'                # GitHub OAuth トークン
-  'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack トークン
-  'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API キー
-  'sk-[A-Za-z0-9]{32,}'                # OpenAI 等の sk- 系キー
-  'AIza[0-9A-Za-z_-]{35}'              # Google API キー
-  '-----BEGIN [A-Z ]*PRIVATE KEY-----' # 秘密鍵
+  'AKIA[0-9A-Z]{16}'                             # AWS アクセスキー
+  'ghp_[A-Za-z0-9]{36}'                          # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{22,}'                 # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'                          # GitHub OAuth トークン
+  'gh[sur]_[A-Za-z0-9]{36}'                      # GitHub server/refresh/user-to-server トークン
+  'xox[baprs]-[A-Za-z0-9-]{10,}'                 # Slack トークン
+  'hooks\.slack\.com/services/[A-Za-z0-9/]{20,}' # Slack Incoming Webhook URL
+  'sk-ant-[A-Za-z0-9_-]{20,}'                    # Anthropic API キー
+  'sk-proj-[A-Za-z0-9_-]{20,}'                   # OpenAI プロジェクトキー(新形式)
+  'sk-[A-Za-z0-9]{32,}'                          # OpenAI 等の sk- 系キー(旧形式)
+  'sk_(live|test)_[A-Za-z0-9]{16,}'              # Stripe シークレットキー
+  'npm_[A-Za-z0-9]{36}'                          # npm アクセストークン
+  'AIza[0-9A-Za-z_-]{35}'                        # Google API キー
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'           # 秘密鍵
   '(api[_-]?key|api[_-]?secret|access[_-]?token|client[_-]?secret|password)[[:space:]"'"'"']*[=:][[:space:]"'"'"']*[A-Za-z0-9_/+.-]{16,}'
 )
 
@@ -67,7 +75,9 @@ while IFS= read -r -d '' file; do
     .githooks/*) continue ;;
   esac
 
-  added=$(git diff --cached --unified=0 --no-color -- "$file" | grep -E '^\+[^+]' || true)
+  # 追加行を抽出する。`^\+[^+]` にすると「中身が + で始まる追加行」(diff 上は ++...)まで
+  # 除外してしまい機密を見逃すため、`^\+` で追加行を拾い diff のファイルヘッダ(+++ )だけを外す。
+  added=$(git diff --cached --unified=0 --no-color -- "$file" | grep -E '^\+' | grep -vE '^\+\+\+ ' || true)
   [ -z "$added" ] && continue
 
   for pat in "${PATTERNS[@]}"; do

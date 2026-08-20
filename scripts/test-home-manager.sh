@@ -29,7 +29,6 @@ ng() {
 
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) SYSTEM=aarch64-darwin ;;
-  Darwin-x86_64) SYSTEM=x86_64-darwin ;;
   Linux-x86_64) SYSTEM=x86_64-linux ;;
   Linux-aarch64 | Linux-aarch64_be) SYSTEM=aarch64-linux ;;
   *)

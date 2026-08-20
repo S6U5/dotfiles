@@ -1,5 +1,10 @@
 {
   "name": "dotfiles-test",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  // nix-installer をあえてバージョン固定せず取得している。devcontainer の postCreateCommand は
+  // Dependabot のどのエコシステムでも追跡できず、固定すると手動でのバージョン上げが必要になるため。
+  // 開発用コンテナ限定・secrets なし・使い捨てで影響が小さく、実際のバージョン固定は
+  // nix/flake.lock(Dependabot の nix エコシステムが追跡)が担うので、ここは生取得を許容する。
+  // CI(.github/workflows/test.yml)側は SHA 固定した nix-installer-action を使う。
   "postCreateCommand": "curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable-flakes --no-confirm && . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh && DOTFILES_TEST_SWITCH=1 bash scripts/test-home-manager.sh"
 }
