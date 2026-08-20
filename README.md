@@ -74,7 +74,11 @@ home-manager switch --flake ./nix#x86_64-darwin --impure   # macOS(Intel)
 home-manager switch --flake ./nix#aarch64-darwin --impure  # macOS(Apple Silicon)
 ```
 
-`nix/flake.lock` はバージョンを固定するためリポジトリにコミット済みなので、通常は生成不要です。`nixpkgs` / `home-manager` のバージョンを更新したいときだけ `nix flake update ./nix` を実行してください。
+`nix/flake.lock` はバージョンを固定するためリポジトリにコミット済みなので、通常は生成不要です。`nixpkgs` / `home-manager` のバージョンを更新したいときだけ、次を実行してください:
+
+```sh
+nix flake update ./nix
+```
 
 WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマンドを実行してください(Nix自体もWSL内にインストールします)。
 
@@ -82,7 +86,12 @@ WSLではWindows側ではなくWSLのLinuxシェル内でこれらのコマン�
 
 zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は `docs/decisions/login-shell.md` 参照)。`.zshrc` / `.zshenv` の**内容**は他の `home/` 配下のファイルと同じく home-manager の `home.file` で配布します。
 
-古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです(`home-manager expire-generations` や `nix-collect-garbage -d` 等)。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください。
+古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください:
+
+```sh
+home-manager expire-generations   # 古い世代を削除
+nix-collect-garbage -d            # 到達不能な store パスを回収
+```
 
 #### Nerd Font をターミナルで有効にする(Starship・Neovim のアイコン表示に必要)
 
@@ -107,7 +116,11 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 
 - **macOS / Linux**: `home-manager switch` で WezTerm 本体・設定とも自動導入されます。
 - **WSL**: 実際に画面を描画する WezTerm は Windows ネイティブ側で動きます。`home-manager switch` は WSL 内(Linux 側)にしか配布できないため、Windows 側で以下を手動対応してください。
-  1. WezTerm 本体を Windows 側にインストール(例: `winget install wez.wezterm`)。
+  1. WezTerm 本体を Windows 側にインストールします(例):
+
+     ```powershell
+     winget install wez.wezterm
+     ```
   2. 設定ファイルは WSL 側の `~/.config/wezterm/wezterm.lua` をそのまま使えます。Windows の環境変数 `WEZTERM_CONFIG_FILE` に WSL 側パスへの UNC パス(例: `\\wsl.localhost\<ディストリ名>\home\<ユーザー名>\.config\wezterm\wezterm.lua`)を設定してください。WSL 内で `wsl-wezterm-setup` を実行すると自動設定できます(`setx.exe` でユーザー環境変数として永続化。反映には WezTerm の再起動が必要)。
   3. `wezterm.lua` 側で WSL ドメインを自動検出し `default_domain` に設定するため、起動すると WSL 内のシェルに接続されます。起動するシェルは zsh を明示指定しているため、WSL ディストリ側に zsh のインストールが必要です(未インストールだとペインの起動に失敗します。インストール手順は後述「zsh をログインシェルにする場合」参照。`chsh` でのログインシェル変更までは必須ではありません)。
 
@@ -116,19 +129,39 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 #### zsh をログインシェルにする場合(任意)
 
 - macOS: 標準で zsh が入っているため何もする必要はありません。
-- WSL / Linux: Windows 自体には zsh が入っていないため、WSL の Linux ディストリビューション側で別途インストールが必要です。パッケージマネージャ(Ubuntu/Debian 系なら `sudo apt install zsh` 等。パッケージ名・コマンドはディストリごとに異なるため配布元の公式ドキュメントを参照。zsh 公式の [Installing zsh(FAQ)](https://zsh.sourceforge.io/FAQ/zshfaq01.html) も参考になります)でインストールしたら、`chsh -s $(which zsh)` でログインシェルに設定してください。反映にはログアウト→再ログイン(WSL の場合はターミナルの再起動でも可)が必要です(`man chsh` も参照)。
+- WSL / Linux: Windows 自体には zsh が入っていないため、WSL の Linux ディストリビューション側で別途インストールが必要です。パッケージ名・コマンドはディストリごとに異なるため配布元の公式ドキュメント(zsh 公式の [Installing zsh(FAQ)](https://zsh.sourceforge.io/FAQ/zshfaq01.html) も参考)を参照してください。Ubuntu/Debian 系の例:
+
+  ```sh
+  sudo apt install zsh      # zsh 本体を導入(パッケージ名はディストリで異なる)
+  chsh -s $(which zsh)      # ログインシェルに設定
+  ```
+
+  反映にはログアウト→再ログイン(WSL の場合はターミナルの再起動でも可)が必要です(`man chsh` も参照)。
 
 ### 既存の設定ファイルとぶつかったとき
 
 `~/.bashrc`(Ubuntu / WSL では OS が最初から設置)や `~/.tmux.conf` など、既存ファイルがある状態で `home-manager switch` を実行すると、home-manager は衝突を検知して**エラーで停止**します(黙って上書きしません)。対処法:
 
-1. 中身が不要、またはこのリポジトリに取り込み済み → `home-manager switch --flake ./nix#<system> --impure -b bak`(既存ファイルを `<ファイル名>.bak` に退避してから上書き)
+1. 中身が不要、またはこのリポジトリに取り込み済み → 既存ファイルを `<ファイル名>.bak` に退避してから上書き:
+
+   ```sh
+   home-manager switch --flake ./nix#<system> --impure -b bak
+   ```
 2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `-b bak` を付けて再実行
-3. 判断に迷う → 事前に `cp -a ~/.対象ファイル ~/.対象ファイル.manual-backup` のように手動で退避してから進めてください
+3. 判断に迷う → 事前に手動で退避してから進めてください:
+
+   ```sh
+   cp -a ~/.対象ファイル ~/.対象ファイル.manual-backup
+   ```
 
 (`~/.gitconfig` は home-manager 配布の対象外です。`templates/git/README.md` の手順で手動セットアップしてください。)
 
-リポジトリを別の場所へ移動した場合は、その都度 `export DOTFILES_DIR=$(pwd)` を設定し直してから `home-manager switch` を再実行してください。
+リポジトリを別の場所へ移動した場合は、その都度 `DOTFILES_DIR` を設定し直してから `home-manager switch` を再実行してください:
+
+```sh
+export DOTFILES_DIR=$(pwd)
+home-manager switch --flake ./nix#<system> --impure
+```
 
 ## 収録コマンド・関数
 
@@ -227,7 +260,13 @@ winget upgrade wez.wezterm
 ./scripts/test-home-manager.sh
 ```
 
-`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` を実行してください(実 `$HOME` を書き換えます)。
+`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
+
+実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で次を実行してください(実 `$HOME` を書き換えます):
+
+```sh
+DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh
+```
 
 まっさらな環境で試すなら、`.devcontainer/` でこのリポジトリをコンテナとして開くと、Nix導入から `DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh` までが自動実行されます。
 
