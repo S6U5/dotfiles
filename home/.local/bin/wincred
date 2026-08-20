@@ -11,11 +11,19 @@
 #   wincred delete <名前>  資格情報を削除する
 #   wincred list           汎用資格情報の名前を一覧する
 #
-# 例(local.sh 等で、シェル起動時ではなく必要になったときに読む):
-#   export MY_TOKEN=$(wincred get my-token)
+# 例(local.sh 等で、シェル起動時ではなく必要になったときに読む。export と代入を
+# 分けるのは、export FOO=$(...) の形だと取得失敗の終了コードが隠れるため):
+#   MY_TOKEN=$(wincred get my-token) || return 1
+#   export MY_TOKEN
 #
-# 注意: 呼び出しごとに interop(powershell.exe)+ Add-Type のコンパイルで1秒前後かかる。
-# シェル起動時(env.sh 等)には呼ばないこと。値のサイズ上限は約 2.5KB(ストア側の制限)。
+# 注意:
+# - 呼び出しごとに interop(powershell.exe)+ Add-Type のコンパイルで1秒前後かかる。
+#   シェル起動時(env.sh 等)には呼ばないこと。
+# - 値の上限は 2560 バイト(UTF-16 で格納するため実質約 1280 文字)。
+# - get の出力を端末に直接出すと値がスクロールバック・端末ログに残る。登録を
+#   echo ... | wincred set の形にするとシェル履歴に値が残るため、対話プロンプトでの入力を推奨。
+# - 非 ASCII のみの値を GUI で登録すると文字コードの判別に失敗して化けることがある
+#   (ps_common 上のコメント参照)。非 ASCII の値は wincred set で登録すること。
 set -eu
 
 usage() {
@@ -28,24 +36,7 @@ usage() {
 EOF
 }
 
-# WSL 専用。取得系コマンドなので使えない環境では非0で終了する
-# (「アプリ不在でも exit 0」の方針は起動系のみ対象: CLAUDE.md 参照)
-if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
-  echo "wincred: WSL 専用のコマンドです(この環境では何もしません)" >&2
-  exit 1
-fi
-
-if ! command -v powershell.exe >/dev/null 2>&1; then
-  echo "wincred: powershell.exe が見つかりません(Windows 連携が無効?)" >&2
-  exit 1
-fi
-for dep in iconv base64; do
-  if ! command -v "$dep" >/dev/null 2>&1; then
-    echo "wincred: $dep が見つかりません" >&2
-    exit 1
-  fi
-done
-
+# 引数の解析・検証は環境チェックより先に行う(非 WSL でも --help は使えるように)
 cmd=${1:-}
 name=${2:-}
 case "$cmd" in
@@ -78,10 +69,31 @@ case "$cmd" in
     ;;
 esac
 
+# WSL 専用。取得系コマンドなので使えない環境では非0で終了する
+# (「アプリ不在でも exit 0」の方針は起動系のみ対象: CLAUDE.md 参照)
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wincred: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 1
+fi
+
+if ! command -v powershell.exe >/dev/null 2>&1; then
+  echo "wincred: powershell.exe が見つかりません(Windows 連携が無効?)" >&2
+  exit 1
+fi
+for dep in iconv base64; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    echo "wincred: $dep が見つかりません" >&2
+    exit 1
+  fi
+done
+
 # 資格情報マネージャーの読み書きは Win32 API(advapi32 の Cred*)を P/Invoke で呼ぶ。
 # cmdkey は値の読み出しができず、登録も値がコマンドラインに露出するため使わない。
-# 値の文字コードは書き込み時 UTF-16LE(GUI・cmdkey と同じ)。読み出し時はゼロバイトの
-# 有無で UTF-16LE / UTF-8(Git Credential Manager 等が使う)を判別する。
+# 値の文字コードは書き込み時 UTF-16LE(GUI・cmdkey と同じ)で、Comment 欄に
+# "wincred:utf-16le" の目印を付ける。読み出し時はこの目印があれば UTF-16LE、無ければ
+# ゼロバイトの有無で UTF-16LE / UTF-8(Git Credential Manager 等が使う)を判別する。
+# 既知の限界: 非 ASCII のみの値(UTF-16LE でもゼロバイトが現れない)を GUI 等の
+# 目印なしで登録した場合は UTF-8 と誤判別して化ける。wincred set 経由なら問題ない。
 ps_common=$(
   cat <<'EOF'
 $ErrorActionPreference = 'Stop'
@@ -129,9 +141,14 @@ public static class DotfilesWinCred {
       if (c.CredentialBlobSize == 0 || c.CredentialBlob == IntPtr.Zero) return "";
       byte[] bytes = new byte[c.CredentialBlobSize];
       Marshal.Copy(c.CredentialBlob, bytes, 0, bytes.Length);
-      if (bytes.Length % 2 == 0 && Array.IndexOf(bytes, (byte)0) >= 0)
-        return Encoding.Unicode.GetString(bytes);
-      return Encoding.UTF8.GetString(bytes);
+      string s;
+      if (c.Comment != null && c.Comment.StartsWith("wincred:utf-16le"))
+        s = Encoding.Unicode.GetString(bytes);
+      else if (bytes.Length % 2 == 0 && Array.IndexOf(bytes, (byte)0) >= 0)
+        s = Encoding.Unicode.GetString(bytes);
+      else
+        s = Encoding.UTF8.GetString(bytes);
+      return s.TrimEnd('\0');
     } finally { CredFree(p); }
   }
 
@@ -141,6 +158,7 @@ public static class DotfilesWinCred {
     c.Type = CRED_TYPE_GENERIC;
     c.TargetName = target;
     c.UserName = "wincred";
+    c.Comment = "wincred:utf-16le";
     c.Persist = CRED_PERSIST_LOCAL_MACHINE;
     c.CredentialBlobSize = (uint)blob.Length;
     c.CredentialBlob = Marshal.AllocHGlobal(blob.Length);
@@ -237,7 +255,7 @@ $ps_get"
     # 名前は英数字等のみに検証済みなので sed の置換に安全に使える
     ps_script=$(printf '%s\n' "$ps_script" | sed "s|__NAME__|$name|g")
     if ! run_ps "$ps_script"; then
-      echo "wincred: 資格情報が見つかりません: $name" >&2
+      echo "wincred: 取得できませんでした(未登録?): $name" >&2
       exit 1
     fi
     # 端末へ直接出力するときだけ改行を補う(コマンド置換では値そのまま)
@@ -251,9 +269,12 @@ $ps_set"
     ps_script=$(printf '%s\n' "$ps_script" | sed "s|__NAME__|$name|g")
     if [ -t 0 ]; then
       printf '%s の値を入力(表示されません): ' "$name" >&2
+      # dash は SIGINT で終了するとき EXIT trap を実行しないため、INT/TERM/HUP にも復元を張る
       trap 'stty echo 2>/dev/null || true' EXIT
+      trap 'stty echo 2>/dev/null || true; exit 130' INT TERM HUP
       stty -echo
-      read -r secret
+      # IFS= で前後の空白を保持。EOF(Ctrl-D)は空入力として後段の空チェックに流す
+      IFS= read -r secret || true
       stty echo
       printf '\n' >&2
     else
@@ -264,7 +285,7 @@ $ps_set"
       exit 1
     fi
     if ! printf '%s' "$secret" | run_ps "$ps_script"; then
-      echo "wincred: 登録に失敗しました(値の上限は約 2.5KB)" >&2
+      echo "wincred: 登録に失敗しました(値の上限は 2560 バイト = 実質約 1280 文字)" >&2
       exit 1
     fi
     echo "wincred: 登録しました: $name"
@@ -282,6 +303,13 @@ $ps_delete"
   list)
     ps_script="$ps_common
 $ps_list"
-    run_ps "$ps_script" | sort
+    # パイプに直結すると powershell 側の失敗が sort の 0 に隠れるため、一度変数に受ける
+    if ! names=$(run_ps "$ps_script"); then
+      echo "wincred: 一覧を取得できませんでした(Windows 連携が無効?)" >&2
+      exit 1
+    fi
+    if [ -n "$names" ]; then
+      printf '%s\n' "$names" | sort
+    fi
     ;;
 esac

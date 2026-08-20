@@ -13,7 +13,12 @@
 #   - 取得失敗時は || return 1 で止める(空のキーのままツールが走る事故を防ぐ)
 #   - export すると同じシェルの2回目以降は再取得なしで速い
 
-# 例: 環境変数でキーを読むツールのラッパー(遅延取得+セッション内キャッシュ)
+# 例1: 1回のコマンドにだけ渡す(まずこの形を検討する。値がそのプロセスにしか渡らず露出面が最小)
+#   MY_TOOL_API_KEY=$(wincred get my-tool-api-key) my-tool ...
+
+# 例2: 環境変数でキーを読むツールのラッパー(遅延取得+セッション内キャッシュ)。
+# export した値はそのシェルから起動する全プロセスに渡る点に注意(露出面は例1より広い)。
+# export と代入を分けるのは、export FOO=$(...) の形だと取得失敗の終了コードが隠れるため
 # my-tool() {
 #   if [ -z "${MY_TOOL_API_KEY:-}" ]; then
 #     MY_TOOL_API_KEY=$(wincred get my-tool-api-key) || return 1
@@ -22,11 +27,9 @@
 #   command my-tool "$@"
 # }
 
-# 例: 1回のコマンドにだけ渡す(環境変数をシェルに残したくない場合)
-#   MY_TOOL_API_KEY=$(wincred get my-tool-api-key) my-tool ...
-
-# 例: WSL 以外の環境とも共用する設定なら、既存の環境変数を優先してから wincred を試す
-#   token=${MY_TOKEN:-$(wincred get my-token 2>/dev/null)}
+# 例3: WSL 以外の環境とも共用する設定なら、既存の環境変数を優先してから wincred を試す
+# (|| return 1 を忘れると、取得失敗時に黙って空の値のまま先へ進んでしまう)
+#   token=${MY_TOKEN:-$(wincred get my-token 2>/dev/null)} || return 1
 
 # --- その他のマシン固有設定 --------------------------------------------------
 # 例: このマシンだけの PATH 追加・エイリアス・環境変数

@@ -1,6 +1,6 @@
 # WSL のシークレット置き場は Windows 資格情報マネージャー(wincred)
 
-API キー等のシークレットを WSL 上でどこに置くかの決定。`wincred` コマンド(`home/.local/bin/`)で Windows の資格情報マネージャー(汎用資格情報)を interop 経由で読み書きし、`local.sh` には取得の呼び出し(`export FOO=$(wincred get foo)`)だけを書く。
+API キー等のシークレットを WSL 上でどこに置くかの決定。`wincred` コマンド(`home/.local/bin/`)で Windows の資格情報マネージャー(汎用資格情報)を interop 経由で読み書きし、`local.sh` には取得の呼び出し(`FOO=$(wincred get foo)` で受けてから export する形。失敗検知のため export と代入は分ける)だけを書く。
 
 ## 検討した代替
 
@@ -21,8 +21,8 @@ API キー等のシークレットを WSL 上でどこに置くかの決定。`w
 
 - DPAPI の保護はユーザー単位。同一ユーザーとして動くプロセス(WSL 内含む)は誰でも読めるため、「実行中のマルウェア」への防御にはならない(それは平文でも同じ)。
 - 呼び出しごとに interop + `Add-Type` のコンパイルで1秒前後かかる。シェル起動時には呼ばず、必要になった時点で取得する運用が前提。
-- 値のサイズ上限は約 2.5KB(汎用資格情報の制限)。長大な JWT やサービスアカウント JSON はファイル+BitLocker+gitignore で扱う。
-- 実装は cmdkey ではなく Win32 API(`CredRead` 等)の P/Invoke(cmdkey は読み出し不可・登録時に値がコマンドラインへ露出するため)。
+- 値のサイズ上限は 2560 バイト(汎用資格情報の制限。UTF-16 で格納するため実質約 1280 文字)。長大な JWT やサービスアカウント JSON はファイル+BitLocker+gitignore で扱う。
+- 実装は cmdkey ではなく Win32 API(`CredRead` 等)の P/Invoke(cmdkey は読み出し不可で、非対話実行では登録時に値がコマンドラインへ露出するため)。
 - WSL 専用。macOS は Keychain(`security` コマンド)という対応物があるが、必要になるまで作らない。
 
 ## 履歴
