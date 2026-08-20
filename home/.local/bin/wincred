@@ -82,7 +82,8 @@ esac
 # cmdkey は値の読み出しができず、登録も値がコマンドラインに露出するため使わない。
 # 値の文字コードは書き込み時 UTF-16LE(GUI・cmdkey と同じ)。読み出し時はゼロバイトの
 # 有無で UTF-16LE / UTF-8(Git Credential Manager 等が使う)を判別する。
-ps_common=$(cat <<'EOF'
+ps_common=$(
+  cat <<'EOF'
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
@@ -174,7 +175,8 @@ EOF
 
 # 値の入出力は Console のエンコーディング設定に依存しないよう、標準入出力の
 # 生ストリームを UTF-8 バイト列として直接読み書きする
-ps_get=$(cat <<'EOF'
+ps_get=$(
+  cat <<'EOF'
 $s = [DotfilesWinCred]::Read('__NAME__')
 if ($null -eq $s) { exit 1 }
 $bytes = [System.Text.Encoding]::UTF8.GetBytes($s)
@@ -185,7 +187,8 @@ exit 0
 EOF
 )
 
-ps_set=$(cat <<'EOF'
+ps_set=$(
+  cat <<'EOF'
 $in = [Console]::OpenStandardInput()
 $ms = New-Object System.IO.MemoryStream
 $in.CopyTo($ms)
@@ -196,13 +199,15 @@ exit 1
 EOF
 )
 
-ps_delete=$(cat <<'EOF'
+ps_delete=$(
+  cat <<'EOF'
 if ([DotfilesWinCred]::Delete('__NAME__')) { exit 0 }
 exit 1
 EOF
 )
 
-ps_list=$(cat <<'EOF'
+ps_list=$(
+  cat <<'EOF'
 $names = [DotfilesWinCred]::List()
 $sb = New-Object System.Text.StringBuilder
 foreach ($n in $names) { [void]$sb.Append($n).Append("`n") }
