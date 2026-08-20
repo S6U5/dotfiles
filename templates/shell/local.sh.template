@@ -1,0 +1,37 @@
+# shellcheck shell=sh
+# ~/.config/shell/local.sh の雛形(templates/shell/README.md 参照)。
+# コピー先: ~/.config/shell/local.sh(git 管理外。init.sh が共通設定の最後に読み込む)
+#
+# ここにはマシン固有・プライベートな設定を書く。実際のサービス名・キー名・パスは
+# コピー先でのみ記入し、この雛形には書かない(リポジトリに個人の文脈を残さない方針)。
+
+# --- シークレットを使うツールのラッパー(WSL + wincred)----------------------
+# キー本体は Windows 資格情報マネージャーに置き(登録: wincred set <名前>)、
+# ここには「取得の呼び出し」だけを書く(判断根拠は docs/decisions/secrets-storage.md)。
+# ポイント:
+#   - シェル起動時に wincred を呼ばない(interop で1秒前後かかるため、使う直前に取得する)
+#   - 取得失敗時は || return 1 で止める(空のキーのままツールが走る事故を防ぐ)
+#   - export すると同じシェルの2回目以降は再取得なしで速い
+
+# 例1: 1回のコマンドにだけ渡す(まずこの形を検討する。値がそのプロセスにしか渡らず露出面が最小)
+#   MY_TOOL_API_KEY=$(wincred get my-tool-api-key) my-tool ...
+
+# 例2: 環境変数でキーを読むツールのラッパー(遅延取得+セッション内キャッシュ)。
+# export した値はそのシェルから起動する全プロセスに渡る点に注意(露出面は例1より広い)。
+# export と代入を分けるのは、export FOO=$(...) の形だと取得失敗の終了コードが隠れるため
+# my-tool() {
+#   if [ -z "${MY_TOOL_API_KEY:-}" ]; then
+#     MY_TOOL_API_KEY=$(wincred get my-tool-api-key) || return 1
+#     export MY_TOOL_API_KEY
+#   fi
+#   command my-tool "$@"
+# }
+
+# 例3: WSL 以外の環境とも共用する設定なら、既存の環境変数を優先してから wincred を試す
+# (|| return 1 を忘れると、取得失敗時に黙って空の値のまま先へ進んでしまう)
+#   token=${MY_TOKEN:-$(wincred get my-token 2>/dev/null)} || return 1
+
+# --- その他のマシン固有設定 --------------------------------------------------
+# 例: このマシンだけの PATH 追加・エイリアス・環境変数
+# PATH="$HOME/some-tool/bin:$PATH"
+# alias proj='cd "$HOME/projects/some-project"'

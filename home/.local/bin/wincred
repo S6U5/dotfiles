@@ -1,0 +1,315 @@
+#!/bin/sh
+# wincred — Windows の資格情報マネージャー(汎用資格情報)を WSL から読み書きする。
+# API キー等のシークレットを平文ファイル(local.sh)に直接書かず、DPAPI で暗号化される
+# Windows 側のストアへ逃がすためのコマンド(判断根拠は docs/decisions/secrets-storage.md)。
+# Windows 側の GUI(資格情報マネージャー → Windows 資格情報 → 汎用資格情報)で
+# 登録した値もそのまま読める。
+#
+# 使い方:
+#   wincred get <名前>     値を標準出力に出す(見つからなければ非0)
+#   wincred set <名前>     値を標準入力から登録する(端末では非表示プロンプト)
+#   wincred delete <名前>  資格情報を削除する
+#   wincred list           汎用資格情報の名前を一覧する
+#
+# 例(local.sh 等で、シェル起動時ではなく必要になったときに読む。export と代入を
+# 分けるのは、export FOO=$(...) の形だと取得失敗の終了コードが隠れるため):
+#   MY_TOKEN=$(wincred get my-token) || return 1
+#   export MY_TOKEN
+#
+# 注意:
+# - 呼び出しごとに interop(powershell.exe)+ Add-Type のコンパイルで1秒前後かかる。
+#   シェル起動時(env.sh 等)には呼ばないこと。
+# - 値の上限は 2560 バイト(UTF-16 で格納するため実質約 1280 文字)。
+# - get の出力を端末に直接出すと値がスクロールバック・端末ログに残る。登録を
+#   echo ... | wincred set の形にするとシェル履歴に値が残るため、対話プロンプトでの入力を推奨。
+# - 非 ASCII のみの値を GUI で登録すると文字コードの判別に失敗して化けることがある
+#   (ps_common 上のコメント参照)。非 ASCII の値は wincred set で登録すること。
+set -eu
+
+usage() {
+  cat >&2 <<'EOF'
+使い方: wincred <サブコマンド> [名前]
+  wincred get <名前>     値を標準出力に出す(見つからなければ非0)
+  wincred set <名前>     値を標準入力から登録する(端末では非表示プロンプト)
+  wincred delete <名前>  資格情報を削除する
+  wincred list           汎用資格情報の名前を一覧する
+EOF
+}
+
+# 引数の解析・検証は環境チェックより先に行う(非 WSL でも --help は使えるように)
+cmd=${1:-}
+name=${2:-}
+case "$cmd" in
+  get | set | delete)
+    if [ $# -ne 2 ] || [ -z "$name" ]; then
+      usage
+      exit 1
+    fi
+    # 名前は PowerShell スクリプトへ埋め込むため、安全な文字だけに制限する(インジェクション対策)
+    case "$name" in
+      *[!A-Za-z0-9._:/@-]*)
+        echo "wincred: 名前に使える文字は英数字と . _ : / @ - のみです: $name" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  list)
+    if [ $# -ne 1 ]; then
+      usage
+      exit 1
+    fi
+    ;;
+  -h | --help | help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
+
+# WSL 専用。取得系コマンドなので使えない環境では非0で終了する
+# (「アプリ不在でも exit 0」の方針は起動系のみ対象: CLAUDE.md 参照)
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wincred: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 1
+fi
+
+if ! command -v powershell.exe >/dev/null 2>&1; then
+  echo "wincred: powershell.exe が見つかりません(Windows 連携が無効?)" >&2
+  exit 1
+fi
+for dep in iconv base64; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    echo "wincred: $dep が見つかりません" >&2
+    exit 1
+  fi
+done
+
+# 資格情報マネージャーの読み書きは Win32 API(advapi32 の Cred*)を P/Invoke で呼ぶ。
+# cmdkey は値の読み出しができず、登録も値がコマンドラインに露出するため使わない。
+# 値の文字コードは書き込み時 UTF-16LE(GUI・cmdkey と同じ)で、Comment 欄に
+# "wincred:utf-16le" の目印を付ける。読み出し時はこの目印があれば UTF-16LE、無ければ
+# ゼロバイトの有無で UTF-16LE / UTF-8(Git Credential Manager 等が使う)を判別する。
+# 既知の限界: 非 ASCII のみの値(UTF-16LE でもゼロバイトが現れない)を GUI 等の
+# 目印なしで登録した場合は UTF-8 と誤判別して化ける。wincred set 経由なら問題ない。
+ps_common=$(
+  cat <<'EOF'
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class DotfilesWinCred {
+  const uint CRED_TYPE_GENERIC = 1;
+  const uint CRED_PERSIST_LOCAL_MACHINE = 2;
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  struct CREDENTIAL {
+    public uint Flags;
+    public uint Type;
+    public string TargetName;
+    public string Comment;
+    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+    public uint CredentialBlobSize;
+    public IntPtr CredentialBlob;
+    public uint Persist;
+    public uint AttributeCount;
+    public IntPtr Attributes;
+    public string TargetAlias;
+    public string UserName;
+  }
+
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CredReadW")]
+  static extern bool CredRead(string target, uint type, uint flags, out IntPtr credential);
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CredWriteW")]
+  static extern bool CredWrite(ref CREDENTIAL credential, uint flags);
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CredDeleteW")]
+  static extern bool CredDelete(string target, uint type, uint flags);
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CredEnumerateW")]
+  static extern bool CredEnumerate(string filter, uint flags, out uint count, out IntPtr credentials);
+  [DllImport("advapi32.dll")]
+  static extern void CredFree(IntPtr buffer);
+
+  public static string Read(string target) {
+    IntPtr p;
+    if (!CredRead(target, CRED_TYPE_GENERIC, 0, out p)) return null;
+    try {
+      CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(p, typeof(CREDENTIAL));
+      if (c.CredentialBlobSize == 0 || c.CredentialBlob == IntPtr.Zero) return "";
+      byte[] bytes = new byte[c.CredentialBlobSize];
+      Marshal.Copy(c.CredentialBlob, bytes, 0, bytes.Length);
+      string s;
+      if (c.Comment != null && c.Comment.StartsWith("wincred:utf-16le"))
+        s = Encoding.Unicode.GetString(bytes);
+      else if (bytes.Length % 2 == 0 && Array.IndexOf(bytes, (byte)0) >= 0)
+        s = Encoding.Unicode.GetString(bytes);
+      else
+        s = Encoding.UTF8.GetString(bytes);
+      return s.TrimEnd('\0');
+    } finally { CredFree(p); }
+  }
+
+  public static bool Write(string target, string secret) {
+    byte[] blob = Encoding.Unicode.GetBytes(secret);
+    CREDENTIAL c = new CREDENTIAL();
+    c.Type = CRED_TYPE_GENERIC;
+    c.TargetName = target;
+    c.UserName = "wincred";
+    c.Comment = "wincred:utf-16le";
+    c.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    c.CredentialBlobSize = (uint)blob.Length;
+    c.CredentialBlob = Marshal.AllocHGlobal(blob.Length);
+    try {
+      Marshal.Copy(blob, 0, c.CredentialBlob, blob.Length);
+      return CredWrite(ref c, 0);
+    } finally { Marshal.FreeHGlobal(c.CredentialBlob); }
+  }
+
+  public static bool Delete(string target) {
+    return CredDelete(target, CRED_TYPE_GENERIC, 0);
+  }
+
+  public static string[] List() {
+    uint count;
+    IntPtr arr;
+    if (!CredEnumerate(null, 0, out count, out arr)) return new string[0];
+    try {
+      System.Collections.Generic.List<string> names = new System.Collections.Generic.List<string>();
+      for (int i = 0; i < count; i++) {
+        IntPtr p = Marshal.ReadIntPtr(arr, i * IntPtr.Size);
+        CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(p, typeof(CREDENTIAL));
+        if (c.Type == CRED_TYPE_GENERIC) names.Add(c.TargetName);
+      }
+      return names.ToArray();
+    } finally { CredFree(arr); }
+  }
+}
+'@
+EOF
+)
+
+# 値の入出力は Console のエンコーディング設定に依存しないよう、標準入出力の
+# 生ストリームを UTF-8 バイト列として直接読み書きする
+ps_get=$(
+  cat <<'EOF'
+$s = [DotfilesWinCred]::Read('__NAME__')
+if ($null -eq $s) { exit 1 }
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($s)
+$out = [Console]::OpenStandardOutput()
+$out.Write($bytes, 0, $bytes.Length)
+$out.Flush()
+exit 0
+EOF
+)
+
+ps_set=$(
+  cat <<'EOF'
+$in = [Console]::OpenStandardInput()
+$ms = New-Object System.IO.MemoryStream
+$in.CopyTo($ms)
+$secret = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+if ($secret.Length -eq 0) { exit 1 }
+if ([DotfilesWinCred]::Write('__NAME__', $secret)) { exit 0 }
+exit 1
+EOF
+)
+
+ps_delete=$(
+  cat <<'EOF'
+if ([DotfilesWinCred]::Delete('__NAME__')) { exit 0 }
+exit 1
+EOF
+)
+
+ps_list=$(
+  cat <<'EOF'
+$names = [DotfilesWinCred]::List()
+$sb = New-Object System.Text.StringBuilder
+foreach ($n in $names) { [void]$sb.Append($n).Append("`n") }
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($sb.ToString())
+$out = [Console]::OpenStandardOutput()
+$out.Write($bytes, 0, $bytes.Length)
+$out.Flush()
+exit 0
+EOF
+)
+
+# スクリプト全体を UTF-16LE + Base64 の -EncodedCommand で渡す(クオート事故を避け、
+# set の標準入力をシークレット受け渡し用に空けておくため)
+run_ps() {
+  enc=$(printf '%s' "$1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
+  (
+    # powershell.exe は WSL 内のパスを作業ディレクトリにできないため /mnt/c に移る
+    cd /mnt/c 2>/dev/null || cd /
+    powershell.exe -NoProfile -NonInteractive -EncodedCommand "$enc"
+  )
+}
+
+case "$cmd" in
+  get)
+    ps_script="$ps_common
+$ps_get"
+    # 名前は英数字等のみに検証済みなので sed の置換に安全に使える
+    ps_script=$(printf '%s\n' "$ps_script" | sed "s|__NAME__|$name|g")
+    if ! run_ps "$ps_script"; then
+      echo "wincred: 取得できませんでした(未登録?): $name" >&2
+      exit 1
+    fi
+    # 端末へ直接出力するときだけ改行を補う(コマンド置換では値そのまま)
+    if [ -t 1 ]; then
+      echo
+    fi
+    ;;
+  set)
+    ps_script="$ps_common
+$ps_set"
+    ps_script=$(printf '%s\n' "$ps_script" | sed "s|__NAME__|$name|g")
+    if [ -t 0 ]; then
+      printf '%s の値を入力(表示されません): ' "$name" >&2
+      # dash は SIGINT で終了するとき EXIT trap を実行しないため、INT/TERM/HUP にも復元を張る
+      trap 'stty echo 2>/dev/null || true' EXIT
+      trap 'stty echo 2>/dev/null || true; exit 130' INT TERM HUP
+      stty -echo
+      # IFS= で前後の空白を保持。EOF(Ctrl-D)は空入力として後段の空チェックに流す
+      IFS= read -r secret || true
+      stty echo
+      printf '\n' >&2
+    else
+      secret=$(cat)
+    fi
+    if [ -z "$secret" ]; then
+      echo "wincred: 空の値は登録できません" >&2
+      exit 1
+    fi
+    if ! printf '%s' "$secret" | run_ps "$ps_script"; then
+      echo "wincred: 登録に失敗しました(値の上限は 2560 バイト = 実質約 1280 文字)" >&2
+      exit 1
+    fi
+    echo "wincred: 登録しました: $name"
+    ;;
+  delete)
+    ps_script="$ps_common
+$ps_delete"
+    ps_script=$(printf '%s\n' "$ps_script" | sed "s|__NAME__|$name|g")
+    if ! run_ps "$ps_script"; then
+      echo "wincred: 削除できませんでした(未登録?): $name" >&2
+      exit 1
+    fi
+    echo "wincred: 削除しました: $name"
+    ;;
+  list)
+    ps_script="$ps_common
+$ps_list"
+    # パイプに直結すると powershell 側の失敗が sort の 0 に隠れるため、一度変数に受ける
+    if ! names=$(run_ps "$ps_script"); then
+      echo "wincred: 一覧を取得できませんでした(Windows 連携が無効?)" >&2
+      exit 1
+    fi
+    if [ -n "$names" ]; then
+      printf '%s\n' "$names" | sort
+    fi
+    ;;
+esac
