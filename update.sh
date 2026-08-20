@@ -61,5 +61,5 @@ if [ "$old_head" != "$new_head" ]; then
   log ""
   log "更新を反映するには以下を実行してください:"
   log "  DOTFILES_DIR=\"$DOTFILES_DIR\" home-manager switch --flake \"$DOTFILES_DIR/nix#<system>\" --impure"
-  log "  (<system> は x86_64-linux / aarch64-linux / x86_64-darwin / aarch64-darwin から選択)"
+  log "  (<system> は x86_64-linux / aarch64-linux / aarch64-darwin から選択)"
 fi

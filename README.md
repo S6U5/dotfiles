@@ -46,7 +46,6 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 |---|---|---|
 | WSL / Linux(Intel・AMD) | `x86_64-linux` | 動作確認: WSL(Ubuntu)・Debian 系 |
 | WSL / Linux(ARM) | `aarch64-linux` | 例: Raspberry Pi OS |
-| macOS(Intel) | `x86_64-darwin` | |
 | macOS(Apple Silicon) | `aarch64-darwin` | |
 
 ## クイックスタート
