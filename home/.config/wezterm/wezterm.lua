@@ -1,4 +1,5 @@
 local wezterm = require 'wezterm'
+local act = wezterm.action
 local config = wezterm.config_builder()
 
 config.font = wezterm.font 'JetBrainsMono Nerd Font'
@@ -25,6 +26,39 @@ config.colors = {
 -- home-manager switchも自動実行しない)に揃える。Windows側で更新したい場合は
 -- `winget upgrade wez.wezterm` を手動で実行する。
 config.check_for_updates = false
+
+-- クリップボードからの貼り付け。コピー(選択→自動コピーや OSC 52 経由)はデフォルトのままで
+-- Windows クリップボードに届くが、貼り付けは Windows Terminal で身についた操作(Ctrl+V・
+-- 右クリック・Shift+Insert)がどれもデフォルトではクリップボード貼り付けに割り当たっておらず、
+-- 「コピーはできるのに貼り付けだけできない」ように見えるため明示的に設定する。
+-- - Ctrl+Shift+V: デフォルトの割り当て(PasteFrom 'Clipboard')だが、自己文書化のため明示する
+-- - Shift+Insert: デフォルトは PasteFrom 'PrimarySelection'。プライマリセレクションが実在する
+--   のは X11/Wayland だけで、Windows/macOS では WezTerm 内部の選択バッファ(OS クリップボード
+--   とは別物)を指すため、他アプリでコピーした内容は何も貼り付けられない。クリップボード
+--   貼り付けに統一する(トレードオフ: X11 でのプライマリセレクション貼り付けは中クリックに残る)
+-- - Ctrl+V はあえて割り当てない(nvim の矩形選択など、ペイン内アプリに届くべきキーを潰すため。
+--   貼り付けは Ctrl+Shift+V か右クリックを使う)
+config.keys = {
+  { key = 'V', mods = 'CTRL|SHIFT', action = act.PasteFrom 'Clipboard' },
+  { key = 'Insert', mods = 'SHIFT', action = act.PasteFrom 'Clipboard' },
+}
+
+-- 右クリック: 選択中ならコピーして選択解除、選択なしならクリップボードから貼り付け
+-- (Windows Terminal と同じ操作感。公式 Discussion #3541 で案内されている手法)
+config.mouse_bindings = {
+  {
+    event = { Down = { streak = 1, button = 'Right' } },
+    mods = 'NONE',
+    action = wezterm.action_callback(function(window, pane)
+      if window:get_selection_text_for_pane(pane) ~= '' then
+        window:perform_action(act.CopyTo 'ClipboardAndPrimarySelection', pane)
+        window:perform_action(act.ClearSelection, pane)
+      else
+        window:perform_action(act.PasteFrom 'Clipboard', pane)
+      end
+    end),
+  },
+}
 
 -- Windows ネイティブ側の WezTerm から、インストール済み WSL ディストリビューションを自動検出して
 -- デフォルトドメインにする(WSL/macOS/Linux 統一の要。判断根拠は docs/decisions/terminal-emulator.md
