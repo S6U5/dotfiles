@@ -1,0 +1,81 @@
+# AGENTS.md テンプレート
+
+このファイルは Codex がプロジェクトで作業する前に読み込む指示ファイルです。
+
+## Working Agreements
+
+- 変更後は必ずテストを実行してください
+- 新しい依存関係を追加する前に確認を求めてください
+- コミットメッセージは [Conventional Commits](https://www.conventionalcommits.org/) に従ってください
+
+## Repository Expectations
+
+- すべてのコードは TypeScript で記述
+- Prettier でフォーマット済みであること
+- ESLint のエラーがないこと
+
+## Code Style
+
+### 命名規則
+
+- 変数・関数: camelCase
+- クラス・型: PascalCase
+- 定数: UPPER_SNAKE_CASE
+- ファイル: kebab-case
+
+### インポート順序
+
+1. Node.js 組み込みモジュール
+2. 外部パッケージ
+3. 内部モジュール（相対パス）
+
+## Testing
+
+### テストコマンド
+
+```bash
+# 全テスト実行
+npm test
+
+# 単一ファイルのテスト
+npm test -- path/to/file.test.ts
+
+# カバレッジ付き
+npm run test:coverage
+```
+
+### テスト方針
+
+- 新機能には必ずテストを追加
+- カバレッジ 80% 以上を維持
+- モックは最小限に
+
+## Build & Deploy
+
+```bash
+# ビルド
+npm run build
+
+# 開発サーバー
+npm run dev
+
+# 本番デプロイ（確認必須）
+npm run deploy
+```
+
+## Project Structure
+
+```
+src/
+├── components/    # React コンポーネント
+├── hooks/         # カスタムフック
+├── utils/         # ユーティリティ関数
+├── types/         # 型定義
+└── api/           # API クライアント
+```
+
+## Notes
+
+- `main` ブランチへの直接プッシュは禁止
+- PR には必ずレビュアーを設定
+- 機密情報は `.env` に保存（`.gitignore` に含める）

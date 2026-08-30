@@ -1,0 +1,164 @@
+# ==============================================
+# OpenAI Codex CLI 設定（フルリファレンス）
+# ==============================================
+# 全オプションを記載したリファレンス用テンプレート
+# 公式ドキュメント: https://developers.openai.com/codex/config-reference/
+
+# ----------------------------------------------
+# モデル設定
+# ----------------------------------------------
+# 使用するモデル（時期で変わるため雛形では未指定。未指定なら既定が使われる）
+# model = "<モデル名>"
+
+# モデルプロバイダー
+# model_provider = "openai"
+
+# コンテキストウィンドウサイズ（トークン数）
+# model_context_window = 128000
+
+# 推論レベル
+#   minimal : 最小限の推論
+#   low     : 低
+#   medium  : 中（デフォルト）
+#   high    : 高
+#   xhigh   : 最大
+model_reasoning_effort = "medium"
+
+# カスタム指示ファイル（AGENTS.md の代わり）
+# model_instructions_file = "INSTRUCTIONS.md"
+
+# ----------------------------------------------
+# セキュリティ・承認
+# ----------------------------------------------
+# 承認ポリシー
+#   untrusted  : 常に確認
+#   on-failure : 失敗時のみ確認
+#   on-request : リクエスト時のみ確認
+#   never      : 確認なし
+approval_policy = "on-failure"
+
+# サンドボックスモード
+#   read-only         : 読み取りのみ
+#   workspace-write   : ワークスペース書き込み許可
+#   danger-full-access: 全アクセス許可
+sandbox_mode = "workspace-write"
+
+# ----------------------------------------------
+# Web 検索
+# ----------------------------------------------
+#   disabled : 無効
+#   cached   : キャッシュ使用
+#   live     : リアルタイム検索
+web_search = "cached"
+
+# ----------------------------------------------
+# 認証設定
+# ----------------------------------------------
+[auth]
+# 認証情報の保存方法
+#   file    : ファイルに保存
+#   keyring : システムキーチェーンに保存
+#   auto    : 自動選択
+storage = "auto"
+
+# ChatGPT ログイン有効化
+# chatgpt_login = true
+
+# API ログイン有効化
+# api_login = true
+
+# ----------------------------------------------
+# シェル環境
+# ----------------------------------------------
+[shell_environment_policy]
+# 環境変数の継承
+#   all  : すべて継承
+#   core : コア変数のみ
+#   none : 継承しない
+inherit = "core"
+
+# 明示的に設定する環境変数
+[shell_environment_policy.set]
+# EDITOR = "code --wait"
+# PAGER = "less"
+
+# ----------------------------------------------
+# 機能フラグ
+# ----------------------------------------------
+[features]
+# シェルツール有効化
+# shell_tool = true
+
+# シェルスナップショット（実験的）
+# shell_snapshot = true
+
+# 統合実行（PTY-backed、ベータ）
+# unified_exec = true
+
+# ----------------------------------------------
+# MCP サーバー
+# ----------------------------------------------
+# GitHub MCP サーバー
+# [mcp_servers.github]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp_servers.github.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}"
+
+# ファイルシステム MCP サーバー
+# [mcp_servers.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed"]
+
+# PostgreSQL MCP サーバー
+# [mcp_servers.postgres]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-postgres"]
+# [mcp_servers.postgres.env]
+# POSTGRES_URL = "postgresql://user:pass@localhost:5432/db"
+
+# HTTP トランスポートの MCP サーバー
+# [mcp_servers.remote]
+# transport = "http"
+# url = "https://mcp-server.example.com"
+# [mcp_servers.remote.headers]
+# Authorization = "Bearer ${MCP_TOKEN}"
+
+# ----------------------------------------------
+# カスタムモデルプロバイダー
+# ----------------------------------------------
+# Azure OpenAI
+# [model_providers.azure]
+# name = "Azure OpenAI"
+# base_url = "https://your-resource.openai.azure.com"
+# api_key_env = "AZURE_OPENAI_API_KEY"
+
+# Ollama（ローカル）
+# [model_providers.ollama]
+# name = "Ollama"
+# base_url = "http://localhost:11434"
+
+# ----------------------------------------------
+# プロファイル（名前付きプリセット）
+# ----------------------------------------------
+# [profiles.safe]
+# approval_policy = "untrusted"
+# sandbox_mode = "read-only"
+
+# [profiles.fast]
+# model_reasoning_effort = "minimal"
+# approval_policy = "never"
+
+# ----------------------------------------------
+# テレメトリー（OpenTelemetry）
+# ----------------------------------------------
+# [otel]
+# endpoint = "http://localhost:4317"
+# service_name = "codex-cli"
+
+# ----------------------------------------------
+# 通知設定
+# ----------------------------------------------
+# [notice]
+# 通知フックの設定
+# on_turn_complete = "notify-send 'Codex' 'ターン完了'"

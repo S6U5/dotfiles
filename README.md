@@ -284,7 +284,9 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
 ├── project/         開発プロジェクト用(AGENTS.md / CLAUDE.md / .editorconfig など)
 ├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
 ├── vscode/          VS Code 設定の雛形
+├── markdown-preview-enhanced/ VS Code 拡張 Markdown Preview Enhanced のプレビュースタイル(CSS)の雛形
 ├── claude/          Claude Code 設定の雛形
+├── codex/           OpenAI Codex CLI 設定の雛形
 ├── shell/           シェルのローカル設定(local.sh)の雛形(wincred ラッパー等の書き方見本)
 └── git/             git 設定の雛形(.gitconfig.template。手動コピーして使う。判断根拠は docs/decisions/gitconfig-management.md)
 scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック

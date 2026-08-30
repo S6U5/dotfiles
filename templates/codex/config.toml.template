@@ -1,0 +1,85 @@
+# ==============================================
+# OpenAI Codex CLI 設定（おすすめ）
+# ==============================================
+# 配置場所:
+#   ユーザー設定: ~/.codex/config.toml
+#   プロジェクト設定: .codex/config.toml
+#
+# 注意: Codex は実行中にこのファイルへ [projects."..."] / [marketplaces.*] /
+#       [plugins."..."] / [tui.*] / [desktop] 等を自動追記する。これらは実マシンの
+#       絶対パス・プロジェクト名を含むため、実機の設定をこの雛形へ還元するときは
+#       必ず削除すること（README「雛形に入れないもの」参照）。
+#
+# 公式ドキュメント: https://developers.openai.com/codex/config-reference/
+
+# ----------------------------------------------
+# モデル設定
+# ----------------------------------------------
+# モデル名は時期で変わる時限的な値なので雛形には書かない
+# （未指定ならその時々の既定が使われる）。必要ならコピー先で指定する。
+# model = "<モデル名>"
+# model_provider = "openai"
+
+# 推論レベル: minimal/low/medium/high/xhigh
+model_reasoning_effort = "medium"
+
+# ----------------------------------------------
+# セキュリティ・承認
+# ----------------------------------------------
+# 承認ポリシー: Codex がコマンド実行前に確認を求めるタイミング
+#   untrusted  : 常に確認（最も安全）
+#   on-failure : 失敗時のみ確認
+#   on-request : リクエスト時のみ確認
+#   never      : 確認なし（自動実行）
+approval_policy = "on-request"
+
+# サンドボックスモード: ファイルシステムへのアクセス制限
+#   read-only         : 読み取りのみ（最も安全）
+#   workspace-write   : ワークスペース内の書き込み許可
+#   danger-full-access: 全アクセス許可（危険）
+sandbox_mode = "workspace-write"
+
+# ----------------------------------------------
+# Web 検索
+# ----------------------------------------------
+#   disabled : 無効
+#   cached   : キャッシュ使用（推奨）
+#   live     : リアルタイム検索
+web_search = "cached"
+
+# ----------------------------------------------
+# シェル環境
+# ----------------------------------------------
+[shell_environment_policy]
+# 環境変数の継承
+#   all  : すべて継承
+#   core : コア変数のみ（PATH など）
+#   none : 継承しない
+inherit = "core"
+
+# 明示的に設定する環境変数
+[shell_environment_policy.set]
+# EDITOR = "code --wait"
+
+# ----------------------------------------------
+# 機能フラグ
+# ----------------------------------------------
+[features]
+# シェルスナップショット（実験的）
+# shell_snapshot = true
+
+# 統合実行（PTY-backed、ベータ）
+# unified_exec = true
+
+# ----------------------------------------------
+# MCP サーバー（オプション）
+# ----------------------------------------------
+# [mcp_servers.github]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp_servers.github.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}"
+
+# [mcp_servers.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed"]
