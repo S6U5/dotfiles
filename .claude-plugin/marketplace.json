@@ -1,0 +1,14 @@
+{
+  "name": "personal",
+  "owner": {
+    "name": "S6U5",
+    "url": "https://github.com/S6U5"
+  },
+  "plugins": [
+    {
+      "name": "shin5",
+      "source": "./plugins/shin5",
+      "description": "Diagram-first, very simple Japanese explanations."
+    }
+  ]
+}

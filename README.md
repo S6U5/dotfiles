@@ -287,6 +287,8 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
 ├── claude/          Claude Code 設定の雛形
 ├── shell/           シェルのローカル設定(local.sh)の雛形(wincred ラッパー等の書き方見本)
 └── git/             git 設定の雛形(.gitconfig.template。手動コピーして使う。判断根拠は docs/decisions/gitconfig-management.md)
+.claude-plugin/ .agents/ plugins/
+                   Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身をプラグイン配布元にする。手順は plugins/README.md)
 scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
