@@ -25,29 +25,80 @@
 
 ## セットアップ
 
-### Claude Code
+### 1. Marketplace を登録する(マシンごとに初回のみ)
+
+**Claude Code**
 
 ```sh
-# このリポジトリを Marketplace として登録(パスは ./ 始まりの相対パスで指定する)
-claude plugin marketplace add ./path/to/dotfiles
+/plugin marketplace add ./path/to/dotfiles      # セッション内から
+claude plugin marketplace add ./path/to/dotfiles # シェルから
 ```
 
-登録後、`/plugin` から使うプラグインを有効化する。
+ローカルパスの場合、`.claude-plugin/marketplace.json` を含むディレクトリか、
+その JSON への直接パスを渡す。
 
-### Codex
+**Codex**
 
-`~/.codex/config.toml` に登録する(Codex 側の UI・コマンドから登録した場合も同じ内容が書かれる)。
+`~/.codex/config.toml` に書く(Codex 側の UI・コマンドから登録しても同じ内容が書かれる)。
 
 ```toml
 [marketplaces.personal]
 source_type = "local"
 source = "<このリポジトリのパス>"   # 例: ~/Projects/dotfiles
+```
 
+### 2. プラグインを入れる
+
+**プラグインごとに**以下を行う。Marketplace を登録しただけでは何も入らない。
+
+#### shin5
+
+**Claude Code**
+
+```sh
+/plugin install shin5@personal          # セッション内から(スコープを対話で選ぶ)
+claude plugin install shin5@personal    # シェルから(既定は user スコープ。--scope で変更)
+```
+
+インストール後の要約に `Run /reload-plugins to activate.` と出たら `/reload-plugins` を実行する
+(`Plugin is now active.` ならその必要はない)。
+
+呼び出しは **`/shin5:shin5`**。プラグインのスキルは `プラグイン名:スキル名` で名前空間が付く。
+
+**Codex**
+
+`~/.codex/config.toml` に書く。
+
+```toml
 [plugins."shin5@personal"]
 enabled = true
 ```
 
-プラグインを更新したときは、各ツール側で再インストールすると反映される。
+呼び出しは `$shin5` または「shin5」。Chrome 拡張のサイドパネルから使っている場合は、
+解説を求めたとき(「わからない」「解説して」など)にも自動で発動する。
+
+### 更新・無効化・削除(Claude Code)
+
+**ローカル Marketplace は自動更新が既定で無効**なので、このリポジトリ側を更新したら
+明示的に取り込む。
+
+```sh
+/plugin marketplace update personal     # このリポジトリの変更を取り込む
+/plugin list                            # 入っているプラグインを見る
+/plugin disable shin5@personal          # 消さずに無効化
+/plugin enable shin5@personal           # 再度有効化
+/plugin uninstall shin5@personal        # 削除
+```
+
+Codex 側はプラグインを再インストールすると反映される。
+
+### 開発中の動作確認(Claude Code)
+
+Marketplace に登録せず、ディレクトリを直接読み込んで試せる。
+
+```sh
+claude --plugin-dir ./plugins/shin5
+```
 
 ## 方針
 
