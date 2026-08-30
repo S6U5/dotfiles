@@ -27,6 +27,10 @@ When a closely related concept could be confused with the topic, explain the dif
 
 For multiple-choice questions, explain why the correct choice is correct and why each incorrect choice is wrong. Briefly state when an incorrect choice would be correct, when applicable.
 
-If invoked in a Chrome extension GPT chat, output SVG in one or more `svg` Markdown code blocks and Mermaid in `mermaid` Markdown code blocks. Split diagrams when that makes the explanation clearer.
+## Where to put the diagrams
+
+Where `svg` and `mermaid` code blocks are rendered as pictures (for example a Chrome extension side panel), output SVG in `svg` code blocks and Mermaid in `mermaid` code blocks. Split diagrams when that makes the explanation clearer.
+
+Where they are not rendered (for example a terminal), put the diagrams in an HTML artifact instead, keeping the same big-pictures-few-words approach.
 
 Topic: $ARGUMENTS
