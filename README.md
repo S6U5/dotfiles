@@ -261,11 +261,16 @@ home-manager switch --flake ./nix#<system> --impure
 
 ## おすすめエージェントスキル
 
-この dotfiles はターミナルマルチプレクサとして herdr を採用しています(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md) 参照)。Claude Code などのコーディングエージェントを herdr のペイン内で使う場合は、herdr 公式の agent skill の導入がおすすめです。エージェントが `herdr` CLI 経由でペイン分割・セッション操作などを自分で行えるようになります。
+Claude Code などのコーディングエージェントと組み合わせて使うのがおすすめな、各ツール**公式**の agent skill の一覧です。インストール手順・配布形態は変わりうるためここには転記せず、各公式ドキュメントを参照してください。スキル自体はこの dotfiles(Nix)では配布しません(`~/.claude/skills/` 等のエージェント側設定領域はこのリポジトリの管理対象外のため)。
 
-インストール方法は公式ドキュメント([herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/))を参照してください(手順や配布形態は変わりうるため、ここには転記しません)。
+| スキル | できること | 公式ドキュメント |
+|---|---|---|
+| herdr | この dotfiles 採用のターミナルマルチプレクサ(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md))。ペイン分割・セッション操作をエージェントが `herdr` CLI 経由で行えるようになる | [herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/) |
+| Playwright CLI | ブラウザ操作・E2E テストをエージェントがコンテキスト効率よく行うための公式 CLI + skill | [playwright.dev/docs/getting-started-cli](https://playwright.dev/docs/getting-started-cli) |
 
-このスキル自体は dotfiles(Nix)では配布しません。エージェント側の設定領域(`~/.claude/skills/` 等)はこのリポジトリの管理対象外のためです。
+推奨をやめたスキルは表から黙って消さず、日付・理由付きで以下に移して残します。
+
+- **廃止した推奨**: 現時点では無し
 
 ## リポジトリ構成
 
