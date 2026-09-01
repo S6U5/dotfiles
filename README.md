@@ -261,13 +261,9 @@ home-manager switch --flake ./nix#<system> --impure
 
 ## おすすめエージェントスキル
 
-この dotfiles はターミナルマルチプレクサとして herdr を採用しています(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md) 参照)。Claude Code などのコーディングエージェントを herdr のペイン内で使う場合は、herdr 公式の agent skill の導入がおすすめです。エージェントが `herdr` CLI 経由でペイン分割・セッション操作などを自分で行えるようになります(公式ドキュメント: [herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/))。
+この dotfiles はターミナルマルチプレクサとして herdr を採用しています(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md) 参照)。Claude Code などのコーディングエージェントを herdr のペイン内で使う場合は、herdr 公式の agent skill の導入がおすすめです。エージェントが `herdr` CLI 経由でペイン分割・セッション操作などを自分で行えるようになります。
 
-```sh
-npx skills add herdrdev/herdr --skill herdr -g
-```
-
-`-g` を付けると全プロジェクト共通(グローバル)に、外すとカレントプロジェクトにインストールされます。herdr 導入済みの環境では `npx` を使わずに `herdr --skill` で、インストール済みバイナリと同じバージョンのスキル本文を表示して手動配置することもできます(スキルの実体は [skills/herdr/SKILL.md](https://github.com/herdrdev/herdr/blob/master/skills/herdr/SKILL.md))。
+インストール方法は公式ドキュメント([herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/))を参照してください(手順や配布形態は変わりうるため、ここには転記しません)。
 
 このスキル自体は dotfiles(Nix)では配布しません。エージェント側の設定領域(`~/.claude/skills/` 等)はこのリポジトリの管理対象外のためです。
 
