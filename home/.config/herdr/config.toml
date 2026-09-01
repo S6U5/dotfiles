@@ -1,5 +1,13 @@
 # herdr のキーバインドを tmux のデフォルトに揃える(プレフィックスは Ctrl+b のまま)
 
+# 初回起動時のオンボーディング(セットアップウィザード)をスキップする。
+# 未設定だと herdr がウィザード完了時に onboarding = false を設定ファイルへ書き込むが、
+# このファイルは mkOutOfStoreSymlink でリポジトリ内の実体へ直接リンクされており、
+# リンク越しの書き込みはリポジトリ管理下のファイルに届いてしまうため、先回りしてコミットしておく
+# (zshrc で起きた同種の問題は docs/decisions/zshrc-pollution.md 参照)。
+# トップレベルキーのため、TOML の仕様上どのセクションよりも前に置く必要がある。
+onboarding = false
+
 [keys]
 # プレフィックスキー + % でペインを垂直分割、+ " で水平分割(tmuxのデフォルト split-window -h/-v に合わせる。
 # herdr 自体のデフォルトは prefix+v / prefix+minus のため明示的に上書きする)
