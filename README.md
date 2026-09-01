@@ -216,6 +216,30 @@ home-manager switch --flake ./nix#<system> --impure
 
 </details>
 
+<details>
+<summary><b>ネイティブ Windows 側の npm / pnpm / uv にもサプライチェーン対策を効かせる(手動コピー)</b></summary>
+
+home-manager の配布が届くのは WSL 内の `$HOME` までで、Windows に直接インストールした npm / pnpm / uv には効きません(この dotfiles は Nix 前提のため、ネイティブ Windows 向けの自動配布は意図的に作っていません。判断根拠は [`docs/decisions/windows-supply-chain.md`](docs/decisions/windows-supply-chain.md))。
+
+対策設定のファイルはいずれも機密ゼロ・各ツール標準の形式なので、そのまま Windows 側の標準パスへコピーすれば同じ対策が効きます。WSL からは1コマンドで一括コピーできます:
+
+```sh
+wsl-supplychain-setup
+```
+
+Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc` 等)があった場合は、初回のみ同名の `.bak` に退避してから上書きします(必要な値は手で書き戻してください)。手動でコピーする場合の対応表:
+
+| リポジトリ内のファイル | Windows 側のコピー先 |
+|---|---|
+| `home/.npmrc` | `%USERPROFILE%\.npmrc` |
+| `home/.config/pnpm/rc` | `%LOCALAPPDATA%\pnpm\config\rc` |
+| `home/.config/uv/uv.toml` | `%APPDATA%\uv\uv.toml` |
+
+- コピーは明示実行のみで、自動では追従しません。リポジトリ側の設定を変えたら再実行(再コピー)してください。
+- バージョン要件: npm の `min-release-age` は npm 11.5.1+、uv の `exclude-newer` の相対期間指定は uv 0.9.17+ が必要です(それ未満では効かないか、設定の解釈でエラーになります)。
+
+</details>
+
 ## 収録コマンド・関数
 
 インストール後、新しいシェルから使えます。候補が複数あるものは fzf(あれば)か番号選択になり、引数で名前の絞り込みができます。
@@ -254,6 +278,7 @@ home-manager switch --flake ./nix#<system> --impure
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `wsl-font-setup` | WSL 内の JetBrainsMono Nerd Font を Windows 側にユーザーフォントとしてインストール |
+| `wsl-supplychain-setup` | サプライチェーン対策設定(npm / pnpm / uv)を Windows 側の標準パスへコピー(WSL 用。詳細は[セットアップの詳細](#セットアップの詳細)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 

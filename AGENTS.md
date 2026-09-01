@@ -76,6 +76,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
   - 他リポジトリのコードを取り込む場合はライセンス互換に注意し、MIT と非互換のコードはコミットしない。
 - **エージェントスキル(agent skills)は公式のみ採用する**。README で薦める・配布するスキルはツール公式(開発元)のものか自作に限り、非公式(サードパーティ製)スキルは絶対に入れない。herdr のスキルは nixpkgs 同梱の SKILL.md をストアパス参照で `~/.claude/skills/herdr` に配布し(`nix/home.nix` の `home.file`)、それ以外は README に公式ドキュメントへのリンクのみ載せて手順は転記しない。推奨をやめたスキルは README の一覧から黙って消さず「廃止した推奨」に日付・理由付きで残す(判断根拠は `docs/decisions/agent-skills.md`)。
 - **GitHub Actions のアクションはコミットハッシュで固定する**(`uses: owner/repo@<フル SHA> # vX.Y.Z` 形式。タグは後から書き換え可能でサプライチェーン攻撃の入口になるため)。バージョン更新は Dependabot がハッシュごと PR してくる。
+- パッケージマネージャのサプライチェーン対策(`home/.npmrc` / `home/.config/pnpm/rc` / `home/.config/uv/uv.toml` の install スクリプト無効化・クールダウン等)は home-manager 配布の対象だが、Nix が動かない**ネイティブ Windows へは明示実行の `wsl-supplychain-setup`(`home/.local/bin/`)または README 記載の手動コピーで配る**(自動で走る配布機構は作らない。判断根拠は `docs/decisions/windows-supply-chain.md`)。対象ファイルを増やしたら、このコマンドのコピー対象と README のコピー先表も更新する。
 - APIキー等は pre-commit フック(`.githooks/pre-commit`)で**コミット前に自動ブロック**される。gitleaks があれば併用、無くても内蔵パターンで検査。誤検知は該当行に `secrets-allow` コメントで回避(要目視確認)。フックは `nix/home.nix` の `home.activation`(`home-manager switch` 実行時)に `core.hooksPath` として自動有効化。
 - 機密だけでなく**個人的なこと・特定の文脈が分かることは一切含めない(最重要ルール)**。設定内容に好みが出るのは当然だが、コメント・コミットメッセージ・設定値のどこにも、個人の事情・生活・所属や、置かれている状況が特定できる記述を書かない。
 - **プロンプトテンプレートは特に要注意**。プロンプトには書いた人物の状況が特定できる文脈が極めて混ざりやすい。コミット前に必ず全文を精査し、少しでも疑わしければ入れない。
