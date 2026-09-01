@@ -86,7 +86,7 @@ RESULT="$BUILD_DIR/result"
 echo "== 3) 代表ファイルが home/ の実体を指しているか"
 for f in .config/bash/bashrc .tmux.conf .npmrc \
   .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update \
-  .zshenv .config/zsh/.zshrc .config/nvim/lazy-lock.json; do
+  .zshenv .config/zsh/zshrc .config/nvim/lazy-lock.json; do
   linked_to=$(readlink -f "$RESULT/home-files/$f" 2>/dev/null || true)
   expected="$DOTFILES_DIR/home/$f"
   if [ "$linked_to" = "$expected" ]; then
@@ -112,15 +112,16 @@ else
   ng "lazy-lock.json 書き込み不可"
 fi
 
-echo "== 6) .bashrc / .bash_profile は home.file 対象外(activation で生成)"
-if [ ! -e "$RESULT/home-files/.bashrc" ] && [ ! -e "$RESULT/home-files/.bash_profile" ]; then
-  ok ".bashrc/.bash_profile は home.file に含まれない"
+echo "== 6) .bashrc / .bash_profile / .config/zsh/.zshrc は home.file 対象外(activation で生成)"
+if [ ! -e "$RESULT/home-files/.bashrc" ] && [ ! -e "$RESULT/home-files/.bash_profile" ] &&
+  [ ! -e "$RESULT/home-files/.config/zsh/.zshrc" ]; then
+  ok ".bashrc/.bash_profile/.config/zsh/.zshrc は home.file に含まれない"
 else
-  ng ".bashrc/.bash_profile が誤って home.file に含まれている"
+  ng ".bashrc/.bash_profile/.config/zsh/.zshrc が誤って home.file に含まれている"
 fi
 
-echo "== 7) bash bootstrap(新規生成・冪等性・既存ファイル保護・バックアップ)"
-awk '/^_iNote "Activating %s" "dotfilesBashBootstrap"$/{flag=1; next} flag{print} flag && /^done$/{exit}' \
+echo "== 7) shell bootstrap(新規生成・冪等性・既存ファイル保護・バックアップ)"
+awk '/^_iNote "Activating %s" "dotfilesShellBootstrap"$/{flag=1; next} flag{print} flag && /^done$/{exit}' \
   "$RESULT/activate" >"$BOOTSTRAP_BLOCK"
 if [ -s "$BOOTSTRAP_BLOCK" ]; then
   ok "activation script から bootstrap ブロックを抽出"
@@ -129,15 +130,16 @@ else
 fi
 
 if HOME="$BOOTSTRAP_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$BOOTSTRAP_BLOCK\"" &&
-  [ -f "$BOOTSTRAP_HOME/.bashrc" ] && grep -qF '.config/bash/bashrc' "$BOOTSTRAP_HOME/.bashrc"; then
-  ok "bootstrap: 新規生成"
+  [ -f "$BOOTSTRAP_HOME/.bashrc" ] && grep -qF '.config/bash/bashrc' "$BOOTSTRAP_HOME/.bashrc" &&
+  [ -f "$BOOTSTRAP_HOME/.config/zsh/.zshrc" ] && grep -qF '.config/zsh/zshrc' "$BOOTSTRAP_HOME/.config/zsh/.zshrc"; then
+  ok "bootstrap: 新規生成(bash / zsh)"
 else
   ng "bootstrap: 新規生成に失敗"
 fi
 
-before=$(cat "$BOOTSTRAP_HOME/.bashrc" 2>/dev/null || true)
+before=$(cat "$BOOTSTRAP_HOME/.bashrc" "$BOOTSTRAP_HOME/.config/zsh/.zshrc" 2>/dev/null || true)
 HOME="$BOOTSTRAP_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$BOOTSTRAP_BLOCK\"" || true
-after=$(cat "$BOOTSTRAP_HOME/.bashrc" 2>/dev/null || true)
+after=$(cat "$BOOTSTRAP_HOME/.bashrc" "$BOOTSTRAP_HOME/.config/zsh/.zshrc" 2>/dev/null || true)
 if [ "$before" = "$after" ]; then
   ok "bootstrap: 冪等性"
 else
@@ -179,10 +181,10 @@ if command -v zsh >/dev/null 2>&1; then
   else
     ng "zsh 補完: 構文エラー"
   fi
-  if zsh -n "$DOTFILES_DIR/home/.config/zsh/.zshrc" 2>/dev/null; then
-    ok "zsh .zshrc: 構文OK"
+  if zsh -n "$DOTFILES_DIR/home/.config/zsh/zshrc" 2>/dev/null; then
+    ok "zsh 設定本体(zshrc): 構文OK"
   else
-    ng "zsh .zshrc: 構文エラー"
+    ng "zsh 設定本体(zshrc): 構文エラー"
   fi
 fi
 
@@ -198,7 +200,8 @@ if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
   else
     ng "2回目の switch が失敗"
   fi
-  for f in .config/bash/bashrc .tmux.conf .npmrc .zshenv .bashrc .bash_profile; do
+  for f in .config/bash/bashrc .config/zsh/zshrc .tmux.conf .npmrc .zshenv \
+    .bashrc .bash_profile .config/zsh/.zshrc; do
     if [ -e "$HOME/$f" ]; then
       ok "switch後に存在: $f"
     else

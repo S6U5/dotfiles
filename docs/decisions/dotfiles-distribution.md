@@ -19,7 +19,7 @@
 
 - **`mkOutOfStoreSymlink`** は home-manager が公式提供する、Nix storeにコピーせず指定した絶対パス(=リポジトリ内の実体ファイル)へ直接シンボリックリンクを張る仕組み。これにより、通常の `home.file.source`(Nix storeコピー方式)が抱える2つの問題を回避できる: (1) 編集のたびに `home-manager switch` が必要になるDX劣化、(2) LazyVimの `lazy-lock.json` のようにツール自身が実行時に書き込むファイルが read-only 化で壊れる問題。
 - **`programs.zsh` / `programs.bash` は使わない**。過去(oh-my-zsh導入時)に zsh 設定の生成そのものを home-manager モジュールに委ねたところ、「`home-manager switch` を一度も実行していない初期状態だとシェル設定が一切効かない」という不具合が発生した(`docs/decisions/zshrc-pollution.md` の履歴参照)。今回は `home/` の中身をテキストファイルのまま `home.file` で配置するだけにとどめ、home-manager独自の設定生成ロジックには依存しない。
-- **`~/.bashrc` / `~/.bash_profile` だけは `home.file` にせず `home.activation` で生成する**。これらは「nvm/pyenv/Homebrew等のインストーラが自由に追記しても実害が出ない、書き込み可能な実ファイル」であることが設計の本質(`docs/decisions/zshrc-pollution.md`)。`home.file` にすると読み取り専用シンボリックリンクになり、インストーラの追記が書き込みエラーで失敗しうる。
+- **`~/.bashrc` / `~/.bash_profile` / `~/.config/zsh/.zshrc` だけは `home.file` にせず `home.activation` で生成する**。これらは「nvm/pyenv/Homebrew等のインストーラが自由に追記しても実害が出ない、dotfiles 管理外の実ファイル」であることが設計の本質(`docs/decisions/zshrc-pollution.md`)。`home.file`(`mkOutOfStoreSymlink`)にすると、シンボリックリンク越しの追記がエラーにならず最終実体=リポジトリ管理下ファイルへ書き込まれてしまう(中間リンクが read-only の Nix store 内にあっても防げないことを検証済み。詳細は `zshrc-pollution.md` の履歴参照)。
 - `home/` を再帰的に読んで `home.file` エントリを機械生成する(`nix/home.nix` の `walkHome`)ことで、`install.sh` の `find "$HOME_SRC" -type f` ループと同じ「新規ファイルを `home/` に足すだけで自動的に配布対象になる」エルゴノミクスを維持している。
 
 ## トレードオフ
@@ -34,4 +34,5 @@
 ## 履歴
 
 - (`install.sh` の手動シンボリックリンク → `home-manager`(`home.file` + `mkOutOfStoreSymlink`)、本ADR): 上記の理由により決定。`install.sh` / `backup.sh` / `scripts/test-install.sh` を削除し、`scripts/test-home-manager.sh` に置き換えた。`update.sh` は縮小し、`git pull` 後に `home-manager switch` の実行を促すメッセージ表示のみに変更した。
+- (2026-09: `~/.config/zsh/.zshrc` も `home.activation` 生成の対象に追加): nvm のインストーラが ZDOTDIR を尊重して `$ZDOTDIR/.zshrc` へ追記すること、および `mkOutOfStoreSymlink` のリンク越しの追記はエラーにならずリポジトリ内の実体へ書き込まれることが判明したため。zsh の設定本体は `home/.config/zsh/zshrc` へ移動した(経緯の詳細は `docs/decisions/zshrc-pollution.md` の履歴参照)。
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)
