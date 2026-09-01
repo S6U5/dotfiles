@@ -267,6 +267,7 @@ Claude Code などのコーディングエージェントと組み合わせて�
 |---|---|---|
 | herdr | この dotfiles 採用のターミナルマルチプレクサ(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md))。ペイン分割・セッション操作をエージェントが `herdr` CLI 経由で行えるようになる | [herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/) |
 | Playwright CLI | ブラウザ操作・E2E テストをエージェントがコンテキスト効率よく行うための公式 CLI + skill | [playwright.dev/docs/getting-started-cli](https://playwright.dev/docs/getting-started-cli) |
+| Obsidian | ノートの読み書き・全文検索・タスクやタグの照会などをエージェントが公式 CLI 経由で行えるようになる公式スキル集(この dotfiles にも Obsidian 連携コマンド `cdov` / `ov` あり) | [github.com/kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) |
 
 推奨をやめたスキルは表から黙って消さず、日付・理由付きで以下に移して残します。
 
