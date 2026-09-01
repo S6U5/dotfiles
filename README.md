@@ -22,6 +22,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 - [クイックスタート](#クイックスタート)
 - [セットアップの詳細](#セットアップの詳細)
 - [収録コマンド・関数](#収録コマンド関数)
+- [おすすめエージェントスキル](#おすすめエージェントスキル)
 - [リポジトリ構成](#リポジトリ構成)
 - [更新](#更新)
 - [テスト](#テスト)
@@ -282,6 +283,20 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。`ls` / `ll` / `la` / `lt`(ツリー表示)は eza があればアイコン・色付き表示になります(無い環境では色付き ls にフォールバック。判断根拠は [`docs/decisions/ls-replacement.md`](docs/decisions/ls-replacement.md) 参照)。
+
+## おすすめエージェントスキル
+
+Claude Code などのコーディングエージェントと組み合わせて使うのがおすすめな、各ツール**公式**の agent skill の一覧です(非公式スキルは自作を除き採用しません。判断根拠は [`docs/decisions/agent-skills.md`](docs/decisions/agent-skills.md) 参照)。herdr のスキルだけは nixpkgs のパッケージがスキル本文を同梱しているため、`home-manager switch` で `~/.claude/skills/herdr` に自動配布されます(手動インストール不要。バイナリとスキルのバージョンが常に一致)。それ以外はインストール手順・配布形態が変わりうるためここには転記せず、各公式ドキュメントを参照してください。
+
+| スキル | できること | 導入 |
+|---|---|---|
+| herdr | この dotfiles 採用のターミナルマルチプレクサ(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md))。ペイン分割・セッション操作をエージェントが `herdr` CLI 経由で行えるようになる | `home-manager switch` で自動配布([herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/)) |
+| Playwright CLI | ブラウザ操作・E2E テストをエージェントがコンテキスト効率よく行うための公式 CLI + skill | [playwright.dev/docs/getting-started-cli](https://playwright.dev/docs/getting-started-cli) |
+| Obsidian | ノートの読み書き・全文検索・タスクやタグの照会などをエージェントが公式 CLI 経由で行えるようになる公式スキル集(この dotfiles にも Obsidian 連携コマンド `cdov` / `ov` あり) | [github.com/kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) |
+
+推奨をやめたスキルは表から黙って消さず、日付・理由付きで以下に移して残します。
+
+- **廃止した推奨**: 現時点では無し
 
 ## リポジトリ構成
 
