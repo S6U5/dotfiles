@@ -31,12 +31,16 @@ config.check_for_updates = false
 -- 参照)。ディストリ名をハードコードせず動的に取得する(環境ごとに異なりうるため)。
 -- default_prog を明示的に zsh にする(WSL ディストリ側のログインシェル設定(chsh)に依存させない。
 -- 未指定のままだと WSL ディストリのデフォルトシェル(多くの場合 bash)が起動してしまう)。
+-- default_cwd を WSL 側のホーム(~)にする(未指定だと Windows 側のカレントディレクトリが
+-- 引き継がれ、/mnt/c/Users/... のようなマウントディレクトリで開いてしまう)。新規ウィンドウ・
+-- タブ・ペインすべてに効く。
 -- 採用したドメイン名は下の gui-startup でも参照するため local に控える。
 local wsl_default_domain
 if wezterm.target_triple:find 'windows' then
   local wsl_domains = wezterm.default_wsl_domains()
   if wsl_domains and #wsl_domains > 0 then
     wsl_domains[1].default_prog = { 'zsh' }
+    wsl_domains[1].default_cwd = '~'
     config.wsl_domains = wsl_domains
     config.default_domain = wsl_domains[1].name
     wsl_default_domain = wsl_domains[1].name
