@@ -1,3 +1,8 @@
+# zsh 設定の本体。エントリポイントの ~/.config/zsh/.zshrc(dotfiles 管理外の実ファイル。
+# nix/home.nix の home.activation が生成する1行ローダー)から source される。
+# ~/.config/zsh/.zshrc を home/ で管理しないのは、nvm 等 ZDOTDIR を尊重するインストーラの
+# 自動追記からリポジトリ管理下ファイルを守るため(判断根拠は docs/decisions/zshrc-pollution.md)。
+
 # 履歴設定
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=10000

@@ -48,15 +48,20 @@ in
   # home/ 配下(dotfiles本体)の配布。判断根拠・設計は docs/decisions/dotfiles-distribution.md 参照。
   # programs.zsh / programs.bash は使わない(home-managerの設定生成に依存すると、switch 未実行時に
   # 何も効かなくなるという過去の失敗があるため。docs/decisions/zshrc-pollution.md の履歴参照)。
-  # ~/.bashrc / ~/.bash_profile だけは home.file にせず下記の home.activation で生成する(nvm/pyenv 等の
-  # インストーラによる追記を書き込みエラーにしないため)。
+  # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc だけは home.file にせず下記の home.activation で
+  # 生成する(nvm/pyenv 等のインストーラによる追記をリポジトリ管理下ファイルに届かせないため)。
   home.file = walkHome homeSrcDir "";
 
-  # ~/.bashrc / ~/.bash_profile を「dotfiles 管理外の実ファイル」として生成する。旧 install.sh の
-  # bootstrap_file() の移植(判断根拠は docs/decisions/zshrc-pollution.md 参照)。home.file にしない
-  # 理由は上記コメントの通り。$VERBOSE_ECHO / $DRY_RUN_CMD / $HOME_MANAGER_BACKUP_EXT は
-  # home-manager のアクティベーションスクリプトが提供する規約(-v / -n / -b <拡張子> にそれぞれ対応)。
-  home.activation.dotfilesBashBootstrap = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc を「dotfiles 管理外の実ファイル」として生成する。
+  # 旧 install.sh の bootstrap_file() の移植+zsh への対称展開(判断根拠は
+  # docs/decisions/zshrc-pollution.md 参照)。home.file にしない理由は上記コメントの通り
+  # (mkOutOfStoreSymlink のリンク越しの追記は最終実体=リポジトリ内ファイルに書き込まれてしまう。
+  # nvm は ZDOTDIR を尊重して $ZDOTDIR/.zshrc に追記するため、zsh 側も実ファイル化が必要)。
+  # $VERBOSE_ECHO / $DRY_RUN_CMD / $HOME_MANAGER_BACKUP_EXT は home-manager の
+  # アクティベーションスクリプトが提供する規約(-v / -n / -b <拡張子> にそれぞれ対応)。
+  # linkGeneration の後に実行する(旧世代で home.file 管理だった ~/.config/zsh/.zshrc の
+  # シンボリックリンクが掃除された後に実ファイルを生成するため)。
+  home.activation.dotfilesShellBootstrap = lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" ] ''
     _dotfiles_bash_bootstrap_content='# このファイルは dotfiles の管理外です(意図的にシンボリックリンクにしていません)。
     # nvm/pyenv/Homebrew 等のインストーラがここへ自動追記しても、
     # 実体の設定(~/.config/bash/bashrc、dotfiles 管理下)には影響しません。
@@ -64,9 +69,27 @@ in
     [ -r "$HOME/.config/bash/bashrc" ] && . "$HOME/.config/bash/bashrc"
     '
 
-    for _dotfiles_bootstrap_dest in "$HOME/.bashrc" "$HOME/.bash_profile"; do
+    _dotfiles_zsh_bootstrap_content='# このファイルは dotfiles の管理外です(意図的にシンボリックリンクにしていません)。
+    # nvm 等 ZDOTDIR を尊重するインストーラがここへ自動追記しても、
+    # 実体の設定(~/.config/zsh/zshrc、dotfiles 管理下)には影響しません。
+    # 判断根拠は docs/decisions/zshrc-pollution.md 参照。
+    [ -r "$HOME/.config/zsh/zshrc" ] && . "$HOME/.config/zsh/zshrc"
+    '
+
+    for _dotfiles_bootstrap_dest in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.config/zsh/.zshrc"; do
+      case "$_dotfiles_bootstrap_dest" in
+        */.config/zsh/.zshrc)
+          _dotfiles_bootstrap_content=$_dotfiles_zsh_bootstrap_content
+          _dotfiles_bootstrap_marker='.config/zsh/zshrc'
+          ;;
+        *)
+          _dotfiles_bootstrap_content=$_dotfiles_bash_bootstrap_content
+          _dotfiles_bootstrap_marker='.config/bash/bashrc'
+          ;;
+      esac
+
       if [ -f "$_dotfiles_bootstrap_dest" ] && [ ! -L "$_dotfiles_bootstrap_dest" ] \
-        && grep -qF '.config/bash/bashrc' "$_dotfiles_bootstrap_dest" 2>/dev/null; then
+        && grep -qF "$_dotfiles_bootstrap_marker" "$_dotfiles_bootstrap_dest" 2>/dev/null; then
         $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest は既にブートストラップ済みです"
         continue
       fi
@@ -81,7 +104,8 @@ in
         fi
       fi
 
-      $DRY_RUN_CMD sh -c "printf '%s' \"\$1\" > \"\$2\"" _ "$_dotfiles_bash_bootstrap_content" "$_dotfiles_bootstrap_dest"
+      $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_bootstrap_dest")"
+      $DRY_RUN_CMD sh -c "printf '%s' \"\$1\" > \"\$2\"" _ "$_dotfiles_bootstrap_content" "$_dotfiles_bootstrap_dest"
       $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest を生成しました(ブートストラップ、dotfiles管理外の実ファイル)"
     done
   '';
@@ -101,9 +125,9 @@ in
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。
-  # zsh-autosuggestions / zsh-syntax-highlighting は zsh の起動設定(home/.config/zsh/.zshrc)から
+  # zsh-autosuggestions / zsh-syntax-highlighting は zsh の起動設定(home/.config/zsh/zshrc)から
   # ~/.nix-profile 配下のファイルを直接 source する形で使う。starship は zsh のプロンプト
-  # (home/.config/zsh/.zshrc で `starship init zsh` を呼ぶ)。
+  # (home/.config/zsh/zshrc で `starship init zsh` を呼ぶ)。
   # ripgrep / fd / ruff は LazyVim(home/.config/nvim)の検索機能・Python LSP が要求する依存
   # (docs/decisions/editor.md 参照)。ruff は mason(LazyVim側のツールインストーラ)経由だと
   # このMacのHomebrew Python由来のpip/venv不具合で導入に失敗するため、Nix管理に切り替えて

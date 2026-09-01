@@ -13,7 +13,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 
 <img alt="dotfiles 実行時構造図: OS(macOS/WSL/Linux) → ターミナルエミュレータ → zsh → herdr → CLIアプリ(Neovim・fzf・zoxide)。zsh(設定)・herdr・CLIアプリを青枠の点線で囲み、Nix + Home Manager が導入・設定を管理する範囲を示す(zsh バイナリ本体は点線の外)" src="docs/assets/stack.svg" width="620">
 
-<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが home-manager(home.file / mkOutOfStoreSymlink)により $HOME へシンボリックリンクされる様子。zsh の .zshenv / .config/zsh/.zshrc も他のファイルと同様に home/ からシンボリックリンクされる" src="docs/assets/config-placement.svg" width="600">
+<img alt="dotfiles 設定ファイル配置図: home/ 以下のファイルが home-manager(home.file / mkOutOfStoreSymlink)により $HOME へシンボリックリンクされる様子。zsh の .zshenv / 設定本体 .config/zsh/zshrc も他のファイルと同様に home/ からシンボリックリンクされる(エントリポイント ~/.config/zsh/.zshrc は ~/.bashrc 等と同じく home.activation が生成)" src="docs/assets/config-placement.svg" width="600">
 
 ## 目次
 
@@ -34,7 +34,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 - **Nix + home-manager に一本化** — パッケージ導入・dotfiles 配布(`home/` 以下のシンボリックリンク)を単一の経路にまとめています。`nixpkgs-unstable` を追跡するため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は [`docs/decisions/dotfiles-distribution.md`](docs/decisions/dotfiles-distribution.md) / [`docs/decisions/package-management.md`](docs/decisions/package-management.md) 参照)
 - **home/ を直接編集すればすぐ反映される** — `home.file` は `mkOutOfStoreSymlink` で配布しているため、Nix store へコピーする通常の方式と違い、`home/` 配下のファイルを編集すればそのまま `$HOME` 側に反映されます(`home-manager switch` の再実行は不要)
 - **機密ゼロ方針** — API キー・個人情報はリポジトリに置かず、git 管理外のローカルファイル(`*.local` / `local.sh`)へ分離。pre-commit フック + CI の二段でコミット前後に機密混入を検査します
-- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash ブートストラップ等)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
+- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash / zsh ブートストラップ等)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
 
 ## 前提
 
@@ -109,7 +109,7 @@ nix flake update ./nix
 <details>
 <summary><b>zsh バイナリを管理対象外にしている理由</b></summary>
 
-zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は [`docs/decisions/login-shell.md`](docs/decisions/login-shell.md) 参照)。`.zshrc` / `.zshenv` の**内容**は他の `home/` 配下のファイルと同じく home-manager の `home.file` で配布します。
+zsh バイナリ(shell 実行ファイル)自体はここには含めていません。ログインシェルを Nix 管理下に置くとロックアウトのリスクがあるため、意図的に対象外にしています(判断根拠は [`docs/decisions/login-shell.md`](docs/decisions/login-shell.md) 参照)。zsh の**設定内容**(`.zshenv` と設定本体 `.config/zsh/zshrc`)は他の `home/` 配下のファイルと同じく home-manager の `home.file` で配布します(エントリポイント `~/.config/zsh/.zshrc` のみ `~/.bashrc` と同様に `home.activation` が生成、下記「リポジトリ構成」参照)。
 
 </details>
 
@@ -262,9 +262,9 @@ home-manager switch --flake ./nix#<system> --impure
 
 ```
 home/              $HOME に同じ構造でリンクされる設定ファイル群
-├── .zshenv                            zsh 本体の設定(ZDOTDIR を .config/zsh に切り替えるだけ)
-├── .config/zsh/.zshrc                 zsh 本体の設定(実際の設定本体)
-├── .config/bash/bashrc                bash 本体の設定(ブートストラップ方式)
+├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替えるだけ)
+├── .config/zsh/zshrc                  zsh の設定(実際の設定本体)
+├── .config/bash/bashrc                bash の設定(実際の設定本体)
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)
 │   └── os/                            OS 固有の起動時設定(macos / wsl / linux)
 ├── .local/bin/                        自作コマンド(PATH に自動で通る)
@@ -274,7 +274,8 @@ home/              $HOME に同じ構造でリンクされる設定ファイル�
 home-manager が生成するもの($HOME に直接置くが home/ には対応物が無い)
 ├── ~/.bashrc / ~/.bash_profile        dotfiles 管理外の実ファイル。home.activation が
 │                                      ~/.config/bash/bashrc を読み込むだけの1行として生成
-│                                      (判断根拠は docs/decisions/zshrc-pollution.md)
+├── ~/.config/zsh/.zshrc               同上(zsh 版)。~/.config/zsh/zshrc を読み込むだけの1行
+│                                      (いずれも判断根拠は docs/decisions/zshrc-pollution.md)
 docs/              ドキュメント
 ├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md / wezterm.md / starship.md)
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)
@@ -314,7 +315,7 @@ winget upgrade wez.wezterm
 ./scripts/test-home-manager.sh
 ```
 
-`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
+`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
 
 実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で次を実行してください(実 `$HOME` を書き換えます):
 

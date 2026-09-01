@@ -156,7 +156,7 @@ error_symbol = '[❯](bold red)'
 # 組み込みの status モジュールではなく custom モジュールを使うのは、「何も入力せず Enter
 # しただけの再描画では表示しない」ため(status モジュールは exit code 未指定=空 Enter を
 # 0 と区別できない)。DOTFILES_LAST_STATUS は zsh 側の precmd フックが「コマンド実行が
-# あったときだけ」セットする(home/.config/zsh/.zshrc 参照)
+# あったときだけ」セットする(home/.config/zsh/zshrc 参照)
 [custom.exit_ok]
 when = '[ "$DOTFILES_LAST_STATUS" = 0 ]'
 format = '[✓ 0 ](bold green)'

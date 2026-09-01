@@ -1,7 +1,7 @@
 # shellcheck shell=sh
 # shellcheck disable=SC1090,SC1091
 #
-# シェル共通設定のエントリポイント。.zshrc / .bashrc の両方から source される。
+# シェル共通設定のエントリポイント。zsh / bash 両方の設定本体から source される。
 # この配下(home/.config/shell/)は POSIX sh 互換で書くこと(zsh / bash 両対応のため)。
 #
 # 読み込み順:
