@@ -197,14 +197,35 @@ else
   ng "dotfiles-dir.sh: DOTFILES_DIR が不一致 (got: $dir_env_got, want: $DOTFILES_DIR)"
 fi
 
-echo "== 10) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
+echo "== 10) zsh プラグインが store パスにリンクされ、読み込むファイルが実在するか"
+# home.file の source に書いたサブパス(share/zsh/plugins/... 等)は Nix 評価時に検証されず、
+# nixpkgs 側のレイアウト変更でリンクが宙に浮いても build は成功してしまう。zshrc は存在
+# チェック付きで source するため実行時もエラーが出ず「静かに無効化」される。ここが唯一の検出点
+for p in zsh-autosuggestions/zsh-autosuggestions.zsh \
+  zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
+  plugin_target=$(readlink -f "$RESULT/home-files/.config/zsh/plugins/$p" 2>/dev/null || true)
+  case "$plugin_target" in
+    /nix/store/*)
+      if [ -s "$plugin_target" ]; then
+        ok "store パスを指し、中身も空でない: $p"
+      else
+        ng "リンク先が空: $p"
+      fi
+      ;;
+    *)
+      ng "リンク先が想定外: $p (got: ${plugin_target:-リンク切れ})"
+      ;;
+  esac
+done
+
+echo "== 11) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
 else
   ng "pre-commit フック有効化ロジックが見つからない"
 fi
 
-echo "== 11) 補完定義ファイルの構文"
+echo "== 12) 補完定義ファイルの構文"
 if bash -n "$DOTFILES_DIR/home/.config/bash/completions/apps.bash" 2>/dev/null; then
   ok "bash 補完: 構文OK"
 else
@@ -224,7 +245,7 @@ if command -v zsh >/dev/null 2>&1; then
 fi
 
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
-  echo "== 12) home-manager switch(実 HOME に適用。使い捨て環境専用)"
+  echo "== 13) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
     ok "switch 成功"
   else

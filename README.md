@@ -320,6 +320,9 @@ home-manager が生成するもの($HOME に直接置くが home/ には対応�
 │                                      マシン固有パスのため home/ に実体は無く home.file(text)で
 │                                      マシンごとに生成。init.sh の *.sh 自動読み込みで全シェルに
 │                                      効く(判断根拠は docs/decisions/dotfiles-dir-env.md)
+├── ~/.config/zsh/plugins/             zsh プラグイン(zsh-autosuggestions / zsh-syntax-highlighting)
+│                                      の読み込み元。home.file が Nix store パスへのリンクとして配布
+│                                      (判断根拠は docs/decisions/zsh-plugins.md)
 docs/              ドキュメント
 ├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md / wezterm.md / starship.md)
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)

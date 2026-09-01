@@ -71,6 +71,18 @@ in
       # 各マシンの switch 時に生成しています(判断根拠は docs/decisions/dotfiles-dir-env.md)。
       export DOTFILES_DIR="${dotfilesDir}"
     '';
+
+    # zsh プラグインを store パス直参照で配布する(herdr スキルと同じパターン。判断根拠は
+    # docs/decisions/zsh-plugins.md)。zshrc 側が ~/.nix-profile のレイアウトを推測して
+    # source する旧方式は、nixpkgs 側でレイアウトが変わると存在チェックにより「エラーも出ず
+    # 静かに無効化」されて気づけない。パッケージ出力へのリンクを ~/.config/zsh/plugins/ に
+    # 置けば flake.lock の更新でバージョンと構造的に一致する。なお下記サブパスの存在は
+    # Nix 評価時には検証されない(壊れるとリンクが宙に浮くだけ)ため、
+    # scripts/test-home-manager.sh がリンク先の実在・非空をテストして CI で検出する。
+    ".config/zsh/plugins/zsh-autosuggestions".source =
+      "${pkgs.zsh-autosuggestions}/share/zsh/plugins/zsh-autosuggestions";
+    ".config/zsh/plugins/zsh-syntax-highlighting".source =
+      "${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting";
   };
 
   # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc を「dotfiles 管理外の実ファイル」として生成する。
@@ -146,8 +158,9 @@ in
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。
-  # zsh-autosuggestions / zsh-syntax-highlighting は zsh の起動設定(home/.config/zsh/zshrc)から
-  # ~/.nix-profile 配下のファイルを直接 source する形で使う。starship は zsh のプロンプト
+  # zsh-autosuggestions / zsh-syntax-highlighting は上記 home.file が ~/.config/zsh/plugins/ に
+  # 張った store パスへのリンクを、zsh の起動設定(home/.config/zsh/zshrc)が source する形で使う
+  # (判断根拠は docs/decisions/zsh-plugins.md)。starship は zsh のプロンプト
   # (home/.config/zsh/zshrc で `starship init zsh` を呼ぶ)。
   # ripgrep / fd / ruff は LazyVim(home/.config/nvim)の検索機能・Python LSP が要求する依存
   # (docs/decisions/editor.md 参照)。ruff は mason(LazyVim側のツールインストーラ)経由だと

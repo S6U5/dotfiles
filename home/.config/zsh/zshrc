@@ -67,15 +67,17 @@ if command -v starship >/dev/null 2>&1; then
   add-zsh-hook precmd _dotfiles_status_precmd
 fi
 
-# zsh-autosuggestions(Nix の home.packages 経由で ~/.nix-profile に入る。
-# home-manager 未適用ならファイルが無いため存在チェックでスキップする)
-_dotfiles_zsh_autosuggestions="$HOME/.nix-profile/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+# zsh-autosuggestions(Nix の home.packages で導入し、nix/home.nix の home.file が
+# ~/.config/zsh/plugins/ に store パスへのリンクを張る。~/.nix-profile のレイアウトを
+# 推測しない。判断根拠は docs/decisions/zsh-plugins.md。
+# home-manager 未適用ならリンクが無いため存在チェックでスキップする)
+_dotfiles_zsh_autosuggestions="$HOME/.config/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
 [ -r "$_dotfiles_zsh_autosuggestions" ] && source "$_dotfiles_zsh_autosuggestions"
 unset _dotfiles_zsh_autosuggestions
 
 # zsh-syntax-highlighting は公式が「.zshrc の一番最後に読み込むこと」を必須要件としている
 # (それより後にウィジェットを追加・変更する設定があるとハイライトの再トリガーが効かない)。
 # そのため zoxide/fzf/starship(ウィジェットを追加しうる)より後、ファイルの最後に置く
-_dotfiles_zsh_syntax_highlighting="$HOME/.nix-profile/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+_dotfiles_zsh_syntax_highlighting="$HOME/.config/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 [ -r "$_dotfiles_zsh_syntax_highlighting" ] && source "$_dotfiles_zsh_syntax_highlighting"
 unset _dotfiles_zsh_syntax_highlighting
