@@ -215,6 +215,24 @@ home-manager switch --flake ./nix#<system> --impure
 
 </details>
 
+<details>
+<summary><b>ネイティブ Windows 側の npm / pnpm / uv にもサプライチェーン対策を効かせる(手動コピー)</b></summary>
+
+home-manager の配布が届くのは WSL 内の `$HOME` までで、Windows に直接インストールした npm / pnpm / uv には効きません(この dotfiles は Nix 前提のため、ネイティブ Windows 向けの自動配布は意図的に作っていません。判断根拠は [`docs/decisions/windows-supply-chain.md`](docs/decisions/windows-supply-chain.md))。
+
+対策設定のファイルはいずれも機密ゼロ・各ツール標準の形式なので、そのまま Windows 側の標準パスへ手動コピーすれば同じ対策が効きます:
+
+| リポジトリ内のファイル | Windows 側のコピー先 |
+|---|---|
+| `home/.npmrc` | `%USERPROFILE%\.npmrc` |
+| `home/.config/pnpm/rc` | `%LOCALAPPDATA%\pnpm\config\rc` |
+| `home/.config/uv/uv.toml` | `%APPDATA%\uv\uv.toml` |
+
+- コピーは1回きりの手動運用です。リポジトリ側の設定を変えたら再コピーしてください。
+- バージョン要件: npm の `min-release-age` は npm 11.5.1+、uv の `exclude-newer` の相対期間指定は uv 0.9.17+ が必要です(それ未満では効かないか、設定の解釈でエラーになります)。
+
+</details>
+
 ## 収録コマンド・関数
 
 インストール後、新しいシェルから使えます。候補が複数あるものは fzf(あれば)か番号選択になり、引数で名前の絞り込みができます。
