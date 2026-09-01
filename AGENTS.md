@@ -47,7 +47,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - `home/.config/shell/` 以下(共通部)は **POSIX sh 互換**で書く。zsh / bash 固有の書き方が必要な設定は、共通部ではなく各シェルの設定本体(zsh は `home/.config/zsh/zshrc` / bash は `home/.config/bash/bashrc`)側に書く。
 - 読み込み順(init.sh が制御):
   1. `env.sh` — 環境変数
-  2. その他の `*.sh` — アルファベット順(`aliases.sh`、`fzf.sh`、`functions.sh`、…)。ファイルを追加すれば自動で読み込まれる
+  2. その他の `*.sh` — アルファベット順(`aliases.sh`、`fzf.sh`、`functions.sh`、…)。ファイルを追加すれば自動で読み込まれる。このうち `dotfiles-dir.sh`(`DOTFILES_DIR`=リポジトリ絶対パスの export)だけは home/ に実体が無く、`nix/home.nix` の `home.activation` が `home-manager switch` のたびに再生成する管理外の実ファイル(マシン固有パスをリポジトリに置かないため。ブートストラップ1行ファイルへの追記にしなかった理由含め、判断根拠は `docs/decisions/dotfiles-dir-env.md`)
   3. `os/<os>.sh` — 実行中の OS のものだけ(`macos` / `wsl` / `linux` は排他。WSL では `wsl.sh` のみ読まれる)
   4. `local.sh` — git 管理外(gitignore 対象)。マシン固有・プライベートな設定は `~/.config/shell/local.sh` に直接置く
 - 機能を追加するときは zsh 側の設定ファイルを太らせず、`home/.config/shell/` に機能別ファイルを追加する。

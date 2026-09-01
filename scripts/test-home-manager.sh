@@ -41,7 +41,9 @@ BUILD_DIR=$(mktemp -d)
 BOOTSTRAP_BLOCK=$(mktemp)
 BOOTSTRAP_HOME=$(mktemp -d)
 PROTECT_HOME=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME"' EXIT
+DIR_ENV_BLOCK=$(mktemp)
+DIR_ENV_HOME=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$DIR_ENV_BLOCK" "$DIR_ENV_HOME"' EXIT
 
 # 初回セットアップ時(CI含む)は home-manager コマンドがまだ存在しないため、
 # 本リポジトリの flake が公開する home-manager CLI(flake.lock に固定)へ
@@ -177,14 +179,64 @@ else
   ng "bootstrap: バックアップ付き上書きに失敗"
 fi
 
-echo "== 9) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
+echo "== 9) DOTFILES_DIR 永続化(dotfilesDirEnv。新規生成・パス追従・既存ファイル保護)"
+awk '/^_iNote "Activating %s" "dotfilesDirEnv"$/{flag=1; next} flag{print} flag && /^unset _dotfiles_dir_env_/{exit}' \
+  "$RESULT/activate" >"$DIR_ENV_BLOCK"
+if [ -s "$DIR_ENV_BLOCK" ]; then
+  ok "activation script から dotfilesDirEnv ブロックを抽出"
+else
+  ng "dotfilesDirEnv ブロックが見つからない"
+fi
+
+dir_env_file="$DIR_ENV_HOME/.config/shell/dotfiles-dir.sh"
+read_dir_env() {
+  env -u DOTFILES_DIR sh -c ". \"$dir_env_file\" && printf '%s' \"\$DOTFILES_DIR\"" 2>/dev/null || true
+}
+if HOME="$DIR_ENV_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$DIR_ENV_BLOCK\"" &&
+  [ -f "$dir_env_file" ] && [ "$(read_dir_env)" = "$DOTFILES_DIR" ]; then
+  ok "dotfiles-dir.sh: 新規生成(source すると DOTFILES_DIR がリポジトリパスになる)"
+else
+  ng "dotfiles-dir.sh: 新規生成に失敗 (got: $(read_dir_env))"
+fi
+
+# 生成物(マーカー入りの実ファイル)は毎回再生成される = リポジトリ移動後も古いパスが残らない
+printf '%s\n' 'export DOTFILES_DIR="/old/path"' >"$dir_env_file"
+HOME="$DIR_ENV_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$DIR_ENV_BLOCK\"" || true
+if [ "$(read_dir_env)" = "$DOTFILES_DIR" ]; then
+  ok "dotfiles-dir.sh: 古いパスを再生成で追従"
+else
+  ng "dotfiles-dir.sh: 古いパスが残っている (got: $(read_dir_env))"
+fi
+
+# マーカーの無いファイルはこの activation の生成物ではないので保護される
+printf '%s\n' '# 手動編集済み' >"$dir_env_file"
+HOME="$DIR_ENV_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$DIR_ENV_BLOCK\"" || true
+if [ "$(cat "$dir_env_file")" = '# 手動編集済み' ]; then
+  ok "dotfiles-dir.sh: 未認識の既存ファイルを保護(スキップ)"
+else
+  ng "dotfiles-dir.sh: 既存ファイルを上書きしてしまった"
+fi
+
+# シンボリックリンクも保護される(リンク越しに最終実体へ書き込む事故を防ぐ)
+dir_env_link_target="$DIR_ENV_HOME/link-target.sh"
+printf '%s\n' 'export DOTFILES_DIR="/linked/path"' >"$dir_env_link_target"
+ln -sf "$dir_env_link_target" "$dir_env_file"
+HOME="$DIR_ENV_HOME" VERBOSE_ECHO=: DRY_RUN_CMD='' bash -c ". \"$DIR_ENV_BLOCK\"" || true
+if [ -L "$dir_env_file" ] && [ "$(cat "$dir_env_link_target")" = 'export DOTFILES_DIR="/linked/path"' ]; then
+  ok "dotfiles-dir.sh: シンボリックリンクを保護(リンク先へ書き込まない)"
+else
+  ng "dotfiles-dir.sh: シンボリックリンク越しに書き込んでしまった"
+fi
+rm -f "$dir_env_file" "$dir_env_link_target"
+
+echo "== 10) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
 else
   ng "pre-commit フック有効化ロジックが見つからない"
 fi
 
-echo "== 10) 補完定義ファイルの構文"
+echo "== 11) 補完定義ファイルの構文"
 if bash -n "$DOTFILES_DIR/home/.config/bash/completions/apps.bash" 2>/dev/null; then
   ok "bash 補完: 構文OK"
 else
@@ -204,7 +256,7 @@ if command -v zsh >/dev/null 2>&1; then
 fi
 
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
-  echo "== 11) home-manager switch(実 HOME に適用。使い捨て環境専用)"
+  echo "== 12) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
     ok "switch 成功"
   else
@@ -216,7 +268,7 @@ if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
     ng "2回目の switch が失敗"
   fi
   for f in .config/bash/bashrc .config/zsh/zshrc .tmux.conf .npmrc .zshenv \
-    .bashrc .bash_profile .config/zsh/.zshrc; do
+    .bashrc .bash_profile .config/zsh/.zshrc .config/shell/dotfiles-dir.sh; do
     if [ -e "$HOME/$f" ]; then
       ok "switch後に存在: $f"
     else
