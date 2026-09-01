@@ -8,8 +8,8 @@
 #   1. env.sh                  環境変数
 #   2. その他の *.sh           アルファベット順(aliases.sh, fzf.sh, functions.sh, ...)
 #                              dotfiles-dir.sh(DOTFILES_DIR の export)だけは home/ に実体が無く、
-#                              home-manager switch(nix/home.nix の home.activation)が生成する
-#                              管理外の実ファイル(判断根拠は docs/decisions/dotfiles-dir-env.md)
+#                              nix/home.nix の home.file(text)がマシンごとに生成する
+#                              (判断根拠は docs/decisions/dotfiles-dir-env.md)
 #   3. os/<os>.sh              実行中の OS のものだけ(macos / wsl / linux は排他)
 #   4. local.sh                git 管理外。マシン固有・プライベートな設定
 

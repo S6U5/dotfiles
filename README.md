@@ -77,7 +77,7 @@ export DOTFILES_DIR=$(pwd)
 nix run home-manager -- switch --flake ./nix#<system> --impure
 ```
 
-初回の `switch` が完了すると home-manager 自体が導入されるほか、`DOTFILES_DIR` を export する `~/.config/shell/dotfiles-dir.sh`(dotfiles 管理外の実ファイル。switch のたびに再生成)も生成されるため、**以降は新しいシェルなら手動の `export DOTFILES_DIR=...` は不要**で、短い形で実行できます(判断根拠は [`docs/decisions/dotfiles-dir-env.md`](docs/decisions/dotfiles-dir-env.md)):
+初回の `switch` が完了すると home-manager 自体が導入されるほか、`DOTFILES_DIR` を export する `~/.config/shell/dotfiles-dir.sh` も配布される(`home/` に実体は無く、マシンごとに生成)ため、**以降は新しいシェルなら手動の `export DOTFILES_DIR=...` は不要**で、短い形で実行できます(判断根拠は [`docs/decisions/dotfiles-dir-env.md`](docs/decisions/dotfiles-dir-env.md)):
 
 ```sh
 home-manager switch --flake ./nix#<system> --impure
@@ -316,9 +316,10 @@ home-manager が生成するもの($HOME に直接置くが home/ には対応�
 │                                      ~/.config/bash/bashrc を読み込むだけの1行として生成
 ├── ~/.config/zsh/.zshrc               同上(zsh 版)。~/.config/zsh/zshrc を読み込むだけの1行
 │                                      (いずれも判断根拠は docs/decisions/zshrc-pollution.md)
-├── ~/.config/shell/dotfiles-dir.sh    DOTFILES_DIR(リポジトリの絶対パス)を export する管理外の
-│                                      実ファイル。switch のたびに再生成され、init.sh の *.sh 自動
-│                                      読み込みで全シェルに効く(判断根拠は docs/decisions/dotfiles-dir-env.md)
+├── ~/.config/shell/dotfiles-dir.sh    DOTFILES_DIR(リポジトリの絶対パス)を export するファイル。
+│                                      マシン固有パスのため home/ に実体は無く home.file(text)で
+│                                      マシンごとに生成。init.sh の *.sh 自動読み込みで全シェルに
+│                                      効く(判断根拠は docs/decisions/dotfiles-dir-env.md)
 docs/              ドキュメント
 ├── cheatsheet/      このリポジトリで標準から変更・追加した設定のチートシート(アプリごとに分割: herdr.md / tmux.md / nvim.md / wezterm.md / starship.md)
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)
@@ -358,7 +359,7 @@ winget upgrade wez.wezterm
 ./scripts/test-home-manager.sh
 ```
 
-`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護・`DOTFILES_DIR` 永続化ファイルの生成/パス追従などを検証します(実際の `$HOME` は変更しません)。
+`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護・`DOTFILES_DIR` 永続化ファイルの生成内容などを検証します(実際の `$HOME` は変更しません)。
 
 実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で次を実行してください(実 `$HOME` を書き換えます):
 

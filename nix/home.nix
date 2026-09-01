@@ -57,6 +57,20 @@ in
     # (npx skills 等での手動導入と違い、flake.lock の更新で herdr 本体と一緒に追従する)。
     # ~/.claude/ 配下は原則エージェント側の領域で管理対象外だが、このディレクトリのみ例外。
     ".claude/skills/herdr".source = "${pkgs.herdr}/share/herdr/skills/herdr";
+
+    # DOTFILES_DIR をシェルへ永続化する。init.sh の *.sh 自動読み込みで全シェルに export され、
+    # 2 回目以降の home-manager switch や update.sh 後の反映を `export DOTFILES_DIR=$(pwd)` の
+    # 手打ちなしで実行できる。マシン固有の絶対パスを含むため home/(リポジトリ)には置けず、
+    # ここで text 生成する(コミットはされない。Nix store はローカルのみ)。ブートストラップ
+    # 1行ファイルへの追記や home.activation での生成にしない理由は
+    # docs/decisions/dotfiles-dir-env.md 参照。home.file なのでリポジトリ移動後の switch で
+    # パスが自動追従し、このエントリを消せば次の switch でリンクも自動掃除される。
+    ".config/shell/dotfiles-dir.sh".text = ''
+      # このファイルは home-manager(nix/home.nix の home.file)が生成する読み取り専用の
+      # シンボリックリンクです。マシン固有の絶対パスを含むためリポジトリ(home/)には置かず、
+      # 各マシンの switch 時に生成しています(判断根拠は docs/decisions/dotfiles-dir-env.md)。
+      export DOTFILES_DIR="${dotfilesDir}"
+    '';
   };
 
   # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc を「dotfiles 管理外の実ファイル」として生成する。
@@ -115,47 +129,6 @@ in
       $DRY_RUN_CMD sh -c "printf '%s' \"\$1\" > \"\$2\"" _ "$_dotfiles_bootstrap_content" "$_dotfiles_bootstrap_dest"
       $VERBOSE_ECHO "dotfiles: $_dotfiles_bootstrap_dest を生成しました(ブートストラップ、dotfiles管理外の実ファイル)"
     done
-  '';
-
-  # DOTFILES_DIR をシェルへ永続化する。~/.config/shell/dotfiles-dir.sh を「dotfiles 管理外・
-  # activation 所有の実ファイル」として生成し、init.sh の *.sh 自動読み込みで全シェルに
-  # export される。これにより 2 回目以降の home-manager switch や update.sh 後の反映を
-  # `export DOTFILES_DIR=$(pwd)` の手打ちなしで実行できる。マシン固有の絶対パスを含むため
-  # home/(リポジトリ)には置けない。ブートストラップ(~/.bashrc 等)への追記にしない理由
-  # 含め、判断根拠は docs/decisions/dotfiles-dir-env.md 参照。ブートストラップと違い
-  # ファイル全体をこの activation が所有するため、export 行(マーカー)を含む既存ファイルは
-  # 毎回無条件に再生成する(リポジトリ移動後の switch でパスが自動追従する)。
-  home.activation.dotfilesDirEnv = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    _dotfiles_dir_env_dest="$HOME/.config/shell/dotfiles-dir.sh"
-    _dotfiles_dir_env_content="# このファイルは dotfiles の管理外です(home-manager switch のたびに
-    # nix/home.nix の home.activation が再生成します。手で編集しないでください)。
-    # マシン固有の絶対パスを含むためリポジトリ(home/)には置かず、各マシンで生成しています。
-    # 判断根拠は docs/decisions/dotfiles-dir-env.md 参照。
-    export DOTFILES_DIR=\"${dotfilesDir}\"
-    "
-
-    _dotfiles_dir_env_write=1
-    if { [ -e "$_dotfiles_dir_env_dest" ] || [ -L "$_dotfiles_dir_env_dest" ]; } \
-      && ! { [ -f "$_dotfiles_dir_env_dest" ] && [ ! -L "$_dotfiles_dir_env_dest" ] \
-        && grep -qF 'export DOTFILES_DIR=' "$_dotfiles_dir_env_dest" 2>/dev/null; }; then
-      # マーカーを含む実ファイル(=この activation の生成物)以外は保護する(bootstrap と同じ方針)。
-      # シンボリックリンクも保護対象(printf > がリンク越しに最終実体へ書いてしまう事故を防ぐ)
-      if [ -n "''${HOME_MANAGER_BACKUP_EXT:-}" ]; then
-        $DRY_RUN_CMD mv "$_dotfiles_dir_env_dest" "$_dotfiles_dir_env_dest.$HOME_MANAGER_BACKUP_EXT"
-        $VERBOSE_ECHO "dotfiles: $_dotfiles_dir_env_dest を $_dotfiles_dir_env_dest.$HOME_MANAGER_BACKUP_EXT に退避しました"
-      else
-        $VERBOSE_ECHO "dotfiles: スキップ: $_dotfiles_dir_env_dest は既に存在します(home-manager switch -b <拡張子> で退避して上書きできます)"
-        _dotfiles_dir_env_write=0
-      fi
-    fi
-
-    if [ "$_dotfiles_dir_env_write" = 1 ]; then
-      $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_dir_env_dest")"
-      $DRY_RUN_CMD sh -c "printf '%s' \"\$1\" > \"\$2\"" _ "$_dotfiles_dir_env_content" "$_dotfiles_dir_env_dest"
-      $VERBOSE_ECHO "dotfiles: $_dotfiles_dir_env_dest を生成しました(DOTFILES_DIR の永続化、dotfiles管理外の実ファイル)"
-    fi
-
-    unset _dotfiles_dir_env_dest _dotfiles_dir_env_content _dotfiles_dir_env_write
   '';
 
   # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化する。
