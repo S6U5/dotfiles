@@ -1,0 +1,70 @@
+#!/bin/sh
+# WSL 内に home-manager が配布したパッケージマネージャのサプライチェーン対策設定
+# (~/.npmrc / ~/.config/pnpm/rc / ~/.config/uv/uv.toml)を、Windows ネイティブ側の
+# npm / pnpm / uv にも効かせるため、Windows 側の標準パスへコピーする。
+# home-manager の配布は WSL 内の $HOME までしか届かないための補完(判断根拠は
+# docs/decisions/windows-supply-chain.md、コピー先の一覧は README「セットアップの詳細」参照)。
+# 自動では実行されない(明示実行のみ)。再実行しても同じ結果になる。
+# Windows 側に別内容の既存ファイルがある場合は、初回だけ <ファイル名>.bak に退避してから上書きする
+# (npm の認証トークン等が入った既存 .npmrc を黙って消さないため)。
+# 使い方: wsl-supplychain-setup
+set -eu
+
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wsl-supplychain-setup: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 0
+fi
+
+if ! command -v powershell.exe >/dev/null 2>&1 || ! command -v wslpath >/dev/null 2>&1; then
+  echo "wsl-supplychain-setup: powershell.exe / wslpath が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+# Windows 側の基準ディレクトリを一括で解決する(空でも行がずれないよう1変数1行で出力させる)。
+# cd /mnt/c は .exe 呼び出し時の UNC パス警告を避けるための定石(wsl-wezterm-setup と同様)
+win_env=$(
+  cd /mnt/c 2>/dev/null || cd /
+  # shellcheck disable=SC2016  # $env:... は sh ではなく PowerShell 側で展開させる意図
+  powershell.exe -NoProfile -Command 'Write-Output "$env:USERPROFILE"; Write-Output "$env:APPDATA"; Write-Output "$env:LOCALAPPDATA"' | tr -d '\r'
+)
+userprofile=$(printf '%s\n' "$win_env" | sed -n '1p')
+appdata=$(printf '%s\n' "$win_env" | sed -n '2p')
+localappdata=$(printf '%s\n' "$win_env" | sed -n '3p')
+if [ -z "$userprofile" ] || [ -z "$appdata" ] || [ -z "$localappdata" ]; then
+  echo "wsl-supplychain-setup: Windows 側の USERPROFILE / APPDATA / LOCALAPPDATA を解決できませんでした" >&2
+  exit 1
+fi
+
+copied=0
+unchanged=0
+
+# $1: WSL 側のコピー元(home-manager 配布済みファイル) $2: Windows 形式のコピー先パス
+copy_one() {
+  src="$1"
+  win_dest="$2"
+  if [ ! -e "$src" ]; then
+    echo "スキップ: $src が見つかりません(home-manager switch は実行済みですか?)" >&2
+    return 0
+  fi
+  dest=$(wslpath -u "$win_dest")
+  mkdir -p "$(dirname "$dest")"
+  if [ -e "$dest" ] && cmp -s "$src" "$dest"; then
+    echo "変更なし: $win_dest"
+    unchanged=$((unchanged + 1))
+    return 0
+  fi
+  if [ -e "$dest" ] && [ ! -e "$dest.bak" ]; then
+    cp -f "$dest" "$dest.bak"
+    echo "退避: 既存の $win_dest → 同名の .bak(初回のみ。必要な値が入っていたら手で書き戻してください)"
+  fi
+  cp -f "$src" "$dest"
+  echo "コピー: $src → $win_dest"
+  copied=$((copied + 1))
+}
+
+copy_one "$HOME/.npmrc" "$userprofile\\.npmrc"
+copy_one "$HOME/.config/pnpm/rc" "$localappdata\\pnpm\\config\\rc"
+copy_one "$HOME/.config/uv/uv.toml" "$appdata\\uv\\uv.toml"
+
+echo "完了: コピー $copied 件 / 変更なし $unchanged 件"
+echo "リポジトリ側の設定を変えたら、このコマンドを再実行してください。"
