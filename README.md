@@ -261,11 +261,11 @@ home-manager switch --flake ./nix#<system> --impure
 
 ## おすすめエージェントスキル
 
-Claude Code などのコーディングエージェントと組み合わせて使うのがおすすめな、各ツール**公式**の agent skill の一覧です。インストール手順・配布形態は変わりうるためここには転記せず、各公式ドキュメントを参照してください。スキル自体はこの dotfiles(Nix)では配布しません(`~/.claude/skills/` 等のエージェント側設定領域はこのリポジトリの管理対象外のため)。
+Claude Code などのコーディングエージェントと組み合わせて使うのがおすすめな、各ツール**公式**の agent skill の一覧です(非公式スキルは自作を除き採用しません。判断根拠は [`docs/decisions/agent-skills.md`](docs/decisions/agent-skills.md) 参照)。herdr のスキルだけは nixpkgs のパッケージがスキル本文を同梱しているため、`home-manager switch` で `~/.claude/skills/herdr` に自動配布されます(手動インストール不要。バイナリとスキルのバージョンが常に一致)。それ以外はインストール手順・配布形態が変わりうるためここには転記せず、各公式ドキュメントを参照してください。
 
-| スキル | できること | 公式ドキュメント |
+| スキル | できること | 導入 |
 |---|---|---|
-| herdr | この dotfiles 採用のターミナルマルチプレクサ(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md))。ペイン分割・セッション操作をエージェントが `herdr` CLI 経由で行えるようになる | [herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/) |
+| herdr | この dotfiles 採用のターミナルマルチプレクサ(判断根拠は [`docs/decisions/terminal-multiplexer.md`](docs/decisions/terminal-multiplexer.md))。ペイン分割・セッション操作をエージェントが `herdr` CLI 経由で行えるようになる | `home-manager switch` で自動配布([herdr.dev/docs/agent-skill](https://herdr.dev/docs/agent-skill/)) |
 | Playwright CLI | ブラウザ操作・E2E テストをエージェントがコンテキスト効率よく行うための公式 CLI + skill | [playwright.dev/docs/getting-started-cli](https://playwright.dev/docs/getting-started-cli) |
 | Obsidian | ノートの読み書き・全文検索・タスクやタグの照会などをエージェントが公式 CLI 経由で行えるようになる公式スキル集(この dotfiles にも Obsidian 連携コマンド `cdov` / `ov` あり) | [github.com/kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) |
 

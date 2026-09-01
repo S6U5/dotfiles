@@ -120,7 +120,22 @@ else
   ng ".bashrc/.bash_profile/.config/zsh/.zshrc が誤って home.file に含まれている"
 fi
 
-echo "== 7) shell bootstrap(新規生成・冪等性・既存ファイル保護・バックアップ)"
+echo "== 7) herdr agent skill が Nix ストア同梱の SKILL.md にリンクされているか"
+skill_target=$(readlink -f "$RESULT/home-files/.claude/skills/herdr/SKILL.md" 2>/dev/null || true)
+case "$skill_target" in
+  /nix/store/*/share/herdr/skills/herdr/SKILL.md)
+    if [ -s "$skill_target" ]; then
+      ok "herdr スキルがストア同梱の SKILL.md を指し、中身も空でない"
+    else
+      ng "herdr スキルの SKILL.md が空"
+    fi
+    ;;
+  *)
+    ng "herdr スキルのリンク先が想定外 (got: ${skill_target:-リンク無し})"
+    ;;
+esac
+
+echo "== 8) shell bootstrap(新規生成・冪等性・既存ファイル保護・バックアップ)"
 awk '/^_iNote "Activating %s" "dotfilesShellBootstrap"$/{flag=1; next} flag{print} flag && /^done$/{exit}' \
   "$RESULT/activate" >"$BOOTSTRAP_BLOCK"
 if [ -s "$BOOTSTRAP_BLOCK" ]; then
@@ -162,14 +177,14 @@ else
   ng "bootstrap: バックアップ付き上書きに失敗"
 fi
 
-echo "== 8) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
+echo "== 9) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
 else
   ng "pre-commit フック有効化ロジックが見つからない"
 fi
 
-echo "== 9) 補完定義ファイルの構文"
+echo "== 10) 補完定義ファイルの構文"
 if bash -n "$DOTFILES_DIR/home/.config/bash/completions/apps.bash" 2>/dev/null; then
   ok "bash 補完: 構文OK"
 else
@@ -189,7 +204,7 @@ if command -v zsh >/dev/null 2>&1; then
 fi
 
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
-  echo "== 10) home-manager switch(実 HOME に適用。使い捨て環境専用)"
+  echo "== 11) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
     ok "switch 成功"
   else
