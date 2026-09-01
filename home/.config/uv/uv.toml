@@ -1,0 +1,17 @@
+# uv のサプライチェーン攻撃対策(グローバル設定)
+# npm(home/.npmrc)・pnpm(home/.config/pnpm/rc)と同じ方針の Python 版。
+# uv が入っていない環境では読まれないだけで無害。
+# ネイティブ Windows では home-manager が届かないため、%APPDATA%\uv\uv.toml へ
+# 手動コピーする(README「セットアップの詳細」参照)。
+
+# 公開から 7 日未満のパッケージバージョンを解決対象にしない(相対期間指定は要 uv 0.9.17+)。
+# 侵害されたバージョンは公開直後に検出・削除されることが多いため、少し寝かせてから入れる。
+# ロック済みの再インストール(uv sync)には影響せず、解決(uv add / uv lock 等)にだけ効く。
+# 緊急のセキュリティパッチ等で特定パッケージだけすぐ入れたい場合は、そのプロジェクトの
+# pyproject.toml に一時的に
+#   [tool.uv]
+#   exclude-newer-package = { <パッケージ名> = false }
+# を書いて除外する。
+# 注意: PEP 700 の upload-time を返さないインデックス(社内ミラー等)では全パッケージが
+# 「利用不可」扱いになる。その場合はそのインデックス定義側で exclude-newer = false を指定する。
+exclude-newer = "7 days"
