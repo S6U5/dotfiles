@@ -148,6 +148,10 @@ in
   # 設定ファイルは home/.config/wezterm/wezterm.lua。
   # eza は ls の代替(アイコン・色付き表示)。ls/ll/la/lt エイリアスとして使う
   # (home/.config/shell/aliases.sh 側。無い環境では色付き ls にフォールバック)。
+  # nodejs は JavaScript/TypeScript ランタイム(npm 同梱)。バージョンを固定せず nixpkgs の
+  # `nodejs` エイリアス(= 現行 LTS)に追従する。プロジェクトごとのバージョン切り替えツール
+  # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
+  # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -167,6 +171,7 @@ in
     zsh-autosuggestions
     zsh-syntax-highlighting
     wezterm
+    nodejs
   ];
 
   programs.home-manager.enable = true;
