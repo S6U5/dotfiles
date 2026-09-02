@@ -57,7 +57,7 @@ codex plugin marketplace add ./path/to/dotfiles  # Codex
 (UI・コマンドから登録しても同じ内容)。
 
 ```toml
-[marketplaces.personal]
+[marketplaces.s6u5-dotfiles]
 source_type = "local"
 source = "<このリポジトリのパス>"   # 例: ~/Projects/dotfiles
 ```
@@ -96,8 +96,8 @@ agent-plugins-setup shin5       # 指定したものだけ
 **Claude Code**
 
 ```sh
-/plugin install shin5@personal          # セッション内から(スコープを対話で選ぶ)
-claude plugin install shin5@personal    # シェルから(既定は user スコープ。--scope で変更)
+/plugin install shin5@s6u5-dotfiles          # セッション内から(スコープを対話で選ぶ)
+claude plugin install shin5@s6u5-dotfiles    # シェルから(既定は user スコープ。--scope で変更)
 ```
 
 インストール後の要約に `Run /reload-plugins to activate.` と出たら `/reload-plugins` を実行する
@@ -110,7 +110,7 @@ claude plugin install shin5@personal    # シェルから(既定は user スコ�
 `~/.codex/config.toml` に書く。
 
 ```toml
-[plugins."shin5@personal"]
+[plugins."shin5@s6u5-dotfiles"]
 enabled = true
 ```
 
@@ -122,8 +122,8 @@ enabled = true
 **Claude Code**
 
 ```sh
-/plugin install agent-interop@personal
-claude plugin install agent-interop@personal
+/plugin install agent-interop@s6u5-dotfiles
+claude plugin install agent-interop@s6u5-dotfiles
 ```
 
 呼び出しは **`/agent-interop:agents-init`** と **`/agent-interop:agent-plugin-init`**。どちらも
@@ -132,13 +132,13 @@ claude plugin install agent-interop@personal
 **Codex**
 
 ```sh
-codex plugin add agent-interop@personal
+codex plugin add agent-interop@s6u5-dotfiles
 ```
 
 `~/.codex/config.toml` に直接書いてもよい。
 
 ```toml
-[plugins."agent-interop@personal"]
+[plugins."agent-interop@s6u5-dotfiles"]
 enabled = true
 ```
 
@@ -148,11 +148,11 @@ enabled = true
 明示的に取り込む。
 
 ```sh
-/plugin marketplace update personal     # このリポジトリの変更を取り込む
+/plugin marketplace update s6u5-dotfiles     # このリポジトリの変更を取り込む
 /plugin list                            # 入っているプラグインを見る
-/plugin disable shin5@personal          # 消さずに無効化
-/plugin enable shin5@personal           # 再度有効化
-/plugin uninstall shin5@personal        # 削除
+/plugin disable shin5@s6u5-dotfiles          # 消さずに無効化
+/plugin enable shin5@s6u5-dotfiles           # 再度有効化
+/plugin uninstall shin5@s6u5-dotfiles        # 削除
 ```
 
 Codex 側はプラグインを再インストールすると反映される。
