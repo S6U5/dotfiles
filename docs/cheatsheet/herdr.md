@@ -8,6 +8,7 @@
 - プレフィックスキーは **デフォルトの `Ctrl+b` のまま**(過去にカスタムを検討したが最終的にデフォルトに統一)
 - ペイン分割も **デフォルトのまま**: `prefix + %` で左右分割、`prefix + "` で上下分割。デフォルト値と同じだが `[keys]` の `split_vertical` / `split_horizontal` で明示指定している(tmuxのデフォルトに揃える意図を明文化するため)
 - ワークスペース選択(navigate mode)は、ペイン移動(`h`/`j`/`k`/`l`)はデフォルトで既に有効だが、ワークスペース上下だけデフォルトが矢印キーのみだったため `navigate_workspace_up = "k"` / `navigate_workspace_down = "j"` を追加
+- pane画面履歴のディスク永続化は **`[experimental]` の `pane_history = false` で明示的に無効化**。pane出力にはAPIキー・プロンプト・token等が含まれ得るため。現行デフォルトと同じだが、experimental な機能はデフォルトが変わり得るため先回りして固定している
 - 設定変更を反映するには: `herdr server reload-config`(既存セッションを終了せずに反映できる)
 
 ## 概念(Workspace / Tab / Pane)
