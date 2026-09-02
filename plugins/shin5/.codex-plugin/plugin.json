@@ -1,0 +1,14 @@
+{
+  "name": "shin5",
+  "version": "0.2.0",
+  "description": "Diagram-first, very simple Japanese explanations.",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Shin5",
+    "shortDescription": "Very simple Japanese explanations.",
+    "longDescription": "Explains topics in simple Japanese with diagrams when that helps.",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $shin5 to explain this in very simple Japanese."
+  }
+}
