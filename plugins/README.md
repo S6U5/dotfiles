@@ -71,6 +71,22 @@ ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 
 張ったあと Cursor を再起動するか **Developer: Reload Window** を実行する。
 
+### まとめてやる
+
+`agent-plugins-setup`(`home/.local/bin/`)が、以下をまとめて行う。何度実行しても安全。
+
+- Marketplace の登録(未登録なら)と更新
+- 未導入のプラグインの導入
+- 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの)
+
+```sh
+agent-plugins-setup             # plugins/ 配下すべて
+agent-plugins-setup shin5       # 指定したものだけ
+```
+
+**有効/無効の切り替えには触れない。** 意図して無効にしたものを勝手に戻さないため。
+取り残しも報告するだけで削除はしない。以下は手動で行う場合の手順。
+
 ### 2. プラグインを入れる
 
 **プラグインごとに**以下を行う。Marketplace を登録しただけでは何も入らない。

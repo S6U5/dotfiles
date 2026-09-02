@@ -1,0 +1,156 @@
+#!/bin/sh
+# このリポジトリのプラグインを Claude Code / Codex に登録・導入する。
+#
+# 明示実行のみ。home-manager switch では走らない(プラグインはエージェントの挙動を
+# 変えるため、意図しないタイミングで増減しないようにしている)。
+# 何度実行しても安全で、登録済み・導入済みのものは飛ばす。
+#
+# 使い方:
+#   agent-plugins-setup              plugins/ 配下すべてを対象にする
+#   agent-plugins-setup shin5        指定したプラグインだけ
+set -eu
+
+# インストール後の実体はリポジトリへのシンボリックリンクなので、自身のリンクを
+# たどってリポジトリの場所を割り出す(パスのハードコードを避ける)。
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case "$link" in
+    /*) target=$link ;;
+    *) target=$(dirname "$target")/$link ;;
+  esac
+done
+repo=$(cd "$(dirname "$target")/../../.." && pwd)
+
+claude_catalog="$repo/.claude-plugin/marketplace.json"
+codex_catalog="$repo/.agents/plugins/marketplace.json"
+
+if [ ! -f "$claude_catalog" ]; then
+  echo "agent-plugins-setup: 目録が見つかりません($claude_catalog)" >&2
+  exit 1
+fi
+
+# 目録名。JSON パーサに依存しないよう、先頭に現れる "name" を拾う規約にしている。
+marketplace=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$claude_catalog" | head -n 1)
+if [ -z "$marketplace" ]; then
+  echo "agent-plugins-setup: 目録から marketplace 名を読めませんでした" >&2
+  exit 1
+fi
+
+# 対象プラグイン。引数が無ければ plugins/ 配下すべて。
+if [ "$#" -gt 0 ]; then
+  plugins=$*
+  for p in $plugins; do
+    if [ ! -d "$repo/plugins/$p" ]; then
+      echo "agent-plugins-setup: そのようなプラグインはありません: $p" >&2
+      exit 1
+    fi
+  done
+else
+  plugins=$(
+    for d in "$repo"/plugins/*/; do
+      [ -f "$d/plugin.json" ] || continue
+      basename "$d"
+    done
+  )
+fi
+
+if [ -z "$plugins" ]; then
+  echo "agent-plugins-setup: 配布対象のプラグインがありません"
+  exit 0
+fi
+
+echo "リポジトリ: $repo"
+echo "Marketplace: $marketplace"
+echo "対象: $(echo "$plugins" | tr '\n' ' ')"
+echo
+
+# --- Claude Code ---
+if command -v claude >/dev/null 2>&1; then
+  echo "[Claude Code]"
+  if claude plugin marketplace list 2>/dev/null | grep -q "❯ $marketplace\$"; then
+    echo "  Marketplace 登録済み。更新します"
+    claude plugin marketplace update "$marketplace" >/dev/null 2>&1 ||
+      echo "  警告: 更新に失敗しました(手動で確認してください)" >&2
+  else
+    echo "  Marketplace を登録します"
+    claude plugin marketplace add "$repo" >/dev/null
+  fi
+
+  installed=$(claude plugin list 2>/dev/null || true)
+  for p in $plugins; do
+    if echo "$installed" | grep -q "❯ $p@$marketplace\$"; then
+      echo "  $p: 導入済み(有効/無効はそのまま)"
+    else
+      echo "  $p: 導入します"
+      claude plugin install "$p@$marketplace" >/dev/null
+    fi
+  done
+else
+  echo "[Claude Code] claude が見つかりません。スキップします"
+fi
+echo
+
+# --- Codex ---
+if command -v codex >/dev/null 2>&1; then
+  echo "[Codex]"
+  if [ ! -f "$codex_catalog" ]; then
+    echo "  Codex 用の目録がありません($codex_catalog)。スキップします"
+  else
+    if codex plugin marketplace list 2>/dev/null | grep -q "$marketplace"; then
+      echo "  Marketplace 登録済み"
+    else
+      echo "  Marketplace を登録します"
+      codex plugin marketplace add "$repo" >/dev/null
+    fi
+
+    installed=$(codex plugin list 2>/dev/null || true)
+    for p in $plugins; do
+      if echo "$installed" | grep -q "^$p@$marketplace .*installed"; then
+        echo "  $p: 導入済み(有効/無効はそのまま)"
+      else
+        echo "  $p: 導入します"
+        codex plugin add "$p@$marketplace" >/dev/null
+      fi
+    done
+  fi
+else
+  echo "[Codex] codex が見つかりません。スキップします"
+fi
+echo
+
+# --- 取り残しの検出(報告のみ。削除はしない) ---
+echo "[点検]"
+found=0
+
+# 1. プラグインと同名のスキルが ~/.claude/skills/ に手で置かれていないか。
+#    personal スコープが project/plugin より優先されるため、古い実体が残っていると
+#    プラグイン側の更新が反映されない。
+for d in "$repo"/plugins/*/skills/*/; do
+  [ -d "$d" ] || continue
+  name=$(basename "$d")
+  manual="$HOME/.claude/skills/$name"
+  if [ -e "$manual" ] && [ ! -L "$manual" ]; then
+    echo "  ! ~/.claude/skills/$name に手動配置があります。"
+    echo "    こちらが優先されるため、プラグイン側の更新が反映されません。"
+    found=1
+  fi
+done
+
+# 2. 導入済みなのに plugins/ に無いもの(改名・統合・削除の取り残し)。
+if command -v claude >/dev/null 2>&1; then
+  claude plugin list 2>/dev/null |
+    sed -n "s/.*❯ \\([^@]*\\)@$marketplace\$/\\1/p" |
+    while read -r p; do
+      [ -n "$p" ] || continue
+      if [ ! -d "$repo/plugins/$p" ]; then
+        echo "  ! $p@$marketplace は導入済みですが plugins/ にありません(改名や削除の取り残し)。"
+        echo "    不要なら: claude plugin uninstall $p@$marketplace"
+      fi
+    done
+fi
+
+[ "$found" -eq 0 ] && echo "  取り残しは見つかりませんでした"
+echo
+echo "完了しました。有効/無効の切り替えはこのコマンドでは触りません"
+echo "(Claude Code: /plugin、Codex: config.toml の enabled)。"

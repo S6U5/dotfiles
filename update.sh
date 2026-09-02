@@ -62,4 +62,7 @@ if [ "$old_head" != "$new_head" ]; then
   log "更新を反映するには以下を実行してください:"
   log "  DOTFILES_DIR=\"$DOTFILES_DIR\" home-manager switch --flake \"$DOTFILES_DIR/nix#<system>\" --impure"
   log "  (<system> は x86_64-linux / aarch64-linux / aarch64-darwin から選択)"
+  log ""
+  log "同梱プラグインも更新する場合(Claude Code / Codex):"
+  log "  agent-plugins-setup"
 fi

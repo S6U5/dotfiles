@@ -84,6 +84,51 @@ nix run home-manager -- switch --flake ./nix#<system> --impure
 home-manager switch --flake ./nix#<system> --impure
 ```
 
+**4. ターミナルのフォントを設定**
+
+Nerd Font 本体は `home-manager switch` で入りますが、**ターミナル側でそのフォントを選ぶ設定が
+別途必要**です。これをしないと Starship のプロンプトや Neovim のアイコンが豆腐(□)になります。
+
+WSL では Windows 側にもインストールが要ります(Windows Terminal は WSL 内のフォントを参照
+できないため)。
+
+```sh
+wsl-font-setup    # WSL のみ。Windows 側へユーザーフォントとして入れる(管理者権限不要)
+```
+
+ターミナルごとの選択方法は[セットアップの詳細](#セットアップの詳細)の「Nerd Font をターミナルで
+有効にする」を参照してください。
+
+**5. zsh をログインシェルにする**
+
+この dotfiles の中心(Starship・補完・履歴設定・自作関数)は zsh 側にあるため、ここまでやって
+完成です。macOS は標準で zsh なので何もする必要はありません。
+
+WSL / Linux は zsh 本体の導入から必要です(Ubuntu / Debian 系の例。パッケージ名はディストリで
+異なります)。
+
+```sh
+sudo apt install zsh
+chsh -s "$(which zsh)"
+```
+
+反映にはログアウト → 再ログイン(WSL ならターミナルの再起動でも可)が要ります。zsh バイナリ
+自体を Nix 管理下に置いていない理由は
+[`docs/decisions/login-shell.md`](docs/decisions/login-shell.md) にあります。
+
+**6. エージェント用プラグインを入れる**(Claude Code / Codex を使う場合)
+
+同梱プラグインは home-manager では配られません(Marketplace 経由で各ツールに登録します)。
+まとめて導入するコマンドがあります。
+
+```sh
+agent-plugins-setup
+```
+
+何が入るかは[同梱プラグイン](#同梱プラグイン)を参照してください。使わない場合は不要です。
+
+---
+
 これで完了です。プラットフォーム固有の追加設定(Nerd Font・WezTerm・zsh ログインシェル等)や補足は次章にまとめています。
 
 ## セットアップの詳細
@@ -280,6 +325,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `wsl-font-setup` | WSL 内の JetBrainsMono Nerd Font を Windows 側にユーザーフォントとしてインストール |
 | `wsl-supplychain-setup` | サプライチェーン対策設定(npm / pnpm / uv)を Windows 側の標準パスへコピー(WSL 用。詳細は[セットアップの詳細](#セットアップの詳細)参照) |
+| `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex へ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
@@ -315,6 +361,16 @@ Cursor は目録を経由せず `~/.cursor/plugins/local/` を直接読むため
 ```sh
 ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 ```
+
+複数マシンで使う場合や、`git pull` のあとに反映したい場合は、まとめて面倒を見るコマンドがあります。
+
+```sh
+agent-plugins-setup             # 登録・更新・未導入分の導入・取り残しの点検
+agent-plugins-setup shin5       # 指定したプラグインだけ
+```
+
+**ローカル参照の Marketplace は自動更新が効かない**ため、リポジトリを更新したらこれを実行します。
+何度実行しても安全で、導入済みのものや有効/無効の状態には触れません。
 
 更新・無効化・撤去や、プラグインを自作するときの手順は
 [`plugins/README.md`](plugins/README.md) を参照してください。
