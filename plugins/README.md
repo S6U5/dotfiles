@@ -24,7 +24,7 @@
 | 名前 | 収録スキル | 説明 | Claude Code | Codex |
 |------|------------|------|-------------|-------|
 | [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ |
-| [`multi-agent`](multi-agent/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ |
+| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ |
 | | `agent-plugin-init` | Claude Code / Codex / 標準の3形式に届くプラグインを作る(共通化の範囲を判断して実装) | ○ | ○ |
 
 ## セットアップ
@@ -66,7 +66,7 @@ source = "<このリポジトリのパス>"   # 例: ~/Projects/dotfiles
 プラグインごとにシンボリックリンクを張る(ルート直下の `plugin.json` が読まれる)。
 
 ```sh
-ln -s "$PWD/plugins/multi-agent" ~/.cursor/plugins/local/multi-agent
+ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 ```
 
 張ったあと Cursor を再起動するか **Developer: Reload Window** を実行する。
@@ -101,28 +101,28 @@ enabled = true
 呼び出しは `$shin5` または「shin5」。Chrome 拡張のサイドパネルから使っている場合は、
 解説を求めたとき(「わからない」「解説して」など)にも自動で発動する。
 
-#### multi-agent
+#### agent-interop
 
 **Claude Code**
 
 ```sh
-/plugin install multi-agent@personal
-claude plugin install multi-agent@personal
+/plugin install agent-interop@personal
+claude plugin install agent-interop@personal
 ```
 
-呼び出しは **`/multi-agent:agents-init`** と **`/multi-agent:agent-plugin-init`**。どちらも
+呼び出しは **`/agent-interop:agents-init`** と **`/agent-interop:agent-plugin-init`**。どちらも
 状況に応じて自動でも発動する(CLAUDE.md / AGENTS.md を作る場面、プラグインを作る場面)。
 
 **Codex**
 
 ```sh
-codex plugin add multi-agent@personal
+codex plugin add agent-interop@personal
 ```
 
 `~/.codex/config.toml` に直接書いてもよい。
 
 ```toml
-[plugins."multi-agent@personal"]
+[plugins."agent-interop@personal"]
 enabled = true
 ```
 
@@ -148,7 +148,7 @@ Marketplace に登録しなくても読み込まれる。`.claude-plugin/plugin.
 `<名前>@skills-dir` として扱われるため、**呼び出し名も配布時と同じ `<名前>:<スキル名>` になる**。
 
 ```sh
-ln -sfn ../../plugins/multi-agent .claude/skills/multi-agent
+ln -sfn ../../plugins/agent-interop .claude/skills/agent-interop
 ln -sfn ../../plugins/shin5 .claude/skills/shin5
 ```
 

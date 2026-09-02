@@ -17,10 +17,10 @@
       "category": "Productivity"
     },
     {
-      "name": "multi-agent",
+      "name": "agent-interop",
       "source": {
         "source": "local",
-        "path": "./plugins/multi-agent"
+        "path": "./plugins/agent-interop"
       },
       "policy": {
         "installation": "AVAILABLE",

@@ -17,8 +17,8 @@ standard plugin.json only : Validating components in: <path>
 
 A standard-only plugin still loads as long as `skills/` is present, because Claude Code's manifest
 is documented as optional when components sit in their default locations. But the manifest is not
-read at all: with `name` set to `multi-agent` inside a directory called `t1`, the skill appeared as
-`t1:agents-init`. The name comes from the directory. `version` and `displayName` never arrive.
+read at all: with the manifest `name` set to something other than the directory name, the skill still
+appeared under the directory name. The name comes from the directory, not the manifest. `version` and `displayName` never arrive.
 
 A plugin with no manifest whatsoever also loaded.
 
@@ -54,6 +54,25 @@ Deleting the directory behind a locally-referenced plugin did not raise an error
 stopped being listed. Through a marketplace, the load error shows up in the `/plugin` Errors tab.
 
 Moving the repository has the same effect, since the path changes. Re-registering fixes it.
+
+## Trimming prose measurably reduced what a skill produced
+
+A skill body was compressed by 17% — an enumeration the model "already knows" was collapsed, and
+`each SVG` / `split diagrams when that makes the explanation clearer` were softened into shorter
+phrasing. The compressed and original versions were then run against the same four prompts:
+
+| Topic | Compressed | Original |
+|---|---|---|
+| TCP handshake | 3 mermaid types, **1 SVG** | 3 types incl. `timeline`, **3 SVG** |
+| OAuth vs OIDC | 2 types, **1 SVG** | 2 types, **2 SVG** |
+| Microservice deployment | **2 types** | **4 types** incl. `stateDiagram-v2`, `mindmap` |
+| git-flow | 2 types, 4 diagrams total | 3 types, **7 diagrams total** |
+
+The compressed version produced exactly one SVG in every single case. The change was reverted, and
+only the genuinely duplicated section (a "When to use" block repeating the `description`) was kept
+out — that one costs nothing, because the body is read only after the skill has already fired.
+
+**Wording that looks redundant can be load-bearing.** Measure before trimming.
 
 ## Published examples
 

@@ -5,12 +5,6 @@ description: Explain any topic in very simple Japanese, diagram-first. When the 
 
 # shin5
 
-## When to use this skill
-
-If this chat is running from a Chrome extension side panel, use this skill automatically whenever the user asks to have something explained, or indicates they do not understand it. "解説して" / "説明して" / "わからない" / "よくわからない" are examples, not an exhaustive list — treat any request for an explanation the same way.
-
-Anywhere else, use this skill only when the user explicitly invokes `$shin5` or says "shin5".
-
 ## How to explain
 
 Explain like I'm someone who knows nothing about this topic, in Japanese, using a diagram-first explanation with big pictures and few words.

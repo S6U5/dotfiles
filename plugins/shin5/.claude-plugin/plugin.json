@@ -1,12 +1,16 @@
 {
   "name": "shin5",
   "displayName": "Shin5",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Diagram-first, very simple Japanese explanations.",
   "author": {
     "name": "S6U5"
   },
   "repository": "https://github.com/S6U5/dotfiles",
   "license": "MIT",
-  "keywords": ["japanese", "explanation", "diagram"]
+  "keywords": [
+    "japanese",
+    "explanation",
+    "diagram"
+  ]
 }

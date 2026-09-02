@@ -22,6 +22,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 - [クイックスタート](#クイックスタート)
 - [セットアップの詳細](#セットアップの詳細)
 - [収録コマンド・関数](#収録コマンド関数)
+- [同梱プラグイン](#同梱プラグイン)
 - [おすすめエージェントスキル](#おすすめエージェントスキル)
 - [リポジトリ構成](#リポジトリ構成)
 - [更新](#更新)
@@ -284,6 +285,40 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。`ls` / `ll` / `la` / `lt`(ツリー表示)は eza があればアイコン・色付き表示になります(無い環境では色付き ls にフォールバック。判断根拠は [`docs/decisions/ls-replacement.md`](docs/decisions/ls-replacement.md) 参照)。
 
+## 同梱プラグイン
+
+このリポジトリ自身が Claude Code / Codex の**ローカル Marketplace** になっていて、自作スキルを
+プラグインとして配ります。スキル本体(`SKILL.md`)は1つだけ持ち、Claude Code・Codex・Agent
+Plugins 標準に準拠したクライアント(Cursor / GitHub Copilot / VS Code など)のいずれからも同じ
+ものが読まれます。
+
+| プラグイン | 収録スキル | 内容 |
+|---|---|---|
+| [`agent-interop`](plugins/agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md へ集約する |
+| | `agent-plugin-init` | Claude Code / Codex / 標準の3形式に届くプラグインを作る |
+| [`shin5`](plugins/shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する |
+
+Marketplace を登録してから、プラグインごとに導入します(マシンごとに初回のみ)。
+
+```sh
+# Claude Code
+claude plugin marketplace add S6U5/dotfiles --sparse .claude-plugin plugins
+claude plugin install agent-interop@personal
+
+# Codex
+codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
+codex plugin add agent-interop@personal
+```
+
+Cursor は目録を経由せず `~/.cursor/plugins/local/` を直接読むため、シンボリックリンクを張ります。
+
+```sh
+ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
+```
+
+更新・無効化・撤去や、プラグインを自作するときの手順は
+[`plugins/README.md`](plugins/README.md) を参照してください。
+
 ## おすすめエージェントスキル
 
 Claude Code などのコーディングエージェントと組み合わせて使うのがおすすめな、各ツール**公式**の agent skill の一覧です(非公式スキルは自作を除き採用しません。判断根拠は [`docs/decisions/agent-skills.md`](docs/decisions/agent-skills.md) 参照)。herdr のスキルだけは nixpkgs のパッケージがスキル本文を同梱しているため、`home-manager switch` で `~/.claude/skills/herdr` に自動配布されます(手動インストール不要。バイナリとスキルのバージョンが常に一致)。それ以外はインストール手順・配布形態が変わりうるためここには転記せず、各公式ドキュメントを参照してください。
@@ -330,7 +365,8 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
 └── git/             git 設定の雛形(.gitconfig.template。手動コピーして使う。判断根拠は docs/decisions/gitconfig-management.md)
 .claude-plugin/ .agents/ plugins/
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
-                   プラグイン配布元にする。自作スキルの置き場。手順は plugins/README.md)
+                   プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
+                   詳細な手順は plugins/README.md)
 scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```

@@ -38,7 +38,7 @@ Three manifests is not duplication — each is read by a different tool, and col
 1. Pick a name — check it against built-in commands and existing skills before anything else.
 2. Lay out the shape above.
 3. Write the three manifests, keeping `name`, `version` and `description` identical.
-4. Write `skills/<skill>/SKILL.md`; add `agents/openai.yaml` if Codex presentation matters.
+4. Write `skills/<skill>/SKILL.md`. Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
 5. Add an entry to each catalog the plugin should appear in.
 6. Verify (below) before calling it done.
 
@@ -56,9 +56,11 @@ Work down the list; do not drop to a lower level while a higher one still works.
 
 ## Principles
 
-### Fewer files is not the goal
+### Fewer files — or fewer words — is not the goal
 
 Decide by **whether anything reads it**. A file nothing reads is noise; a file something reads but you removed is a feature that silently disappeared. Tidying three manifests into one produces the second case: the count drops, a tool stops receiving its metadata, nothing improved. **Reduction has no value on its own.** Left intact, the structure explains itself — each manifest names the tool that reads it.
+
+The same holds inside a SKILL.md. Enumerating options a model already knows, or writing "each diagram" rather than "a diagram", reads as padding — yet removing exactly that measurably cut the variety and the number of diagrams one skill produced. **Knowing something and recalling it in the moment are different.** Trim prose only against a measurement, never on the assumption that the model already knows.
 
 ### Absence is not evidence
 

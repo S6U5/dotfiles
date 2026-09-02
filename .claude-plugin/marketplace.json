@@ -11,8 +11,8 @@
       "description": "Diagram-first, very simple Japanese explanations."
     },
     {
-      "name": "multi-agent",
-      "source": "./plugins/multi-agent",
+      "name": "agent-interop",
+      "source": "./plugins/agent-interop",
       "description": "Keep instructions and plugins shared across multiple coding agents."
     }
   ]

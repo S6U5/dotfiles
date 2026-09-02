@@ -25,5 +25,5 @@ result
 # <名前>@skills-dir として読まれ、呼び出し名も配布時と同じ <名前>:<スキル名> になる
 # (marketplace への登録が要らない)。リンク自体はコミットしない。
 # プラグインを増やしたらここにも1行足す(手順は plugins/README.md)。
-/.claude/skills/multi-agent
+/.claude/skills/agent-interop
 /.claude/skills/shin5
