@@ -40,7 +40,8 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 
 ## 前提
 
-**Nix 本体のインストールが必須です。**パッケージ一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / eza / starship / wezterm 等)も `home/` 配下の設定ファイル配布も、すべて Nix + home-manager 経由で行うため、**Nix が使えない環境ではこの dotfiles は機能しません**(意図的にフォールバックは作っていません)。
+> [!IMPORTANT]
+> **Nix 本体のインストールが必須です**。パッケージ一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / eza / starship / wezterm 等)も `home/` 配下の設定ファイル配布も、すべて Nix + home-manager 経由で行うため、**Nix が使えない環境ではこの dotfiles は機能しません**(意図的にフォールバックは作っていません)。
 
 対応システムと、`home-manager switch` に渡す flake ターゲット(後述の `<system>`):
 
@@ -126,6 +127,14 @@ agent-plugins-setup
 ```
 
 何が入るかは[同梱プラグイン](#同梱プラグイン)を参照してください。使わない場合は不要です。
+有効/無効の切り替えはこのコマンドでは触らないので、必要なものを各ツール側で適宜有効化して
+ください(Claude Code は `/plugin`、Codex は `config.toml` の `enabled`)。
+
+**7. 公式のエージェントスキルを検討する**(任意)
+
+手順6で入るのはこのリポジトリの自作プラグインです。これとは別に、各ツールが公式に配布して
+いるスキルもあります。使いたい場合は[おすすめエージェントスキル](#おすすめエージェントスキル)
+から各公式ドキュメントへ辿ってください(非公式スキルは自作を除き採用しない方針です)。
 
 ---
 
@@ -452,7 +461,10 @@ winget upgrade wez.wezterm
 
 `home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
 
-実際に `home-manager switch` まで検証したい場合は、使い捨て環境(CI 等)専用で次を実行してください(実 `$HOME` を書き換えます):
+実際に `home-manager switch` まで検証したい場合は、次を実行してください。
+
+> [!CAUTION]
+> このコマンドは実行環境の `$HOME` を実際に書き換えます。使い捨て環境(CI・コンテナ等)専用です。
 
 ```sh
 DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh
