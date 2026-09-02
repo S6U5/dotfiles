@@ -358,11 +358,11 @@ Marketplace を登録してから、プラグインごとに導入します(マ�
 ```sh
 # Claude Code
 claude plugin marketplace add S6U5/dotfiles --sparse .claude-plugin plugins
-claude plugin install agent-interop@personal
+claude plugin install agent-interop@s6u5-dotfiles
 
 # Codex
 codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
-codex plugin add agent-interop@personal
+codex plugin add agent-interop@s6u5-dotfiles
 ```
 
 Cursor は目録を経由せず `~/.cursor/plugins/local/` を直接読むため、シンボリックリンクを張ります。

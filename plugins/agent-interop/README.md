@@ -7,10 +7,10 @@
 
 ```sh
 # Claude Code
-claude plugin install agent-interop@personal
+claude plugin install agent-interop@s6u5-dotfiles
 
 # Codex
-codex plugin add agent-interop@personal
+codex plugin add agent-interop@s6u5-dotfiles
 ```
 
 Marketplace をまだ登録していない場合は、先に [../README.md](../README.md) の手順を実行する。
