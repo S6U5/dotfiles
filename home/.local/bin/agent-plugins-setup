@@ -79,7 +79,7 @@ if command -v claude >/dev/null 2>&1; then
 
   installed=$(claude plugin list 2>/dev/null || true)
   for p in $plugins; do
-    if echo "$installed" | grep -q "❯ $p@$marketplace\$"; then
+    if echo "$installed" | grep -q "❯ ${p}@${marketplace}\$"; then
       echo "  $p: 導入済み(有効/無効はそのまま)"
     else
       echo "  $p: 導入します"
@@ -106,7 +106,8 @@ if command -v codex >/dev/null 2>&1; then
 
     installed=$(codex plugin list 2>/dev/null || true)
     for p in $plugins; do
-      if echo "$installed" | grep -q "^$p@$marketplace .*installed"; then
+      # "not installed" にも installed が含まれるため、直後に来る語で判定する
+      if echo "$installed" | grep -qE "^${p}@${marketplace}[[:space:]]+installed"; then
         echo "  $p: 導入済み(有効/無効はそのまま)"
       else
         echo "  $p: 導入します"
