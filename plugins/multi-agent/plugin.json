@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "multi-agent",
+  "version": "0.1.0",
+  "description": "Keep instructions and plugins shared across multiple coding agents.",
+  "author": {
+    "name": "S6U5"
+  },
+  "repository": "https://github.com/S6U5/dotfiles",
+  "license": "MIT",
+  "keywords": ["agents-md", "agent-plugins", "portability", "interop"]
+}

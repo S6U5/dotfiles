@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "shin5",
+  "version": "0.1.0",
+  "description": "Diagram-first, very simple Japanese explanations.",
+  "author": {
+    "name": "S6U5"
+  },
+  "repository": "https://github.com/S6U5/dotfiles",
+  "license": "MIT",
+  "keywords": ["japanese", "explanation", "diagram"]
+}

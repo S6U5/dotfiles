@@ -1,0 +1,12 @@
+{
+  "name": "multi-agent",
+  "displayName": "Multi Agent",
+  "version": "0.1.0",
+  "description": "Keep instructions and plugins shared across multiple coding agents.",
+  "author": {
+    "name": "S6U5"
+  },
+  "repository": "https://github.com/S6U5/dotfiles",
+  "license": "MIT",
+  "keywords": ["agents-md", "agent-plugins", "portability", "interop"]
+}
