@@ -1,0 +1,210 @@
+/* ==============================================
+   Markdown Preview Enhanced カスタムスタイル
+   ネオン・アクセント重視（フル）
+   ============================================== */
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+.markdown-preview.markdown-preview {
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.85;
+  color: #c8d6e5;
+  background: linear-gradient(180deg, #0a0a0f 0%, #0d1117 50%, #0a0f14 100%);
+  padding: 3rem 4rem;
+  max-width: 960px;
+  margin: 0 auto;
+  word-break: break-word;
+}
+
+.markdown-preview.markdown-preview * {
+  box-sizing: border-box;
+}
+
+/* 見出し */
+.markdown-preview.markdown-preview h1 {
+  font-size: 2.3rem;
+  margin: 2.8rem 0 1.3rem;
+  color: #00ffc8;
+  text-shadow: 0 0 12px rgba(0, 255, 200, 0.5);
+  border-bottom: 1px solid rgba(0, 255, 200, 0.25);
+  padding-bottom: 0.6rem;
+}
+
+.markdown-preview.markdown-preview h2 {
+  font-size: 1.8rem;
+  margin: 2.4rem 0 1rem;
+  color: #7dd3fc;
+  border-left: 3px solid rgba(0, 255, 200, 0.4);
+  padding-left: 0.6rem;
+}
+
+.markdown-preview.markdown-preview h3 {
+  font-size: 1.4rem;
+  margin: 2rem 0 0.9rem;
+  color: #a5b4fc;
+}
+
+.markdown-preview.markdown-preview h4,
+.markdown-preview.markdown-preview h5,
+.markdown-preview.markdown-preview h6 {
+  font-size: 1.1rem;
+  margin: 1.6rem 0 0.6rem;
+  color: #a5b4fc;
+}
+
+/* 本文 */
+.markdown-preview.markdown-preview p {
+  margin: 0 0 1.3rem;
+}
+
+/* リンク */
+.markdown-preview.markdown-preview a {
+  color: #22d3ee;
+  text-decoration: none;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.markdown-preview.markdown-preview a:hover {
+  color: #e0f2fe;
+  background: rgba(34, 211, 238, 0.25);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+
+/* インラインコード */
+.markdown-preview.markdown-preview code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.9em;
+  background: rgba(0, 255, 200, 0.15);
+  color: #00ffc8;
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 255, 200, 0.25);
+}
+
+/* コードブロック */
+.markdown-preview.markdown-preview pre {
+  background: rgba(10, 15, 20, 0.98);
+  border: 1px solid rgba(0, 255, 200, 0.2);
+  border-radius: 12px;
+  padding: 1.6rem 1.8rem;
+  overflow-x: auto;
+  margin: 2rem 0;
+  position: relative;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(0, 255, 200, 0.08);
+}
+
+.markdown-preview.markdown-preview pre::after {
+  content: '';
+  position: absolute;
+  top: 0.7rem;
+  right: 1rem;
+  width: 8px;
+  height: 8px;
+  background: #00ffc8;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(0, 255, 200, 0.9);
+  animation: pulse-glow 2s infinite;
+}
+
+.markdown-preview.markdown-preview pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  color: inherit;
+}
+
+/* 引用 */
+.markdown-preview.markdown-preview blockquote {
+  margin: 2rem 0;
+  padding: 1.2rem 1.4rem;
+  border-left: 3px solid rgba(99, 102, 241, 0.6);
+  background: rgba(30, 41, 59, 0.5);
+  color: #cbd5e1;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+}
+
+/* リスト */
+.markdown-preview.markdown-preview ul,
+.markdown-preview.markdown-preview ol {
+  margin: 0 0 1.3rem;
+  padding-left: 1.6rem;
+}
+
+.markdown-preview.markdown-preview li {
+  margin: 0.4rem 0;
+}
+
+/* テーブル */
+.markdown-preview.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  font-size: 0.95em;
+  background: rgba(10, 15, 20, 0.6);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.markdown-preview.markdown-preview th,
+.markdown-preview.markdown-preview td {
+  border: 1px solid rgba(0, 255, 200, 0.15);
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+}
+
+.markdown-preview.markdown-preview th {
+  background: rgba(0, 255, 200, 0.12);
+  color: #00ffc8;
+  font-weight: 600;
+}
+
+.markdown-preview.markdown-preview tr:nth-child(even) td {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+/* 罫線 */
+.markdown-preview.markdown-preview hr {
+  border: none;
+  border-top: 1px solid rgba(0, 255, 200, 0.2);
+  margin: 2.5rem 0;
+}
+
+/* 画像 */
+.markdown-preview.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 1.6rem 0;
+  border: 1px solid rgba(0, 255, 200, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* チェックボックス */
+.markdown-preview.markdown-preview input[type="checkbox"] {
+  transform: scale(1.1);
+  margin-right: 0.5rem;
+}
+
+/* キーボード表示 */
+.markdown-preview.markdown-preview kbd {
+  background: rgba(0, 255, 200, 0.12);
+  border: 1px solid rgba(0, 255, 200, 0.25);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+  color: #e0f2fe;
+}
+
+/* 選択 */
+.markdown-preview.markdown-preview ::selection {
+  background: rgba(0, 255, 200, 0.3);
+  color: #0a0a0f;
+}

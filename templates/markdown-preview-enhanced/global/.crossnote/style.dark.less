@@ -1,0 +1,211 @@
+/* ==============================================
+   Markdown Preview Enhanced カスタムスタイル
+   ダーク・コントラスト重視（フル）
+   ============================================== */
+
+.markdown-preview.markdown-preview {
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.8;
+  color: #e5e7eb;
+  background: #0f172a;
+  padding: 2.5rem 3.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+  word-break: break-word;
+}
+
+.markdown-preview.markdown-preview * {
+  box-sizing: border-box;
+}
+
+/* 見出し */
+.markdown-preview.markdown-preview h1 {
+  font-size: 2.2rem;
+  margin: 2.6rem 0 1.2rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+  color: #93c5fd;
+}
+
+.markdown-preview.markdown-preview h2 {
+  font-size: 1.7rem;
+  margin: 2.2rem 0 1rem;
+  padding-left: 0.6rem;
+  border-left: 3px solid rgba(148, 163, 184, 0.4);
+  color: #bae6fd;
+}
+
+.markdown-preview.markdown-preview h3 {
+  font-size: 1.35rem;
+  margin: 2rem 0 0.8rem;
+  color: #c4b5fd;
+}
+
+.markdown-preview.markdown-preview h4,
+.markdown-preview.markdown-preview h5,
+.markdown-preview.markdown-preview h6 {
+  font-size: 1.1rem;
+  margin: 1.6rem 0 0.6rem;
+  color: #cbd5f5;
+}
+
+/* 本文 */
+.markdown-preview.markdown-preview p {
+  margin: 0 0 1.2rem;
+}
+
+/* 強調 */
+.markdown-preview.markdown-preview strong {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.markdown-preview.markdown-preview em {
+  color: #e0f2fe;
+}
+
+/* リンク */
+.markdown-preview.markdown-preview a {
+  color: #38bdf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-preview.markdown-preview a:hover {
+  color: #7dd3fc;
+}
+
+/* インラインコード */
+.markdown-preview.markdown-preview code {
+  background: rgba(148, 163, 184, 0.18);
+  color: #f1f5f9;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.9em;
+}
+
+/* コードブロック */
+.markdown-preview.markdown-preview pre {
+  background: #0b1220;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 1rem 1.2rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1.8rem 0;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.markdown-preview.markdown-preview pre code {
+  background: none;
+  padding: 0;
+  color: #e2e8f0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.92em;
+  line-height: 1.6;
+}
+
+/* シンタックスハイライト（必要最低限） */
+.markdown-preview.markdown-preview .hljs {
+  color: #e2e8f0;
+  background: transparent;
+}
+
+.markdown-preview.markdown-preview .hljs-comment,
+.markdown-preview.markdown-preview .hljs-quote {
+  color: #94a3b8;
+}
+
+.markdown-preview.markdown-preview .hljs-keyword,
+.markdown-preview.markdown-preview .hljs-selector-tag,
+.markdown-preview.markdown-preview .hljs-title {
+  color: #93c5fd;
+}
+
+.markdown-preview.markdown-preview .hljs-string,
+.markdown-preview.markdown-preview .hljs-number,
+.markdown-preview.markdown-preview .hljs-literal {
+  color: #a5f3fc;
+}
+
+/* 引用 */
+.markdown-preview.markdown-preview blockquote {
+  margin: 1.8rem 0;
+  padding: 1rem 1.2rem;
+  border-left: 4px solid rgba(99, 102, 241, 0.6);
+  background: rgba(30, 41, 59, 0.6);
+  color: #cbd5e1;
+}
+
+/* リスト */
+.markdown-preview.markdown-preview ul,
+.markdown-preview.markdown-preview ol {
+  margin: 0 0 1.2rem;
+  padding-left: 1.6rem;
+}
+
+.markdown-preview.markdown-preview li {
+  margin: 0.4rem 0;
+}
+
+/* テーブル */
+.markdown-preview.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.8rem 0;
+  font-size: 0.95em;
+}
+
+.markdown-preview.markdown-preview th,
+.markdown-preview.markdown-preview td {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+}
+
+.markdown-preview.markdown-preview th {
+  background: rgba(30, 41, 59, 0.7);
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.markdown-preview.markdown-preview tr:nth-child(even) td {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+/* 罫線 */
+.markdown-preview.markdown-preview hr {
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.3);
+  margin: 2.5rem 0;
+}
+
+/* 画像 */
+.markdown-preview.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  margin: 1.5rem 0;
+}
+
+/* チェックボックス */
+.markdown-preview.markdown-preview input[type="checkbox"] {
+  transform: scale(1.1);
+  margin-right: 0.5rem;
+}
+
+/* キーボード表示 */
+.markdown-preview.markdown-preview kbd {
+  background: rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+}
+
+/* 選択 */
+.markdown-preview.markdown-preview ::selection {
+  background: rgba(56, 189, 248, 0.3);
+}
