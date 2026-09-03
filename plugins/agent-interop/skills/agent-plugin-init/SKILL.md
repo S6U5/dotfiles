@@ -1,6 +1,6 @@
 ---
 name: agent-plugin-init
-description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one: "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
+description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one, as in "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
 ---
 
 # Deciding what to share across agent plugin formats
@@ -72,6 +72,12 @@ The same trap appears in tooling output: a plugin listed by `codex plugin list` 
 
 **Do not create `agents/`.** Same for `commands/` and `rules/`. A subagent placed there reaches Claude Code only: Codex cannot register agents bundled in a plugin at all, and its own format is TOML rather than Markdown, so there is no single file that serves both. Tools also select files in these directories by extension without validating contents, so a foreign `.md` gets adopted silently while `validate` only warns. Express the behaviour as a skill instead; if it genuinely needs enforcement, keep the definition in `com.<reverse-domain>/` and document the manual install.
 
+### One tool passing is not passing
+
+Frontmatter is **YAML**, not free text, and a long `description` is the easiest place to break it: a plain scalar containing `: ` is a parse error. Claude Code accepts it — `claude plugin validate` reports success and the plugin installs — while Codex's validator rejects the file outright. This skill's own frontmatter shipped broken that way, through a marketplace, unnoticed. **Run every target tool's validator, and treat a green from one as saying nothing about the others.**
+
+Frontmatter keys differ too. Codex reads `name`, `description` and `metadata`; Claude Code additionally honours `license`, `version`, `allowed-tools`, `user-invocable`, `argument-hint` and `disable-model-invocation`. Extra keys are ignored rather than fatal, so the risk is a setting that silently does nothing — except `disable-model-invocation`, which Codex requires to be absent or `false` in a bundled plugin.
+
 ### Split by what you would turn off
 
 Group a plugin around **what gets disabled together**. Plugin-provided skills can only be disabled *per plugin* — "Plugin skills are not affected by `skillOverrides`" — so splitting wrong means silencing one unwanted skill takes down the wanted ones beside it.
@@ -85,9 +91,17 @@ claude plugin validate ./plugins/<name>
 # "Validating plugin manifest: ..." → the manifest is being read
 # "Validating components in: ..."   → it is not (only skills/ is being seen)
 
+# Codex ships its own validator inside its bundled plugin-creator skill, and it is
+# the stricter of the two — manifest fields, agents/openai.yaml, and frontmatter.
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py ./plugins/<name>
+
 claude --plugin-dir ./plugins/<name> -p "list the available skill names"
 # A name different from the manifest's `name` means that manifest was not read
 ```
+
+Both must pass. See `references/measurements.md` for where each tool keeps its own field
+definitions on disk — reachable and current, so neither the manifests nor `agents/openai.yaml`
+need to be guessed at.
 
 Plugin and skill names become slash commands, so avoid colliding with built-ins. Overriding is only documented for bundled skills; nothing says a custom skill can take over something like `/init`.
 

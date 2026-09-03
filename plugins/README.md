@@ -226,6 +226,13 @@ Claude Code と違って `skills/` を規約で自動検出しないため、マ
 | 目録の場所 | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` |
 | スキルの UI メタデータ | 指定できない | `skills/<名前>/agents/openai.yaml` の `interface` |
 | 暗黙呼び出しの制御 | `SKILL.md` の frontmatter `disable-model-invocation` | 同ファイルの `policy.allow_implicit_invocation` |
+| マニフェストの検証 | `claude plugin validate <パス>` | `python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py <パス>`(Codex 同梱の plugin-creator スキル内) |
+
+**検証は両方走らせる。** Codex 側のバリデータの方が厳しく、`.codex-plugin/plugin.json` の
+`author` / `interface.developerName`、`agents/openai.yaml` のキー、さらに `SKILL.md` の
+frontmatter が YAML として妥当かまで見る。Claude Code は frontmatter が YAML として壊れていても
+`validate` を通してしまうため、**片方が緑でももう片方の保証にはならない**(実測。詳細は
+`plugins/agent-interop/skills/agent-plugin-init/references/measurements.md`)。
 
 `agents/openai.yaml` は Claude Code のコンポーネント探索の対象外なので、置いたままで問題ない。
 `allow_implicit_invocation` の既定は `true` なので、暗黙発火を許すなら `policy` ごと省略する。
