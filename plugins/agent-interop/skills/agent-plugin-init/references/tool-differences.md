@@ -115,24 +115,54 @@ required once the file exists. `default_prompt` is documented as having to name 
 `$skill-name`, and `short_description` as 25–64 characters; neither is enforced, so both are easy to
 get wrong silently.
 
-## `SKILL.md` frontmatter is YAML, and the tools disagree on it
+## `SKILL.md` frontmatter: what each key reaches
 
-Only `name` and `description` are shared. Everything else reaches one tool:
+The Agent Skills spec defines six fields and no more. Constraints, from the spec: `name` is 1–64
+lowercase alphanumerics and hyphens, no leading/trailing/consecutive hyphens, and must match the
+parent directory name; `description` is 1–1024 characters; `compatibility` is up to 500; `metadata`
+is a map of string to string; `allowed-tools` is a space-separated string and is marked
+experimental, so support varies by implementation.
 
-| Key | Claude Code | Codex |
-|---|---|---|
-| `name`, `description` | required | required |
-| `metadata` | honoured | honoured (`metadata.short-description`) |
-| `license`, `version`, `allowed-tools`, `user-invocable`, `argument-hint` | honoured | ignored |
-| `disable-model-invocation` | honoured | must be absent or `false` in a bundled plugin |
+| Key | Spec | Claude Code CLI | claude.ai upload / Skills API / `package_skill.py` | Codex |
+|---|---|---|---|---|
+| `name`, `description` | required | accepted | accepted | required |
+| `license`, `compatibility` | optional | accepted, acts on neither | accepted | ignored |
+| `metadata` | optional, free-form | free-form; acts on nothing | accepted | reads `metadata.short-description` |
+| `allowed-tools` | optional, experimental | pre-approves tools for the invoking turn | accepted | ignored |
+| `when_to_use`, `argument-hint`, `arguments`, `model`, `effort`, `context`, `agent`, `background`, `hooks`, `paths`, `shell`, `disallowed-tools`, `user-invocable` | – | honoured | **hard error** | ignored |
+| `disable-model-invocation` | – | honoured | **hard error** | must be absent or `false` in a bundled plugin |
 
-Unknown keys are ignored rather than fatal on both sides, so a Claude-only key is inert in Codex
-rather than breaking it.
+The failure on the third column is not a warning:
 
-**The parsers differ in strictness, and that part does break.** Claude Code accepts frontmatter that
-is not valid YAML — a `description` containing `: ` in a plain scalar, for instance — and
-`claude plugin validate` still passes. Codex's validator rejects the file. Parse the frontmatter
-yourself, or run both validators; see `measurements.md`.
+```
+Unexpected key(s) in SKILL.md frontmatter: argument-hint. Allowed properties are: allowed-tools, compatibility, description, license, metadata, name
+```
+
+Claude Code's docs state the conclusion directly: restricting frontmatter to the spec's six fields
+avoids that error, and Claude Code accepts all six, so spec-conformant frontmatter loads there
+unchanged. **The six fields are the floor; a seventh is a deliberate trade of reach for behaviour.**
+
+`user-invocable: false` and `disable-model-invocation: true` are opposite halves of the same
+control, and Codex expresses the second through `policy.allow_implicit_invocation: false` in
+`agents/openai.yaml` — inverted polarity, different file. Change one and the other stays behind.
+
+### Two ways a key goes wrong without anyone noticing
+
+**Same name, different meaning.** `metadata` is free-form, so nothing stops two tools from
+assigning meaning to the same key. Codex already does, with `metadata.short-description`. The spec
+recommends "reasonably unique" key names for this reason, and Claude Code separately warns against
+reusing frontmatter field names such as `paths` as `metadata` keys.
+
+**Right name, wrong format.** `tools` belongs to Claude Code's subagent frontmatter; the skill field
+is `allowed-tools`. Two skills in the official Claude Code marketplace carry `tools:` and load
+without complaint, granting nothing. Selection by extension and lenient parsing mean a key from a
+neighbouring format is inert rather than rejected.
+
+### The parsers differ in strictness, and that part does break
+
+Claude Code accepts frontmatter that is not valid YAML — a `description` containing `: ` in a plain
+scalar, for instance — and `claude plugin validate` still passes. Codex's validator rejects the
+file. Parse the frontmatter yourself, or run both validators; see `measurements.md`.
 
 ## Claude Code only
 

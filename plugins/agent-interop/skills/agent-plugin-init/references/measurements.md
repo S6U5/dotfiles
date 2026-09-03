@@ -80,6 +80,13 @@ Of 184 `SKILL.md` files under `~/.claude/`, this was the only one `yaml.safe_loa
 both marketplace cache copies. Of 45 under `~/.codex/`, none failed. **A green from one tool says
 nothing about the other.**
 
+### Sources for the field lists
+
+The frontmatter tables are read off the specs, not inferred from samples: agentskills.io's
+specification page for the six fields and their constraints, and Claude Code's skills documentation
+for the CLI-only fields, the six-field restriction on claude.ai uploads / the Skills API /
+`package_skill.py`, and the verbatim unexpected-key error. Both were current at the date above.
+
 Key frequency across the same samples:
 
 | Key | `~/.claude` (182 parsed) | `~/.codex` (45) |
@@ -94,8 +101,16 @@ Key frequency across the same samples:
 | `disable-model-invocation`, `argument-hint` | 1 each | – |
 
 Codex's validator ignores unknown frontmatter keys rather than failing on them, so a Claude-only
-key is inert rather than fatal — except `disable-model-invocation`, which it requires to be absent
-or `false` in a bundled plugin.
+key is inert there — except `disable-model-invocation`, which it requires to be absent or `false` in
+a bundled plugin. **Inert is not the same as safe everywhere**: the same keys are a hard error on
+claude.ai uploads, the Skills API and `package_skill.py`.
+
+Two keys in the sample show how quietly this goes wrong. `tools` appears twice — it is the subagent
+frontmatter field, not the skill one (`allowed-tools`), and both files are in the official Claude
+Code marketplace, loading without complaint and granting nothing. `version` appears 21 times and is
+in neither the spec's six nor Claude Code's own field table — including in the official
+marketplace's `plugin-dev/skills/skill-development`, the skill that teaches skill authoring. Those
+skills load in the CLI and would fail an upload.
 
 ## Appearing in a catalog is not the same as loading
 
