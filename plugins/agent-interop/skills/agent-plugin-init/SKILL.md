@@ -38,7 +38,7 @@ Three manifests is not duplication — each is read by a different tool, and col
 1. Pick a name — check it against built-in commands and existing skills before anything else.
 2. Lay out the shape above.
 3. Write the three manifests, keeping `name`, `version` and `description` identical.
-4. Write `skills/<skill>/SKILL.md`. Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
+4. Write `skills/<skill>/SKILL.md`, keeping the frontmatter to the spec's six fields (below). Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
 5. Add an entry to each catalog the plugin should appear in.
 6. Verify (below) before calling it done.
 
@@ -76,7 +76,23 @@ The same trap appears in tooling output: a plugin listed by `codex plugin list` 
 
 Frontmatter is **YAML**, not free text, and a long `description` is the easiest place to break it: a plain scalar containing `: ` is a parse error. Claude Code accepts it — `claude plugin validate` reports success and the plugin installs — while Codex's validator rejects the file outright. This skill's own frontmatter shipped broken that way, through a marketplace, unnoticed. **Run every target tool's validator, and treat a green from one as saying nothing about the others.**
 
-Frontmatter keys differ too. Codex reads `name`, `description` and `metadata`; Claude Code additionally honours `license`, `version`, `allowed-tools`, `user-invocable`, `argument-hint` and `disable-model-invocation`. Extra keys are ignored rather than fatal, so the risk is a setting that silently does nothing — except `disable-model-invocation`, which Codex requires to be absent or `false` in a bundled plugin.
+### Frontmatter has six fields, and the seventh costs you a distribution path
+
+The Agent Skills spec defines exactly six: `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`. Only the first two are required. **Every path accepts all six**, so a skill that stays inside them travels everywhere without edits.
+
+Claude Code's CLI accepts a dozen more — `when_to_use`, `argument-hint`, `arguments`, `model`, `effort`, `context`, `agent`, `background`, `hooks`, `paths`, `shell`, `disallowed-tools`, `disable-model-invocation`, `user-invocable`. **These are not "ignored where unsupported".** claude.ai uploads, the Skills API and `package_skill.py` reject any of them outright:
+
+```
+Unexpected key(s) in SKILL.md frontmatter: argument-hint. Allowed properties are: allowed-tools, compatibility, description, license, metadata, name
+```
+
+Codex is the lenient one — it ignores keys it does not know, except `disable-model-invocation`, which it requires to be absent or `false` in a bundled plugin.
+
+So **fix on the six and add a seventh only when the behaviour is genuinely needed and this skill is not meant to travel.** Reaching for one is the frontmatter form of step 3 above: portability stops there, deliberately. Anything that can be said in the body instead should be.
+
+**`metadata` is the trap inside the safe set.** It is a free-form map, so the same key can mean different things in different tools: Codex reads `metadata.short-description` for its UI, Claude Code acts on nothing in it, and the spec asks for "reasonably unique" key names for exactly this reason. Namespace yours, and never reuse a frontmatter field name as a key.
+
+Key names collide across formats too, quietly. `tools` is a subagent field; the skill field is `allowed-tools`. Two skills in the official Claude Code marketplace carry `tools:` and nothing warns them. **A key that does nothing looks identical to a key that works.**
 
 ### Split by what you would turn off
 
@@ -119,5 +135,5 @@ A SKILL.md is a prompt, so the author's situation leaks in easily — real proje
 
 **Do not read these during normal work.** Everything needed to decide is above.
 
-- `references/tool-differences.md` — per-tool layout table, where names collide, `openai.yaml` and hooks in detail. Open it when **adding support for a new tool** or when **you suspect a collision**.
+- `references/tool-differences.md` — per-tool layout table, the full frontmatter matrix with each field's constraints, where names collide, `openai.yaml` and hooks in detail. Open it when **adding support for a new tool**, when **you need a field the six do not cover**, or when **you suspect a collision**.
 - `references/measurements.md` — the measurements behind the claims above, with dates and versions. Open it when **the approach is challenged** or when **a version changed and you need to re-measure**.

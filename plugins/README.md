@@ -228,6 +228,16 @@ Claude Code と違って `skills/` を規約で自動検出しないため、マ
 | 暗黙呼び出しの制御 | `SKILL.md` の frontmatter `disable-model-invocation` | 同ファイルの `policy.allow_implicit_invocation` |
 | マニフェストの検証 | `claude plugin validate <パス>` | `python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py <パス>`(Codex 同梱の plugin-creator スキル内) |
 
+**`SKILL.md` の frontmatter は標準の6つに収める。** Agent Skills 標準が定めるのは `name` /
+`description` / `license` / `compatibility` / `metadata` / `allowed-tools` の6つだけ(必須は前の
+2つ)。Claude Code の CLI はこれに加えて `argument-hint`・`model`・`hooks`・`paths` などを解釈
+するが、**claude.ai へのアップロード / Skills API / `package_skill.py` は標準外のキーをエラーで
+弾く**(無視ではない)。Codex は未知のキーを無視するが、`disable-model-invocation` だけは値を見て
+`true` を拒否する。7つ目に手を出すのは、可搬性を捨てて挙動を取る判断になる。
+
+`metadata` は自由マップなので**同じキー名が別の意味を持ちうる**(Codex は `metadata.short-description`
+を UI に使う)。標準自身がキー名を十分ユニークにするよう推奨している。
+
 **検証は両方走らせる。** Codex 側のバリデータの方が厳しく、`.codex-plugin/plugin.json` の
 `author` / `interface.developerName`、`agents/openai.yaml` のキー、さらに `SKILL.md` の
 frontmatter が YAML として妥当かまで見る。Claude Code は frontmatter が YAML として壊れていても
