@@ -71,6 +71,14 @@ ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 
 張ったあと Cursor を再起動するか **Developer: Reload Window** を実行する。
 
+**WSL とネイティブ Windows は別々に登録する。** 別々にインストールしている以上、設定ディレクトリも
+別(WSL 内は `~/.claude` / `~/.codex`、Windows 側は `%USERPROFILE%\.claude` / `%USERPROFILE%\.codex`)
+なので、WSL 内で行った登録は Windows 側に届かない。Windows 側でも GitHub 経由で登録する
+(UNC パス `\\wsl.localhost\...` でのローカル登録は採らない。判断根拠は
+[`../docs/decisions/windows-agent-plugins.md`](../docs/decisions/windows-agent-plugins.md)、
+手順はリポジトリ README の「同梱プラグイン」参照)。`agent-plugins-setup` は POSIX sh のため
+ネイティブ Windows では動かない。
+
 ### まとめてやる
 
 `agent-plugins-setup`(`home/.local/bin/`)が、以下をまとめて行う。何度実行しても安全。
