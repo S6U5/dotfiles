@@ -381,6 +381,35 @@ agent-plugins-setup shin5       # 指定したプラグインだけ
 **ローカル参照の Marketplace は自動更新が効かない**ため、リポジトリを更新したらこれを実行します。
 何度実行しても安全で、導入済みのものや有効/無効の状態には触れません。
 
+<details>
+<summary><b>ネイティブ Windows 側の Claude Code / Codex にも同じプラグインを届ける</b></summary>
+
+WSL とネイティブ Windows の両方にエージェントを入れている場合、設定ディレクトリは別物(WSL 内は `~/.claude` / `~/.codex`、Windows 側は `%USERPROFILE%\.claude` / `%USERPROFILE%\.codex`)なので、**WSL 内で行った Marketplace の登録は Windows 側には届きません**。プラグインで効くのはファイルの実体ではなく参照先なので、コピーはせず、Windows 側でも同じ GitHub リポジトリを登録します(UNC パス `\\wsl.localhost\...` でのローカル登録は採りません。判断根拠は [`docs/decisions/windows-agent-plugins.md`](docs/decisions/windows-agent-plugins.md))。
+
+Windows の PowerShell で、マシンごとに初回のみ:
+
+```powershell
+claude plugin marketplace add S6U5/dotfiles --sparse .claude-plugin plugins
+claude plugin install agent-interop@s6u5-dotfiles
+claude plugin install shin5@s6u5-dotfiles
+
+codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
+codex plugin add agent-interop@s6u5-dotfiles
+codex plugin add shin5@s6u5-dotfiles
+```
+
+更新も Windows 側で実行します。
+
+```powershell
+claude plugin marketplace update s6u5-dotfiles
+codex plugin marketplace upgrade s6u5-dotfiles
+```
+
+- **Windows 側は GitHub 参照のため、push するまで変更が反映されません**(WSL 側の `agent-plugins-setup` はローカル参照なので即時)。プラグインを編集した直後に Windows 側へ反映したいときは、push してから上の更新コマンドを実行してください。
+- `agent-plugins-setup` は POSIX sh で書かれているため、ネイティブ Windows では動きません。Windows 側は上記を手で実行します。
+
+</details>
+
 更新・無効化・撤去や、プラグインを自作するときの手順は
 [`plugins/README.md`](plugins/README.md) を参照してください。
 
