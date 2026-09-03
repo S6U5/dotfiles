@@ -1,4 +1,4 @@
 interface:
-  display_name: "agent-plugin-init"
+  display_name: "Agent Plugin Init"
   short_description: "Create a plugin that reaches Claude Code, Codex and the standard"
-  default_prompt: "Set up a plugin that works across Claude Code and Agent Plugins clients."
+  default_prompt: "Use $agent-plugin-init to set up a plugin that works across Claude Code and Agent Plugins clients."

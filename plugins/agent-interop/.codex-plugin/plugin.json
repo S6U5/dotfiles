@@ -2,11 +2,15 @@
   "name": "agent-interop",
   "version": "0.1.0",
   "description": "Keep instructions and plugins shared across multiple coding agents.",
+  "author": {
+    "name": "S6U5"
+  },
   "skills": "./skills/",
   "interface": {
     "displayName": "Agent Interop",
     "shortDescription": "Share instructions and plugins across coding agents.",
     "longDescription": "Keeps agent instructions in AGENTS.md with CLAUDE.md as a pointer, and works out which parts of a plugin can be shared across Claude Code and the Agent Plugins standard.",
+    "developerName": "S6U5",
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": "Set up agent instructions for this repository."

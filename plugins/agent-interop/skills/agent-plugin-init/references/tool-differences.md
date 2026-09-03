@@ -103,8 +103,36 @@ firing the skill off the user's prompt while leaving `$skill` working. It is the
 Claude Code's frontmatter `disable-model-invocation: true`, which Codex cannot express in SKILL.md.
 The same intent lives in two places in two forms — do not change one and leave the other behind.
 
-The default is `true`, so omit the whole `policy` block when implicit firing is wanted. OpenAI's own
-plugins carry only `interface`.
+**Declared dependencies** — `dependencies.tools[]`, currently only `type: "mcp"` with `value`,
+`description`, `transport` and `url`. This is the one place a bundled skill may name an MCP server.
+
+The default for implicit invocation is `true`, so omit the whole `policy` block when implicit firing
+is wanted. Most of OpenAI's own plugins carry only `interface`.
+
+The file is validated strictly: `interface`, `policy` and `dependencies` are the only top-level keys
+accepted, unknown keys under them are errors, and `display_name` and `short_description` are
+required once the file exists. `default_prompt` is documented as having to name the skill as
+`$skill-name`, and `short_description` as 25–64 characters; neither is enforced, so both are easy to
+get wrong silently.
+
+## `SKILL.md` frontmatter is YAML, and the tools disagree on it
+
+Only `name` and `description` are shared. Everything else reaches one tool:
+
+| Key | Claude Code | Codex |
+|---|---|---|
+| `name`, `description` | required | required |
+| `metadata` | honoured | honoured (`metadata.short-description`) |
+| `license`, `version`, `allowed-tools`, `user-invocable`, `argument-hint` | honoured | ignored |
+| `disable-model-invocation` | honoured | must be absent or `false` in a bundled plugin |
+
+Unknown keys are ignored rather than fatal on both sides, so a Claude-only key is inert in Codex
+rather than breaking it.
+
+**The parsers differ in strictness, and that part does break.** Claude Code accepts frontmatter that
+is not valid YAML — a `description` containing `: ` in a plain scalar, for instance — and
+`claude plugin validate` still passes. Codex's validator rejects the file. Parse the frontmatter
+yourself, or run both validators; see `measurements.md`.
 
 ## Claude Code only
 

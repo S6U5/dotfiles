@@ -40,6 +40,63 @@ whenever the extension matches.
 Claude Code looks at `skills/*/SKILL.md` and at the **plugin-root** `agents/`. A directory nested
 inside a skill is not on that path. The measured subagent list contained no `openai` entry.
 
+## The tools' own definitions are on disk
+
+Codex CLI 0.152.1 installs its authority locally, so neither the manifest shapes nor
+`agents/openai.yaml` has to be inferred from published examples:
+
+| Path | What it settles |
+|---|---|
+| `~/.codex/skills/.system/skill-creator/references/openai_yaml.md` | every `agents/openai.yaml` field, with constraints |
+| `~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py` | runnable validator for `.codex-plugin/plugin.json`, `openai.yaml` and frontmatter |
+| `~/.codex/skills/.system/*/agents/openai.yaml`, `~/.codex/vendor_imports/skills/skills/.curated/*/` | 45 shipped examples |
+
+Their licence is unstated. **Cite the paths and record conclusions; do not copy the contents into
+this repository.**
+
+Confirmed against all 45 examples: `agents/openai.yaml` allows `interface`, `policy` and
+`dependencies` at the top level and nothing else. `interface` takes `display_name`,
+`short_description`, `icon_small`, `icon_large`, `brand_color` and `default_prompt`; the first two
+are required once the file exists, and unknown keys are rejected. `default_prompt` is documented as
+having to name the skill as `$skill-name`, and `short_description` as 25–64 characters — neither is
+enforced by the validator.
+
+`.codex-plugin/plugin.json` demands more than Claude Code's manifest: `author` as an object with a
+`name`, and `interface` carrying `displayName`, `shortDescription`, `longDescription`,
+`developerName`, `category`, `capabilities` and a `defaultPrompt`.
+
+## Frontmatter must parse as YAML, and only Codex enforces it
+
+This skill's own `description` contained `existing one: "add a hook to this plugin"`. A plain YAML
+scalar cannot contain `: `, so the frontmatter did not parse.
+
+| Check | Result |
+|---|---|
+| `claude plugin validate` | passed |
+| Codex `validate_plugin.py` | rejected — "frontmatter must be valid YAML" |
+| Claude Code skill loading | **not measured** — the broken file sat in the installed marketplace cache without either validator or install step objecting |
+
+Of 184 `SKILL.md` files under `~/.claude/`, this was the only one `yaml.safe_load` rejected — in
+both marketplace cache copies. Of 45 under `~/.codex/`, none failed. **A green from one tool says
+nothing about the other.**
+
+Key frequency across the same samples:
+
+| Key | `~/.claude` (182 parsed) | `~/.codex` (45) |
+|---|---|---|
+| `name`, `description` | all | all |
+| `license` | 105 | – |
+| `version` | 21 | – |
+| `allowed-tools` | 8 | – |
+| `user-invocable` | 7 | – |
+| `metadata` | 4 | 9 |
+| `tools` | 2 | – |
+| `disable-model-invocation`, `argument-hint` | 1 each | – |
+
+Codex's validator ignores unknown frontmatter keys rather than failing on them, so a Claude-only
+key is inert rather than fatal — except `disable-model-invocation`, which it requires to be absent
+or `false` in a bundled plugin.
+
 ## Appearing in a catalog is not the same as loading
 
 A plugin carrying only the standard `plugin.json` did show up under `codex plugin list`. That only
