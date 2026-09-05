@@ -22,6 +22,14 @@ navigate_workspace_down = "j"
 [ui]
 agent_panel_sort = "priority"
 
+# バックグラウンドのエージェントが完了・入力待ちになったときの通知。
+# デフォルト(off)は効果音のみなので、画面内トーストも出すようにする。
+# "system"/"terminal" はOS・ターミナル依存だが、"herdr"(アプリ内描画)は
+# WSL/macOS/Linuxのどこでも同じように動くため採用。アクティブなタブへの通知は
+# 自動で抑制される。表示位置・遅延はデフォルト(bottom-right / 1秒)のまま。
+[ui.toast]
+delivery = "herdr"
+
 [experimental]
 # pane画面履歴のディスク永続化(session-history.json)。pane出力にはAPIキー・
 # プロンプト・token等が含まれ得るため、原則として永続化しない。
