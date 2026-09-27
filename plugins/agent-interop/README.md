@@ -20,8 +20,9 @@ Marketplace をまだ登録していない場合は、先に [../README.md](../R
 - **`agents-init`**(呼び出しは `/agent-interop:agents-init`)— CLAUDE.md を新規作成するとき、中身を
   `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md 側へ集約する。ビルド手順や規約のほとんどは
   Claude Code 固有ではなく、他のエージェントにも同じものを読ませたいため。逆に AGENTS.md から作った
-  場合もカバーする(Claude Code は AGENTS.md をネイティブに読まないので、参照役の CLAUDE.md が無いと
-  指示が一度も読み込まれない)。
+  場合もカバーする。Claude Code は CLAUDE.md が無ければ AGENTS.md を直接読むが、`CLAUDE.local.md` や
+  親階層の CLAUDE.md があるだけで読まれなくなるなど抜け道が残るため、既定では確認なしで参照役の
+  CLAUDE.md を作る。CLAUDE.md を作らず AGENTS.md 1本にする選択肢は、明示的に頼まれたときだけ採る。
 
 - **`agent-plugin-init`**(呼び出しは `/agent-interop:agent-plugin-init`)— Claude Code・Codex・
   Agent Plugins 標準の3形式に届くプラグインを作る。共有できるのは `skills/` だけで、マニフェストは
