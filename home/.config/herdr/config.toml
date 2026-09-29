@@ -23,12 +23,17 @@ navigate_workspace_down = "j"
 agent_panel_sort = "priority"
 
 # バックグラウンドのエージェントが完了・入力待ちになったときの通知。
-# デフォルト(off)は効果音のみなので、画面内トーストも出すようにする。
-# "system"/"terminal" はOS・ターミナル依存だが、"herdr"(アプリ内描画)は
-# WSL/macOS/Linuxのどこでも同じように動くため採用。アクティブなタブへの通知は
-# 自動で抑制される。表示位置・遅延はデフォルト(bottom-right / 1秒)のまま。
+# デフォルト(off)は効果音のみ。"terminal" で外側のターミナル(WezTerm)へ
+# OSC 9 を送り、ターミナル経由で OS の通知として出す(herdr を見ていないときも気づける)。
+# - WSL でも効く: WezTerm は WSLENV で TERM_PROGRAM を WSL 側へ渡すため、herdr が
+#   WezTerm を検出できる。"system" は WSL では notify-send になり Windows に届かないため不採用
+# - SSH 越しの herdr でも手元のターミナルに届く
+# - アクティブなタブの通知は抑制されるが、ターミナル自体が非フォーカスなら通知される
+# - 対応ターミナル(WezTerm/Ghostty/iTerm2/kitty)以外で起動すると通知は出ない(音は鳴る)
+# - アプリ内トースト("herdr")とは排他
+# 遅延はデフォルト(1秒)のまま。
 [ui.toast]
-delivery = "herdr"
+delivery = "terminal"
 
 [experimental]
 # pane画面履歴のディスク永続化(session-history.json)。pane出力にはAPIキー・
