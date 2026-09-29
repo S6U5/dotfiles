@@ -8,7 +8,7 @@
 - プレフィックスキーは **デフォルトの `Ctrl+b` のまま**(過去にカスタムを検討したが最終的にデフォルトに統一)
 - ペイン分割も **デフォルトのまま**: `prefix + %` で左右分割、`prefix + "` で上下分割。デフォルト値と同じだが `[keys]` の `split_vertical` / `split_horizontal` で明示指定している(tmuxのデフォルトに揃える意図を明文化するため)
 - ワークスペース選択(navigate mode)は、ペイン移動(`h`/`j`/`k`/`l`)はデフォルトで既に有効だが、ワークスペース上下だけデフォルトが矢印キーのみだったため `navigate_workspace_up = "k"` / `navigate_workspace_down = "j"` を追加
-- エージェントの完了・入力待ち通知は **`[ui.toast]` の `delivery = "terminal"`(外側のターミナル経由の OS 通知)を有効化**(デフォルトは `off` で効果音のみ)。WezTerm が OSC 9 を受けて OS の通知を出すので、herdr を見ていないときも気づける。WSL でも WezTerm が `TERM_PROGRAM` を WSL 側へ渡すため動く(`system` は WSL だと `notify-send` になり Windows に届かないため不採用)。アクティブなタブへの通知は抑制されるが、ターミナル自体が非フォーカスなら通知される。対応ターミナル(WezTerm/Ghostty/iTerm2/kitty)以外で起動すると通知は出ない(音は鳴る)
+- エージェントの完了・入力待ち通知は **`[ui.toast]` の `delivery = "herdr"`(アプリ内トースト)を有効化**(デフォルトは `off` で効果音のみ)。アプリ内描画方式なので WSL/macOS/Linux どこでも動く。アクティブなタブへの通知は自動で抑制される。OS 通知(`system` / `terminal`)は WSL で届かないため不採用(`system` は `notify-send` になり Windows に届かない。`terminal` は Windows 版 WezTerm 安定版の ConPTY が OSC 9 を通さない)
 - pane画面履歴のディスク永続化は **`[experimental]` の `pane_history = false` で明示的に無効化**。pane出力にはAPIキー・プロンプト・token等が含まれ得るため。現行デフォルトと同じだが、experimental な機能はデフォルトが変わり得るため先回りして固定している
 - 設定変更を反映するには: `herdr server reload-config`(既存セッションを終了せずに反映できる)
 
