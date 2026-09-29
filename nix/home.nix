@@ -129,6 +129,21 @@ in
     fi
   '';
 
+  # 自作の herdr プラグイン(herdr-plugins/wsl-notify: WSL でエージェントの完了・入力待ちを Windows の
+  # トースト通知で知らせる。判断根拠は docs/decisions/herdr-notification.md 参照)を登録する。
+  # `herdr plugin link` はプラグイン id をキーに上書き登録するため、毎回実行しても冪等
+  # (herdr サーバー未起動でも登録できる)。登録先は herdr 管理の ~/.config/herdr/plugins.json
+  # (dotfiles 管理外の実ファイル)。プラグイン自体が WSL 以外では何もしないため、Linux 全般で登録する
+  # (manifest の platforms が linux のみのため macOS では登録しない)。
+  # 再登録で有効状態に戻るため、`herdr plugin disable` での一時停止は次の switch までとなる。
+  home.activation.dotfilesHerdrPlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.isLinux ''
+    if $DRY_RUN_CMD ${pkgs.herdr}/bin/herdr plugin link "${dotfilesDir}/herdr-plugins/wsl-notify" >/dev/null; then
+      $VERBOSE_ECHO "dotfiles: herdr プラグイン dotfiles.wsl-notify を登録しました"
+    else
+      echo "dotfiles: 警告: herdr プラグイン dotfiles.wsl-notify の登録に失敗しました" >&2
+    fi
+  '');
+
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。

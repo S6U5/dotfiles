@@ -26,10 +26,9 @@ agent_panel_sort = "priority"
 # デフォルト(off)は効果音のみなので、画面内トーストも出すようにする。
 # "herdr"(アプリ内描画)は WSL/macOS/Linux のどこでも同じように動くため採用。
 # アクティブなタブへの通知は自動で抑制される。表示位置・遅延はデフォルト(bottom-right / 1秒)のまま。
-# OS 通知にしたい場合の代替は不採用:
-# - "system": WSL では notify-send になり Windows 側に届かない
-# - "terminal"(OSC 9 を外側のターミナルへ送る): Windows 版 WezTerm 安定版が同梱する
-#   ConPTY が WSL からの OSC 9 を通さず、WSL では届かない
+# WSL で herdr を見ていないとき(ターミナルが最前面でないとき)の Windows 通知は、
+# 自作プラグイン herdr-plugins/wsl-notify が別途出す(これと併用。home-manager switch で自動登録)。
+# "system" / "terminal" は WSL で届かないため不採用(判断根拠は docs/decisions/herdr-notification.md)。
 [ui.toast]
 delivery = "herdr"
 
