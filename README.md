@@ -450,6 +450,8 @@ docs/              ドキュメント
 ├── decisions/       ADR(複数の選択肢から何を選んだか・なぜかの軽量な記録)
 └── assets/          README 掲載図等
 nix/               Nix + home-manager(パッケージ導入 + home/ 配下の dotfiles 配布、一本化)
+herdr-plugins/     自作の herdr プラグイン(home-manager switch で自動登録。wsl-notify: WSL で
+                   エージェントの完了・入力待ちを Windows の通知で知らせる)
 templates/         機密を含みうる単一設定ファイルの雛形($HOME にはリンクされない)
 ├── project/         開発プロジェクト用(AGENTS.md / CLAUDE.md / .editorconfig など)
 ├── project-generic/ 汎用(開発以外のプロジェクト向け AGENTS.md)
