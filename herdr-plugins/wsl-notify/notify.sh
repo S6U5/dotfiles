@@ -14,9 +14,10 @@ if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/nu
 fi
 
 if [ "${1:-}" = "--test" ]; then
-  HERDR_PLUGIN_EVENT_JSON='{"data":{"agent_status":"done","display_agent":"herdr","title":"test notification"}}'
-  DOTFILES_HERDR_NOTIFY_TEST=1
-  export HERDR_PLUGIN_EVENT_JSON DOTFILES_HERDR_NOTIFY_TEST
+  # JSON 文字列をそのまま環境変数として渡すだけで、シェルに再解釈させるわけではない
+  # shellcheck disable=SC2089,SC2090
+  export HERDR_PLUGIN_EVENT_JSON='{"data":{"agent_status":"done","display_agent":"herdr","title":"test notification"}}'
+  export DOTFILES_HERDR_NOTIFY_TEST=1
 fi
 
 # 状態が変わるたびに呼ばれるため、PowerShell の起動(1秒弱かかる)の前に文字列一致で絞り込む。
