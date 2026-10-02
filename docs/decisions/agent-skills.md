@@ -15,7 +15,7 @@
 | 他者コンテンツのコミット | ○(不要) | ×(必要。ライセンス表記も持ち込む) | ○(不要。ストアへのリンクのみ) |
 | 適用範囲 | ○(何にでも使える) | ○ | ×(nixpkgs パッケージがスキルを同梱している場合のみ) |
 
-- **herdr**: nixpkgs の `herdr` パッケージが postInstall で `herdr --skill` の出力を `share/herdr/skills/herdr/SKILL.md` として同梱しているため、`nix/home.nix` の `home.file` でストアパス参照して `~/.claude/skills/herdr` に配布する(`home-manager switch` で自動導入・手動インストール不要)。
+- **herdr**: nixpkgs の `herdr` パッケージが installAgentSkills フック(nixpkgs 共通の配置規約 `share/skills/<パッケージ名>/<スキル名>/`)で `herdr --skill` の出力を `share/skills/herdr/herdr/SKILL.md` として同梱しているため、`nix/home.nix` の `home.file` でストアパス参照して `~/.claude/skills/herdr` に配布する(`home-manager switch` で自動導入・手動インストール不要)。
 - **それ以外(Playwright CLI / Obsidian 等)**: nixpkgs にスキル同梱が無いため vendoring するしかなく、上表の理由で不採用。README に公式ドキュメントへのリンクのみ載せ、手順も転記しない(手順・配布形態の変化に公式ドキュメント側で気づけるようにする)。
 - `~/.claude/` 配下は原則エージェント側の領域で dotfiles の管理対象外だが、`~/.claude/skills/herdr` のみ例外として home.file 管理にする(機密を含まない読み取り専用データのため、AGENTS.md の home-manager 配布の判断基準にも適合)。
 
