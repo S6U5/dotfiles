@@ -123,7 +123,7 @@ fi
 echo "== 7) herdr agent skill が Nix ストア同梱の SKILL.md にリンクされているか"
 skill_target=$(readlink -f "$RESULT/home-files/.claude/skills/herdr/SKILL.md" 2>/dev/null || true)
 case "$skill_target" in
-  /nix/store/*/share/herdr/skills/herdr/SKILL.md)
+  /nix/store/*/share/skills/herdr/herdr/SKILL.md)
     if [ -s "$skill_target" ]; then
       ok "herdr スキルがストア同梱の SKILL.md を指し、中身も空でない"
     else

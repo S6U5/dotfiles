@@ -52,11 +52,11 @@ in
   # 生成する(nvm/pyenv 等のインストーラによる追記をリポジトリ管理下ファイルに届かせないため)。
   home.file = walkHome homeSrcDir "" // {
     # herdr の agent skill を配布する(判断根拠は docs/decisions/agent-skills.md 参照)。
-    # nixpkgs の herdr パッケージが postInstall で `herdr --skill` の出力を同梱しているため、
+    # nixpkgs の herdr パッケージが installAgentSkills フックで `herdr --skill` の出力を同梱しているため、
     # ストアパス参照にすればスキル本文とバイナリのバージョンが構造的に一致する
     # (npx skills 等での手動導入と違い、flake.lock の更新で herdr 本体と一緒に追従する)。
     # ~/.claude/ 配下は原則エージェント側の領域で管理対象外だが、このディレクトリのみ例外。
-    ".claude/skills/herdr".source = "${pkgs.herdr}/share/herdr/skills/herdr";
+    ".claude/skills/herdr".source = "${pkgs.herdr}/share/skills/herdr/herdr";
   };
 
   # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc を「dotfiles 管理外の実ファイル」として生成する。
