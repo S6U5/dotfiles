@@ -79,9 +79,10 @@ export DOTFILES_DIR=$(pwd)
 nix run home-manager -- switch --flake ./nix#<system> --impure
 ```
 
-初回の `switch` が完了すると home-manager 自体も導入され、以降は短い形で実行できます(`DOTFILES_DIR` はシェルセッションごとに設定してください):
+初回の `switch` が完了すると home-manager 自体も導入され、以降は短い形で実行できます。`DOTFILES_DIR` は永続化していないため、2回目以降もリポジトリのルートで毎回設定してから実行します(未設定のまま実行するとエラーで止まります):
 
 ```sh
+export DOTFILES_DIR=$(pwd)
 home-manager switch --flake ./nix#<system> --impure
 ```
 
@@ -246,6 +247,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 1. 中身が不要、またはこのリポジトリに取り込み済み → 既存ファイルを `<ファイル名>.bak` に退避してから上書き:
 
    ```sh
+   export DOTFILES_DIR=$(pwd)
    home-manager switch --flake ./nix#<system> --impure -b bak
    ```
 2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `-b bak` を付けて再実行
@@ -473,6 +475,7 @@ scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テス
 
 ```sh
 git pull --ff-only
+export DOTFILES_DIR=$(pwd)
 home-manager switch --flake ./nix#<system> --impure
 ```
 
