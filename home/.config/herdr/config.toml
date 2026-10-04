@@ -8,6 +8,21 @@
 # トップレベルキーのため、TOML の仕様上どのセクションよりも前に置く必要がある。
 onboarding = false
 
+# テーマは Starship のパステルピンクとなじむ rose-pine をベースにする。
+# Settings 画面でテーマを選ぶと config.toml へ書き込まれ、リンク越しにリポジトリ内の実体が
+# 書き換わるため(onboarding と同じ問題)、テーマの変更はこのファイルで行う。
+[theme]
+name = "rose-pine"
+
+# サイドバーで選択中の Space / Agent の行が背景(壁紙)に埋もれて見分けにくいため、
+# 行の背景色をピンク寄りの色で上書きしてはっきりさせる。
+# active_row_bg は選択中の Space とフォーカス中の Agent の行、
+# selection_bg は Navigate モードのカーソル行(いま動かしている対象なので、より明るくする)。
+[theme.custom]
+accent = "#F2A9C4"
+active_row_bg = "#4A3346"
+selection_bg = "#6E4A64"
+
 [keys]
 # プレフィックスキー + % でペインを垂直分割、+ " で水平分割(tmuxのデフォルト split-window -h/-v に合わせる。
 # herdr 自体のデフォルトは prefix+v / prefix+minus のため明示的に上書きする)
@@ -19,8 +34,20 @@ split_horizontal = 'prefix+"'
 navigate_workspace_up = "k"
 navigate_workspace_down = "j"
 
+# エージェントへ直接移動するキー(デフォルトは未設定)。番号はサイドバーの Agents パネルの上からの順。
+# agent_panel_sort = "priority" と組み合わせると、1 が最も対応が必要なエージェントになる。
+focus_agent = "prefix+alt+1..9"
+next_agent = "prefix+alt+n"
+previous_agent = "prefix+alt+p"
+
 [ui]
 agent_panel_sort = "priority"
+# エージェントの状態を色の点ではなく形の違う記号で表示する(ピンク系テーマでも色に頼らず見分けるため)
+status_indicators = "symbols"
+# ペインを分割したとき、手動の名前(rename_pane)が無いペインの枠にエージェント名を出す
+show_agent_labels_on_pane_borders = true
+# Space を作るときに名前を聞く(既定では聞かずに作る)
+prompt_new_workspace_name = true
 
 # バックグラウンドのエージェントが完了・入力待ちになったときの通知。
 # デフォルト(off)は効果音のみなので、画面内トーストも出すようにする。
@@ -31,6 +58,37 @@ agent_panel_sort = "priority"
 # "system" / "terminal" は WSL で届かないため不採用(判断根拠は docs/decisions/herdr-notification.md)。
 [ui.toast]
 delivery = "herdr"
+
+# サイドバーの項目の間の空行数(既定は 0)。1 にすると項目の区切りが分かりやすくなるが、
+# 一度に表示できる件数が減り、空きすぎにも感じるため一旦 0 にしている(見直すかもしれない)。
+[ui.sidebar.agents]
+row_gap = 0
+# 1行目を「Space 名 · エージェント名(太字)」、2行目をエージェントが出しているターミナルタイトル
+# (Claude Code なら作業内容の要約)にして、どこで何をしているエージェントか分かるようにする。
+# 2行目は薄く表示して、1行目の名前を相対的に目立たせる(ターミナルでは文字サイズを変えられないため)。
+# 区切り文字は " · " 固定で変えられない。リポジトリ名のトークンは無いため Space 名で代用する。
+# machine は複数マシン接続時だけ出る(既定のレイアウトに合わせて残す)。タブ名は出さない。
+rows = [
+  ["state_icon", "machine", "workspace", { token = "agent", bold = true }],
+  [{ token = "terminal_title_stripped", dim = true }],
+]
+
+[ui.sidebar.spaces]
+row_gap = 0
+# Space 名を太字にする(Agents 側のエージェント名と揃える)。
+# 2行目は「ブランチ名 進み/遅れ数 · 状態」。状態の文字を入れておくことで、Git 管理外でブランチが
+# 無い Space でも2行目が消えず、高さが揃う(状態は1行目のアイコンでも分かるため後ろに置く)。
+rows = [
+  ["state_icon", { token = "workspace", bold = true }],
+  [
+    "branch",
+    "git_status",
+    # 状態の文字は薄く表示するが、入力待ち(blocked)のときだけ赤で濃く表示して目立たせる
+    { token = "state_text", dim = true, rules = [
+      { equals = "blocked", fg = "#eb6f92", dim = false },
+    ] },
+  ],
+]
 
 [experimental]
 # pane画面履歴のディスク永続化(session-history.json)。pane出力にはAPIキー・
