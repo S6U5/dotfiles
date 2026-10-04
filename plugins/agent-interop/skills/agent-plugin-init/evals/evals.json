@@ -1,0 +1,50 @@
+{
+  "skill_name": "agent-plugin-init",
+  "evals": [
+    {
+      "id": 0,
+      "name": "repo-local-both-tools",
+      "prompt": "リリースノートを書くときの手順、毎回同じことを説明してるからスキルにまとめたい。俺は Claude Code と Codex を行ったり来たりしながら作業してるから、どっちで開いても同じように出てきてほしい。他所に配る気はなくて、このリポジトリの中だけで使えればいい。",
+      "expected_output": "実体が .agents/skills/<name>/SKILL.md に置かれ、.claude/skills/<name> がそこへの symlink になる。plugin.json 等のマニフェストは作られない。",
+      "files": [],
+      "expectations": [
+        "実体の SKILL.md が .agents/skills/<name>/ にある",
+        ".claude/skills/<name> がシンボリックリンクとして存在する",
+        "その symlink が .agents/skills/<name> に解決される",
+        "symlink が相対パスで張られている(絶対パスは他マシンで壊れる)",
+        "配布用マニフェストを作っていない(リポジトリ限定なので不要)",
+        "SKILL.md の frontmatter が YAML 妥当かつ標準6フィールド以内"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "distributed-plugin",
+      "prompt": "commit-lint っていうスキルを作りたい。コミットメッセージの規約をチェックする内容で、これは他のリポジトリでも使いたいから marketplace 経由で配れるプラグインの形にして。Claude Code と Codex 両方で使う。",
+      "expected_output": "plugins/<name>/ に3つのマニフェスト(ルート plugin.json、.claude-plugin/plugin.json、.codex-plugin/plugin.json)と skills/<name>/SKILL.md。.codex-plugin 側は skills のパスを明示。",
+      "files": [],
+      "expectations": [
+        "ルート直下の標準 plugin.json がある(Cursor / Copilot 向け)",
+        ".claude-plugin/plugin.json がある(Claude Code 用)",
+        ".codex-plugin/plugin.json があり skills のパスが明示されている",
+        "skills/<name>/SKILL.md がある",
+        "3つのマニフェストで name / version / description が一致している",
+        "SKILL.md の frontmatter が YAML 妥当かつ標準6フィールド以内"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "repo-local-no-codex-mention",
+      "prompt": "DB マイグレーションを追加するときの手順をスキルにしておきたい。チームの他のメンバーも同じリポジトリで作業するから、リポジトリにコミットして共有したい。",
+      "expected_output": "配布用プラグインにはせず、リポジトリ内のスキルとして置く。ツールをまたいで届く配置(.agents/skills/ を実体にして .claude/skills/ から symlink)を選び、その理由を説明する。",
+      "files": [],
+      "expectations": [
+        "実体の SKILL.md が .agents/skills/<name>/ にある",
+        ".claude/skills/<name> がシンボリックリンクとして存在する",
+        "その symlink が .agents/skills/<name> に解決される",
+        "symlink が相対パスで張られている(絶対パスは他マシンで壊れる)",
+        "配布用マニフェストを作っていない(リポジトリ限定なので不要)",
+        "SKILL.md の frontmatter が YAML 妥当かつ標準6フィールド以内"
+      ]
+    }
+  ]
+}

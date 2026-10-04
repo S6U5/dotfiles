@@ -26,8 +26,11 @@ Marketplace をまだ登録していない場合は、先に [../README.md](../R
 
 - **`agent-plugin-init`**(呼び出しは `/agent-interop:agent-plugin-init`)— Claude Code・Codex・
   Agent Plugins 標準の3形式に届くプラグインを作る。共有できるのは `skills/` だけで、マニフェストは
-  3つとも要る、という前提から置き場所を決める判断が本体。新規作成だけでなく、既存プラグインへの
-  機能追加や新しい規格への移行にも使う。
+  3つとも要る、という前提から置き場所を決める判断が本体。**そもそもプラグインにするかどうか**から
+  扱う。リポジトリの中だけで使うスキルにマニフェストは要らず、実体を `.agents/skills/` に置いて
+  `.claude/skills/` から symlink を張れば両ツールに届く(Claude Code は `.agents/skills/` を読まず、
+  Codex は `.claude/skills/` を読まないため、片方だけに置くと静かに一方へしか届かない)。新規作成
+  だけでなく、既存プラグインへの機能追加や新しい規格への移行にも使う。
 
 どちらも状況に応じて自動で発動する(CLAUDE.md / AGENTS.md を作る場面、プラグインを作る場面)。
 

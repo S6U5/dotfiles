@@ -1,6 +1,6 @@
 ---
 name: agent-plugin-init
-description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one, as in "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
+description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one, as in "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. A repository-local skill still counts — it needs no manifest, but where its directory goes is the same decision, and the wrong one reaches a single tool just as quietly. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
 ---
 
 # Deciding what to share across agent plugin formats
@@ -15,6 +15,54 @@ Hooks, agents and rules fall outside both. Each tool decides those alone.
 **Neither Claude Code nor Codex reads the root `plugin.json`** — the two most likely targets are the two that sit outside the standard they helped write. Claude Code reads `.claude-plugin/plugin.json`; Codex requires `.codex-plugin/plugin.json` and, unlike Claude Code, does **not** discover `skills/` by convention, so the manifest has to name the path. Cursor and Copilot/VS Code do read the root manifest, which is why it still earns its place.
 
 So `skills/` is the only genuinely shared thing, and manifests are written once per tool.
+
+## Before the shape: is this a plugin at all?
+
+A skill used only inside one repository needs no manifest and no catalog. Both tools already read a
+skills directory straight out of the working tree — they just read **different** ones, and neither
+reads the other's.
+
+| | Project skills | Personal skills |
+|---|---|---|
+| Claude Code | `.claude/skills/<name>/SKILL.md`, in the startup directory and every parent up to the repo root | `~/.claude/skills/` |
+| Codex | `.agents/skills/<name>/SKILL.md` in `$CWD`, each parent, and `$REPO_ROOT` — **and `.codex/skills/`, which works but is undocumented** | `~/.agents/skills/` |
+
+All of that is measured rather than assumed, including the negatives: Claude Code reads neither of
+Codex's directories, Codex does not read Claude Code's, and both follow a symlinked skill directory
+(`references/measurements.md`).
+
+So Codex reading two locations gives you a choice, while Claude Code reading one makes a link
+unavoidable. Put the real directory in `.agents/skills/` — the neutral location, owned by no tool —
+and let the tool-specific path be the link:
+
+```sh
+mkdir -p .agents/skills/<name>
+ln -sfn ../../.agents/skills/<name> .claude/skills/<name>
+git add .agents/skills/<name> .claude/skills/<name>
+```
+
+Claude Code loads a target reachable from two locations only once, so nothing is read twice, and
+Codex needs no configuration at all — the symlink is the part Claude Code requires. **Commit it.**
+An ignored symlink is a skill that silently exists for one tool only, and the machine that authored
+it is the one place that never notices.
+
+Anchoring the real directory in `.codex/skills/` and linking from `.claude/skills/` also reaches
+both tools today. It leaves a layout that says Codex is the home tool, though — an odd thing for the
+third tool to arrive into, and it rests on the undocumented half of Codex's behaviour. Same for a
+plain `skills/` at the root with two links: it works, and it costs a second link forever, because
+the real directory sits somewhere no tool looks.
+
+Two failure directions, both worth checking before committing:
+
+- a real directory at `.claude/skills/<name>` — reaches Claude Code alone
+- `.agents/skills/<name>` with no symlink beside it — reaches Codex alone
+
+**Claude Code's `skill-creator` writes to `.claude/skills/`**, so a skill authored with it starts in
+the first of those states. Move it and link it back as part of finishing, not later.
+
+Reach for `plugins/<name>/` only when the skill is meant to leave the repository. Manifests and
+catalog entries buy distribution and nothing else; a skill that never leaves pays their maintenance
+for no return.
 
 ## The shape that reaches every tool
 
@@ -35,12 +83,14 @@ Three manifests is not duplication — each is read by a different tool, and col
 
 ## Creating one from scratch
 
-1. Pick a name — check it against built-in commands and existing skills before anything else.
-2. Lay out the shape above.
-3. Write the three manifests, keeping `name`, `version` and `description` identical.
-4. Write `skills/<skill>/SKILL.md`, keeping the frontmatter to the spec's six fields (below). Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
-5. Add an entry to each catalog the plugin should appear in.
-6. Verify (below) before calling it done.
+1. Settle whether it leaves the repository at all (above). If it does not, the symlink is the
+   whole task — stop there.
+2. Pick a name — check it against built-in commands and existing skills before anything else.
+3. Lay out the shape above.
+4. Write the three manifests, keeping `name`, `version` and `description` identical.
+5. Write `skills/<skill>/SKILL.md`, keeping the frontmatter to the spec's six fields (below). Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
+6. Add an entry to each catalog the plugin should appear in.
+7. Verify (below) before calling it done.
 
 Everything below is the reasoning behind those steps — read it when a decision is not obvious.
 
