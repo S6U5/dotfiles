@@ -173,6 +173,22 @@ changes the system prompt, tool restrictions and model for the whole session. Le
 
 ## Neutral directory
 
-Gemini CLI ships a `~/.agents/skills/` alias and states the reason as interoperability between AI
-tools. Codex uses `.agents/plugins/marketplace.json` for its catalog. `.agents/` is settling in as
-the neutral location.
+`.agents/` is settling in as the neutral location, and by now it holds more than a catalog.
+
+| Path | Used by |
+|---|---|
+| `<repo>/.agents/plugins/marketplace.json` | Codex, repo/team catalog (personal: `~/.agents/plugins/marketplace.json`) |
+| `<repo>/.agents/skills/<name>/` | Codex project skills — `$CWD`, each parent, and `$REPO_ROOT` |
+| `~/.agents/skills/<name>/` | Codex personal skills; Gemini CLI ships the same path as an alias, stating interoperability between AI tools as the reason |
+
+Codex also reads a repository's `.codex/skills/`, which none of its documentation mentions —
+measured, so treat it as behaviour rather than a promise.
+
+**Claude Code reads none of these.** Its skills come from `.claude/skills/` (the startup directory
+and every parent up to the repo root), `~/.claude/skills/`, each `--add-dir` directory, and plugins.
+Codex correspondingly does not read `.claude/skills/`.
+
+Since both follow symlinks, a repository-local skill lives once in `.agents/skills/<name>/` with
+`.claude/skills/<name>` linked at it. Claude Code documents that a target reachable from two of its
+locations loads once, so the link costs nothing beyond the file. See `measurements.md` for what was
+verified and what rests on documentation.

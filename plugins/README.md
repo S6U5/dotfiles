@@ -25,7 +25,7 @@
 |------|------------|------|-------------|-------|
 | [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ |
 | [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ |
-| | `agent-plugin-init` | Claude Code / Codex / 標準の3形式に届くプラグインを作る(共通化の範囲を判断して実装) | ○ | ○ |
+| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ |
 
 ## セットアップ
 

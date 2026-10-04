@@ -6,6 +6,48 @@ Taken 2026-09 against Claude Code (bundled version), Codex CLI 0.152.1, and Agen
 re-run them before trusting the guidance — and update SKILL.md if a result moved. That is the
 maintenance path for a 2.0.
 
+## Where a skill outside a plugin is discovered
+
+Taken 2026-09 against Codex CLI 0.153.0 and Claude Code, for the case where a `SKILL.md` sits in a
+repository with no manifest around it. Three marker skills were placed in one throwaway repository —
+one in `.agents/skills/`, one in `.codex/skills/`, one reached through a symlink — and each tool was
+asked to list the skill names it could see.
+
+| Tool | Locations |
+|---|---|
+| Claude Code | `.claude/skills/<name>/SKILL.md` in the startup directory and every parent up to the repo root; `~/.claude/skills/`; `.claude/skills/` inside each `--add-dir` directory; nested `.claude/skills/` below the startup directory, loaded lazily the first time a file in that subtree is read |
+| Codex | `$CWD/.agents/skills`, each parent, `$REPO_ROOT/.agents/skills`, `~/.agents/skills`, `/etc/codex/skills` |
+
+**Neither reads the other's.** `.agents/skills/` does not appear anywhere in Claude Code's documented
+locations, and `.codex/skills/` does not appear in Codex's.
+
+Symlinks are followed by both. Claude Code documents it for a `<skill-name>` entry in the
+enterprise, personal and project locations, and adds that a target reachable from more than one
+location loads once rather than twice. Codex documents that it follows the symlink target when
+scanning. So one real directory under `.agents/skills/` plus a link at `.claude/skills/<name>`
+reaches both, with no duplicate load.
+
+| Marker | Placed at | Codex saw it | Claude Code saw it |
+|---|---|---|---|
+| `probe-alpha` | `.agents/skills/probe-alpha/` (real directory) | yes | **no** |
+| `probe-beta` | `.codex/skills/probe-beta/` (real directory) | **yes — undocumented** | no |
+| `probe-gamma` | `.agents/skills/probe-gamma` → `real/probe-gamma` (symlink) | yes | **no** |
+| `probe-alpha`, `probe-gamma` | additionally linked from `.claude/skills/` | — | **yes** |
+
+Two results were not what the documentation implies. **`.codex/skills/` in a repository works**,
+though Codex's published list of locations does not mention it — so a layout anchored there reaches
+both tools, and the reason to prefer `.agents/` is neutrality rather than function. And Claude Code
+saw nothing at all while `.claude/skills/` was empty, confirming the negative directly rather than
+by absence from a doc page.
+
+`.agents/skills` is also present as a literal string in the 0.153.0 binary
+(`strings "$(command -v codex)"`), alongside its `ext/skills/src/loader/` paths.
+`/etc/codex/skills` is **not** — the documentation names it, the binary does not carry it as a
+literal. It does not matter for the repository case, and it was not exercised.
+
+**What this does not establish:** whether `.codex/skills/` stays supported, since it is undocumented
+and therefore not a promise. Re-run the probe on a version bump.
+
 ## Claude Code ignores the root `plugin.json`
 
 The first line of `claude plugin validate` tells you which one it read:
