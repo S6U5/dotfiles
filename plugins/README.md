@@ -8,7 +8,7 @@
 
 | パス | 用途 |
 |------|------|
-| `.claude-plugin/marketplace.json` | Claude Code 用の目録 |
+| `.claude-plugin/marketplace.json` | Claude Code 用の目録(Copilot CLI もこれを読む) |
 | `.agents/plugins/marketplace.json` | Codex 用の目録(Codex で意味のあるものだけ載せる) |
 | `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Cursor / Copilot / VS Code / Antigravity / Kiro / Gemini ほか) |
 | `plugins/<名前>/.claude-plugin/plugin.json` | Claude Code 用(ルートの標準版を読まないため別に要る) |
@@ -21,13 +21,14 @@
 
 ## 収録プラグイン
 
-| 名前 | 収録スキル | 説明 | Claude Code | Codex | Antigravity | Cursor |
-|------|------------|------|-------------|-------|-------------|--------|
-| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ | ○ | ○\* |
-| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ | ○ | ○\* |
-| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ | ○ | ○\* |
+| 名前 | 収録スキル | 説明 | Claude Code | Codex | Copilot CLI / VS Code | Antigravity | Cursor |
+|------|------------|------|-------------|-------|-----------------------|-------------|--------|
+| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ | ○\* | ○ | ○\* |
+| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ | ○\* | ○ | ○\* |
+| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ | ○\* | ○ | ○\* |
 
-\* Cursor は公式ドキュメント(標準形式のプラグインはそのまま読める)に基づく。実機では未検証。
+\* 公式ドキュメントに基づく。実機では未検証(Copilot CLI は `.claude-plugin/marketplace.json` を目録として読み、
+VS Code は Copilot CLI で導入したものを読む。Cursor は標準形式のプラグインをそのまま読む)。
 
 ## セットアップ
 
@@ -43,6 +44,9 @@ claude plugin marketplace add S6U5/dotfiles --sparse .claude-plugin plugins
 
 # Codex
 codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
+
+# Copilot CLI(VS Code は Copilot CLI で入れたものを自動で読む)
+copilot plugin marketplace add S6U5/dotfiles
 ```
 
 **プラグイン自体を編集しているときはローカルパスで登録する**(GitHub 経由だと push するまで
@@ -52,6 +56,7 @@ codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
 /plugin marketplace add ./path/to/dotfiles      # Claude Code、セッション内から
 claude plugin marketplace add ./path/to/dotfiles # Claude Code、シェルから
 codex plugin marketplace add ./path/to/dotfiles  # Codex
+copilot plugin marketplace add ./path/to/dotfiles # Copilot CLI
 ```
 
 ローカルパスの場合、Claude Code には `.claude-plugin/marketplace.json` を含むディレクトリか、
@@ -94,10 +99,11 @@ ln -s "$PWD/plugins/agent-interop" ~/.gemini/config/plugins/agent-interop
 ### まとめてやる
 
 `agent-plugins-setup`(`home/.local/bin/`)が、以下をまとめて行う。何度実行しても安全。
-対象はその環境に入っているエージェントだけ(Claude Code / Codex / Antigravity / Cursor。無いものはスキップ)。
+対象はその環境に入っているエージェントだけ(Claude Code / Codex / Copilot CLI / Antigravity / Cursor。無いものはスキップ)。
 
 - Marketplace の登録(未登録なら)と更新
 - 未導入のプラグインの導入(Antigravity / Cursor はシンボリックリンクを張る。既にある別物は上書きしない)
+- Copilot CLI の導入済みプラグインの更新(導入がコピーのため、`copilot plugin update` で追従させる)
 - 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの・リンク)
 
 ```sh

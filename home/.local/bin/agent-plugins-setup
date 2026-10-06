@@ -1,5 +1,5 @@
 #!/bin/sh
-# このリポジトリのプラグインを Claude Code / Codex / Antigravity / Cursor に登録・導入する。
+# このリポジトリのプラグインを Claude Code / Codex / Copilot CLI(VS Code)/ Antigravity / Cursor に登録・導入する。
 #
 # 明示実行のみ。home-manager switch では走らない(プラグインはエージェントの挙動を
 # 変えるため、意図しないタイミングで増減しないようにしている)。
@@ -120,6 +120,40 @@ else
 fi
 echo
 
+# --- Copilot CLI ---
+# .claude-plugin/marketplace.json をそのまま目録として読む(公式ドキュメント。実機では未検証)。
+# 導入先は ~/.copilot/installed-plugins/<目録名>/<名前>/ で、VS Code もここを自動で読む。
+# 導入はコピーになるため、導入済みのものは plugin update で追従させる。
+# 未検証のため、失敗しても警告して先へ進む。
+copilot_installed="$HOME/.copilot/installed-plugins/$marketplace"
+if command -v copilot >/dev/null 2>&1; then
+  echo "[Copilot CLI](VS Code にも反映)"
+  if copilot plugin marketplace list 2>/dev/null | grep -q "$marketplace"; then
+    echo "  Marketplace 登録済み。更新します"
+    copilot plugin marketplace update "$marketplace" >/dev/null 2>&1 ||
+      echo "  警告: 更新に失敗しました(手動で確認してください)" >&2
+  else
+    echo "  Marketplace を登録します"
+    copilot plugin marketplace add "$repo" >/dev/null 2>&1 ||
+      echo "  警告: 登録に失敗しました(手動で確認してください)" >&2
+  fi
+
+  for p in $plugins; do
+    if [ -d "$copilot_installed/$p" ]; then
+      echo "  $p: 導入済み。更新します(有効/無効はそのまま)"
+      copilot plugin update "$p" >/dev/null 2>&1 ||
+        echo "  警告: $p の更新に失敗しました(手動で確認してください)" >&2
+    else
+      echo "  $p: 導入します"
+      copilot plugin install "$p@$marketplace" >/dev/null 2>&1 ||
+        echo "  警告: $p の導入に失敗しました(手動で確認してください)" >&2
+    fi
+  done
+else
+  echo "[Copilot CLI] copilot が見つかりません。スキップします"
+fi
+echo
+
 # --- 目録を経由しないエージェント(Antigravity / Cursor) ---
 # どちらも決まったディレクトリに置いたプラグインのルート直下 plugin.json を直接読む。
 # リポジトリへのシンボリックリンクを張れば、編集がそのまま反映される。
@@ -208,7 +242,18 @@ for l in "$agy_plugins"/* "$cursor_plugins"/*; do
   fi
 done
 
+# 4. Copilot CLI に導入済みなのに plugins/ に無いもの。
+for d in "$copilot_installed"/*/; do
+  [ -d "$d" ] || continue
+  p=$(basename "$d")
+  if [ ! -d "$repo/plugins/$p" ]; then
+    echo "  ! Copilot CLI の $p@$marketplace は導入済みですが plugins/ にありません(改名や削除の取り残し)。"
+    echo "    不要なら: copilot plugin uninstall $p"
+    found=1
+  fi
+done
+
 [ "$found" -eq 0 ] && echo "  取り残しは見つかりませんでした"
 echo
 echo "完了しました。有効/無効の切り替えはこのコマンドでは触りません"
-echo "(Claude Code: /plugin、Codex: config.toml の enabled)。"
+echo "(Claude Code: /plugin、Codex: config.toml の enabled、Copilot CLI: copilot plugin enable/disable)。"

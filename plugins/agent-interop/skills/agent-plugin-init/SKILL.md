@@ -12,7 +12,7 @@ description: Create an agent plugin that reaches Claude Code, Codex and the Agen
 
 Hooks, agents and rules fall outside both. Each tool decides those alone.
 
-**Neither Claude Code nor Codex reads the root `plugin.json`** — the two most likely targets are the two that sit outside the standard they helped write. Claude Code reads `.claude-plugin/plugin.json`; Codex requires `.codex-plugin/plugin.json` and, unlike Claude Code, does **not** discover `skills/` by convention, so the manifest has to name the path. Cursor and Copilot/VS Code do read the root manifest, which is why it still earns its place.
+**Neither Claude Code nor Codex reads the root `plugin.json`** — the two most likely targets are the two that sit outside the standard they helped write. Claude Code reads `.claude-plugin/plugin.json`; Codex requires `.codex-plugin/plugin.json` and, unlike Claude Code, does **not** discover `skills/` by convention, so the manifest has to name the path. Cursor, Copilot CLI / VS Code and Antigravity do read the root manifest, which is why it still earns its place.
 
 So `skills/` is the only genuinely shared thing, and manifests are written once per tool.
 
@@ -68,7 +68,7 @@ for no return.
 
 ```
 plugins/<name>/
-├── plugin.json                    ← standard: Cursor, Copilot/VS Code (confirmed); other conformant clients
+├── plugin.json                    ← standard: Cursor, Copilot CLI/VS Code, Antigravity (confirmed); other conformant clients
 ├── .claude-plugin/plugin.json     ← Claude Code
 ├── .codex-plugin/plugin.json      ← Codex; needs "skills": "./skills/" spelled out
 ├── README.md

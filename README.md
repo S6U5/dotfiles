@@ -118,7 +118,7 @@ chsh -s "$(which zsh)"
 自体を Nix 管理下に置いていない理由は
 [`docs/decisions/login-shell.md`](docs/decisions/login-shell.md) にあります。
 
-**6. エージェント用プラグインを入れる**(Claude Code / Codex / Antigravity / Cursor を使う場合)
+**6. エージェント用プラグインを入れる**(Claude Code / Codex / Copilot CLI・VS Code / Antigravity / Cursor を使う場合)
 
 同梱プラグインは home-manager では配られません(Marketplace 経由で各ツールに登録します)。
 まとめて導入するコマンドがあります。
@@ -336,7 +336,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `wsl-font-setup` | WSL 内の JetBrainsMono Nerd Font を Windows 側にユーザーフォントとしてインストール |
 | `wsl-supplychain-setup` | サプライチェーン対策設定(npm / pnpm / uv)を Windows 側の標準パスへコピー(WSL 用。詳細は[セットアップの詳細](#セットアップの詳細)参照) |
-| `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex / Antigravity / Cursor のうち入っているものへ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
+| `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex / Copilot CLI / Antigravity / Cursor のうち入っているものへ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
@@ -365,6 +365,10 @@ claude plugin install agent-interop@s6u5-dotfiles
 # Codex
 codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
 codex plugin add agent-interop@s6u5-dotfiles
+
+# Copilot CLI(Claude Code と同じ目録を読む。VS Code は Copilot CLI で入れたものを自動で読む。未検証)
+copilot plugin marketplace add S6U5/dotfiles
+copilot plugin install agent-interop@s6u5-dotfiles
 ```
 
 Cursor は目録を経由せず `~/.cursor/plugins/local/` を直接読むため、シンボリックリンクを張ります。

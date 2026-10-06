@@ -4,14 +4,18 @@ Read when adding support for a new tool, or when you suspect a name collision.
 
 ## Layout by tool
 
-| | Agent Plugins standard | Claude Code | Codex | Gemini CLI |
+| | Agent Plugins standard | Claude Code | Codex | Antigravity |
 |---|---|---|---|---|
-| Manifest | `plugin.json` | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | `plugin.json` (required marker) |
+| Manifest | `plugin.json` | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | `plugin.json` (only `name` required) |
 | Skills | `skills/` | `skills/` (by convention) | path named in the manifest | `skills/` |
-| MCP | `mcp.json` | `.mcp.json` | `mcpServers` in the manifest | `mcp_config.json` |
-| Hooks | (not covered) | `hooks/hooks.json` | `hooks/hooks.json` (auto-detected) | `hooks.json` |
-| Agents | (not covered) | `agents/*.md` | `~/.codex/agents/*.toml`, **not loadable from a plugin** | `agents/` (subagent templates) |
-| Rules | (not covered) | `.claude/rules/` | — | `rules/` |
+| MCP | `mcp.json` | `.mcp.json` | `mcpServers` in the manifest | packaged; shape unchecked |
+| Hooks | (not covered) | `hooks/hooks.json` | `hooks/hooks.json` (auto-detected) | packaged; shape unchecked |
+| Agents | (not covered) | `agents/*.md` | `~/.codex/agents/*.toml`, **not loadable from a plugin** | CLI only; shape unchecked |
+| Rules | (not covered) | `.claude/rules/` | — | packaged; shape unchecked |
+
+Gemini CLI is no longer listed: Google stopped serving it for free and Google AI Pro / Ultra use on
+2026-06-18 and moved those users to Antigravity CLI (`agy`), a separate rewrite. Its layout does not
+carry over, so do not target it.
 
 **Codex does not discover components by convention.** Its manifest names the paths:
 `"skills": "./skills/"`, `"mcpServers": "./.mcp.json"`, `"hooks": "./hooks/hooks.json"`. Paths are
@@ -38,10 +42,12 @@ The standard says nothing about hooks, so this compatibility is incidental and c
 | Tool | Reads it | How this was established |
 |---|---|---|
 | Cursor | yes | documented: "a plugin that follows the Agent Plugins specification loads in Cursor without changes" |
-| Copilot / VS Code | yes | documented layout uses the root manifest plus `com.github.copilot/` |
+| Copilot CLI | yes | documented: root `plugin.json` is searched first, ahead of `.github/plugin/` and `.claude-plugin/` |
+| VS Code | yes | documented: a `$schema` pointing at Agent Plugins 1.0 selects that format; `.claude-plugin/plugin.json` is also detected |
+| Antigravity | yes | measured: the standard manifest, extra fields included, passes `agy plugin validate` and its skills load |
 | Claude Code | no | measured |
 | Codex | no | documented: `.codex-plugin/plugin.json` is required |
-| Kiro, Gemini, ChatGPT | unverified | listed as launch clients; not checked directly |
+| Kiro, ChatGPT | unverified | listed as launch clients; not checked directly |
 
 Cursor also has its own `.cursor-plugin/plugin.json`, but that is for Cursor-specific components
 (rules, agents, commands, hooks, variables, its own `mcpServers` shape) — not a sign that the root
@@ -54,6 +60,9 @@ manifest is ignored. Google's `chrome-devtools-mcp` ships both for exactly that 
 | Claude Code | catalog at `.claude-plugin/marketplace.json`, then `plugin install` |
 | Codex | repo catalog at `$REPO_ROOT/.agents/plugins/marketplace.json` (personal: `~/.agents/plugins/marketplace.json`), then `plugin add` |
 | Cursor | **no catalog** — reads whatever sits in `~/.cursor/plugins/local/`, so a symlink is the install step |
+| Copilot CLI | catalog at `marketplace.json`, `.plugin/`, `.github/plugin/` or **`.claude-plugin/marketplace.json`** (searched in that order), so Claude Code's catalog serves it unchanged; `plugin install` **copies** into `~/.copilot/installed-plugins/<marketplace>/<name>/`, so follow edits with `plugin update` |
+| VS Code | picks up everything Copilot CLI installed; a local directory can also be registered in the `chat.pluginLocations` setting |
+| Antigravity | **no catalog** — reads `~/.gemini/config/plugins/` (shared by Antigravity, its CLI and IDE). `agy plugin install <path>` **copies**, so edits stop reaching it; a symlink keeps them live (measured) |
 
 A root `plugin.json` therefore earns its place even with no catalog entry pointing at it: Cursor
 picks it up straight from that directory. Reload the window after linking.
@@ -77,13 +86,15 @@ subagent for security reasons.
 
 ## Where names collide
 
-`agents/` — Claude Code and Gemini CLI use the same directory for different things. The word also
+`agents/` — Claude Code and Gemini CLI used the same directory for different things (Antigravity CLI's custom agents are unchecked). The word also
 appears in `agents/openai.yaml` inside a skill (Codex's sidecar), so `agents` names three unrelated
 concepts.
 
-`plugin.json` — Gemini treats it as a required package marker, a role separate from the standard's.
+`.agents/plugins/` — Codex reads a catalog file there, and Antigravity treats the same directory in a
+workspace as a folder of plugins. A `marketplace.json` file sitting there was measured to be ignored by
+Antigravity, but do not put plugin directories next to it.
 
-MCP — four incompatible shapes across the standard, Claude Code, Codex and Gemini. They also tend to
+MCP — incompatible shapes across the standard, Claude Code, Codex and Gemini/Antigravity. They also tend to
 need API keys, which sits badly with a public repository. Keep MCP out of plugins.
 
 Copilot isolates its components under `com.github.copilot/`, so it never collides. The problem comes
@@ -179,7 +190,8 @@ changes the system prompt, tool restrictions and model for the whole session. Le
 |---|---|
 | `<repo>/.agents/plugins/marketplace.json` | Codex, repo/team catalog (personal: `~/.agents/plugins/marketplace.json`) |
 | `<repo>/.agents/skills/<name>/` | Codex project skills — `$CWD`, each parent, and `$REPO_ROOT` |
-| `~/.agents/skills/<name>/` | Codex personal skills; Gemini CLI ships the same path as an alias, stating interoperability between AI tools as the reason |
+| `~/.agents/skills/<name>/` | Codex personal skills (Gemini CLI also read it, as an alias for interoperability) |
+| `<workspace>/.agents/skills/`, `<workspace>/.agents/plugins/` | Antigravity workspace skills and plugins (reported; the plugins one collides with Codex's catalog location, see above) |
 
 Codex also reads a repository's `.codex/skills/`, which none of its documentation mentions —
 measured, so treat it as behaviour rather than a promise.
