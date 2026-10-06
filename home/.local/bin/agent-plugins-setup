@@ -1,5 +1,5 @@
 #!/bin/sh
-# このリポジトリのプラグインを Claude Code / Codex に登録・導入する。
+# このリポジトリのプラグインを Claude Code / Codex / Antigravity / Cursor に登録・導入する。
 #
 # 明示実行のみ。home-manager switch では走らない(プラグインはエージェントの挙動を
 # 変えるため、意図しないタイミングで増減しないようにしている)。
@@ -120,6 +120,49 @@ else
 fi
 echo
 
+# --- 目録を経由しないエージェント(Antigravity / Cursor) ---
+# どちらも決まったディレクトリに置いたプラグインのルート直下 plugin.json を直接読む。
+# リポジトリへのシンボリックリンクを張れば、編集がそのまま反映される。
+# 別のもの(コピーや手で置いたもの)があるときは上書きせず報告だけする。
+link_plugins() {
+  dir=$1
+  mkdir -p "$dir"
+  for p in $plugins; do
+    dest="$dir/$p"
+    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$repo/plugins/$p" ]; then
+      echo "  $p: 導入済み"
+    elif [ -e "$dest" ] || [ -L "$dest" ]; then
+      echo "  ! $p: $dest に別のものがあります。上書きしません"
+      echo "    (コピーで入れたものなら、退避してから再実行してください)"
+    else
+      echo "  $p: 導入します"
+      ln -s "$repo/plugins/$p" "$dest"
+    fi
+  done
+}
+
+# Antigravity / Antigravity CLI / IDE の三者共通の置き場。agy plugin install はコピーで
+# 導入するため使わない。IDE だけ入れて agy が無い環境もあるため、設定ディレクトリでも判定する。
+agy_plugins="$HOME/.gemini/config/plugins"
+if command -v agy >/dev/null 2>&1 || [ -d "$HOME/.gemini/antigravity" ]; then
+  echo "[Antigravity]"
+  link_plugins "$agy_plugins"
+else
+  echo "[Antigravity] 見つかりません。スキップします"
+fi
+echo
+
+# Cursor は ~/.cursor/plugins/local/ を読む(張ったあとは Reload Window が要る)。
+cursor_plugins="$HOME/.cursor/plugins/local"
+if command -v cursor >/dev/null 2>&1 || [ -d "$HOME/.cursor" ]; then
+  echo "[Cursor]"
+  link_plugins "$cursor_plugins"
+  echo "  反映には Cursor の再起動か Developer: Reload Window が必要です"
+else
+  echo "[Cursor] 見つかりません。スキップします"
+fi
+echo
+
 # --- 取り残しの検出(報告のみ。削除はしない) ---
 echo "[点検]"
 found=0
@@ -150,6 +193,20 @@ if command -v claude >/dev/null 2>&1; then
       fi
     done
 fi
+
+# 3. Antigravity / Cursor 側のリンク先が plugins/ から消えたもの。
+for l in "$agy_plugins"/* "$cursor_plugins"/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in
+    "$repo"/plugins/*) ;;
+    *) continue ;;
+  esac
+  if [ ! -e "$l" ]; then
+    echo "  ! $l のリンク先が plugins/ にありません(改名や削除の取り残し)。"
+    echo "    不要なら: rm '$l'"
+    found=1
+  fi
+done
 
 [ "$found" -eq 0 ] && echo "  取り残しは見つかりませんでした"
 echo

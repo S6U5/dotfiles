@@ -10,7 +10,7 @@
 |------|------|
 | `.claude-plugin/marketplace.json` | Claude Code 用の目録 |
 | `.agents/plugins/marketplace.json` | Codex 用の目録(Codex で意味のあるものだけ載せる) |
-| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Cursor / Copilot / VS Code / Kiro / Gemini ほか) |
+| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Cursor / Copilot / VS Code / Antigravity / Kiro / Gemini ほか) |
 | `plugins/<名前>/.claude-plugin/plugin.json` | Claude Code 用(ルートの標準版を読まないため別に要る) |
 | `plugins/<名前>/.codex-plugin/plugin.json` | Codex 用(同上。加えて `"skills": "./skills/"` のパス明示が要る) |
 | `plugins/<名前>/skills/<名前>/SKILL.md` | **スキル本体(全ツールで共有する唯一の実体)** |
@@ -21,11 +21,13 @@
 
 ## 収録プラグイン
 
-| 名前 | 収録スキル | 説明 | Claude Code | Codex |
-|------|------------|------|-------------|-------|
-| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ |
-| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ |
-| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ |
+| 名前 | 収録スキル | 説明 | Claude Code | Codex | Antigravity | Cursor |
+|------|------------|------|-------------|-------|-------------|--------|
+| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ | ○ | ○\* |
+| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ | ○ | ○\* |
+| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ | ○ | ○\* |
+
+\* Cursor は公式ドキュメント(標準形式のプラグインはそのまま読める)に基づく。実機では未検証。
 
 ## セットアップ
 
@@ -71,6 +73,16 @@ ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 
 張ったあと Cursor を再起動するか **Developer: Reload Window** を実行する。
 
+**Antigravity も目録を経由しない。** `~/.gemini/config/plugins/` に置いたものを直接読む
+(ルート直下の `plugin.json`。Antigravity / Antigravity CLI / IDE の三者共通の置き場)。
+`agy plugin install <パス>` は**コピー**で導入するため、リポジトリを編集しても反映されない。
+シンボリックリンクなら反映されるので、Cursor と同じくリンクを張る(判断根拠は
+[`../docs/decisions/antigravity-plugins.md`](../docs/decisions/antigravity-plugins.md))。
+
+```sh
+ln -s "$PWD/plugins/agent-interop" ~/.gemini/config/plugins/agent-interop
+```
+
 **WSL とネイティブ Windows は別々に登録する。** 別々にインストールしている以上、設定ディレクトリも
 別(WSL 内は `~/.claude` / `~/.codex`、Windows 側は `%USERPROFILE%\.claude` / `%USERPROFILE%\.codex`)
 なので、WSL 内で行った登録は Windows 側に届かない。Windows 側でも GitHub 経由で登録する
@@ -82,10 +94,11 @@ ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 ### まとめてやる
 
 `agent-plugins-setup`(`home/.local/bin/`)が、以下をまとめて行う。何度実行しても安全。
+対象はその環境に入っているエージェントだけ(Claude Code / Codex / Antigravity / Cursor。無いものはスキップ)。
 
 - Marketplace の登録(未登録なら)と更新
-- 未導入のプラグインの導入
-- 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの)
+- 未導入のプラグインの導入(Antigravity / Cursor はシンボリックリンクを張る。既にある別物は上書きしない)
+- 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの・リンク)
 
 ```sh
 agent-plugins-setup             # plugins/ 配下すべて

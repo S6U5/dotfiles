@@ -118,7 +118,7 @@ chsh -s "$(which zsh)"
 自体を Nix 管理下に置いていない理由は
 [`docs/decisions/login-shell.md`](docs/decisions/login-shell.md) にあります。
 
-**6. エージェント用プラグインを入れる**(Claude Code / Codex を使う場合)
+**6. エージェント用プラグインを入れる**(Claude Code / Codex / Antigravity / Cursor を使う場合)
 
 同梱プラグインは home-manager では配られません(Marketplace 経由で各ツールに登録します)。
 まとめて導入するコマンドがあります。
@@ -336,7 +336,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `wsl-font-setup` | WSL 内の JetBrainsMono Nerd Font を Windows 側にユーザーフォントとしてインストール |
 | `wsl-supplychain-setup` | サプライチェーン対策設定(npm / pnpm / uv)を Windows 側の標準パスへコピー(WSL 用。詳細は[セットアップの詳細](#セットアップの詳細)参照) |
-| `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex へ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
+| `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex / Antigravity / Cursor のうち入っているものへ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
 
@@ -346,7 +346,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 
 このリポジトリ自身が Claude Code / Codex の**ローカル Marketplace** になっていて、自作スキルを
 プラグインとして配ります。スキル本体(`SKILL.md`)は1つだけ持ち、Claude Code・Codex・Agent
-Plugins 標準に準拠したクライアント(Cursor / GitHub Copilot / VS Code など)のいずれからも同じ
+Plugins 標準に準拠したクライアント(Cursor / GitHub Copilot / VS Code / Antigravity など)のいずれからも同じ
 ものが読まれます。
 
 | プラグイン | 収録スキル | 内容 |
@@ -373,7 +373,15 @@ Cursor は目録を経由せず `~/.cursor/plugins/local/` を直接読むため
 ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 ```
 
+Antigravity も同様に `~/.gemini/config/plugins/` を直接読みます(`agy plugin install` はコピーになり
+リポジトリの編集が反映されないため、リンクを張ります。判断根拠は [`docs/decisions/antigravity-plugins.md`](docs/decisions/antigravity-plugins.md))。
+
+```sh
+ln -s "$PWD/plugins/agent-interop" ~/.gemini/config/plugins/agent-interop
+```
+
 複数マシンで使う場合や、`git pull` のあとに反映したい場合は、まとめて面倒を見るコマンドがあります。
+その環境に入っているエージェントだけを対象にします(無いものはスキップ。Cursor / Antigravity へのリンクもこれで張れます)。
 
 ```sh
 agent-plugins-setup             # 登録・更新・未導入分の導入・取り残しの点検
