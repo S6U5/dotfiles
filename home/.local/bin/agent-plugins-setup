@@ -108,7 +108,22 @@ if command -v codex >/dev/null 2>&1; then
     for p in $plugins; do
       # "not installed" にも installed が含まれるため、直後に来る語で判定する
       if echo "$installed" | grep -qE "^${p}@${marketplace}[[:space:]]+installed"; then
-        echo "  $p: 導入済み(有効/無効はそのまま)"
+        # Codex は導入時の中身を cache/<目録名>/<名前>/<バージョン>/ にコピーして読むため、
+        # リポジトリを更新しても反映されない。バージョンを上げずに直した場合もあるので、
+        # バージョンではなく中身を比べ、違えば入れ直す(有効/無効の状態は保たれる)。
+        fresh=0
+        for c in "${CODEX_HOME:-$HOME/.codex}/plugins/cache/$marketplace/$p"/*/; do
+          [ -d "$c" ] || continue
+          if diff -rq "$c" "$repo/plugins/$p" >/dev/null 2>&1; then
+            fresh=1
+          fi
+        done
+        if [ "$fresh" -eq 1 ]; then
+          echo "  $p: 導入済み(有効/無効はそのまま)"
+        else
+          echo "  $p: 導入済み。中身が古いため入れ直します(有効/無効はそのまま)"
+          codex plugin add "$p@$marketplace" >/dev/null
+        fi
       else
         echo "  $p: 導入します"
         codex plugin add "$p@$marketplace" >/dev/null

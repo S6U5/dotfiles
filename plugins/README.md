@@ -103,6 +103,8 @@ ln -s "$PWD/plugins/agent-interop" ~/.gemini/config/plugins/agent-interop
 
 - Marketplace の登録(未登録なら)と更新
 - 未導入のプラグインの導入(Antigravity / Cursor はシンボリックリンクを張る。既にある別物は上書きしない)
+- Codex の導入済みプラグインの更新(導入時の中身をコピーして読むため、リポジトリと中身が違えば入れ直す。
+  バージョンを上げずに直した場合も拾えるよう、バージョンではなく中身で比べる)
 - Copilot CLI の導入済みプラグインの更新(導入がコピーのため、`copilot plugin update` で追従させる)
 - 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの・リンク)
 
