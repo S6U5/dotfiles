@@ -1,7 +1,7 @@
 {
   "name": "agent-interop",
   "displayName": "Agent Interop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Keep instructions and plugins shared across multiple coding agents.",
   "author": {
     "name": "S6U5"
