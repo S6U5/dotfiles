@@ -324,6 +324,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `arduino [ファイル]` | Arduino IDE で開く(Linux に本物の arduino コマンドがあればそちらを優先) |
 | `ov [名前]` | Obsidian を vault 指定で起動 |
 | `explorer [パス]` | ファイルマネージャで開く(WSL: エクスプローラー / macOS: Finder / Linux: xdg-open) |
+| `wsl-browser <URL\|ファイル>` | Windows 側の既定ブラウザで開く(WSL 用)。WSL では `BROWSER` と xdg-open の URL・HTML の既定アプリがこれに向くため、ツールが開くページも WSL 内のブラウザではなく Windows 側で開く(判断根拠は [`docs/decisions/wsl-browser.md`](docs/decisions/wsl-browser.md)) |
 
 ### ユーティリティ
 
