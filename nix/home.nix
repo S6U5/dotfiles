@@ -144,6 +144,27 @@ in
     fi
   '');
 
+  # WSL: xdg-open で開く URL・HTML を、WSL 内のブラウザではなく Windows 側の既定ブラウザ
+  # (home/.local/bin/wsl-browser)へ回す。xdg-open は BROWSER より x-scheme-handler の既定アプリを
+  # 優先するため、BROWSER(os/wsl.sh)だけでは WSL 内の Chrome 等が開いてしまう。
+  # .desktop は Exec に絶対パスが要るため home/ ではなくここで生成する(dotfiles 管理外の実ファイル)。
+  # 既定アプリの登録先 ~/.config/mimeapps.list もブラウザ自身が書き換えるファイルなので管理外のまま
+  # xdg-mime で書き込む(WSL 内のブラウザが既定を奪い返しても、次の switch で戻る)。
+  # WSL かどうかはビルド時に分からないため、Linux 全般で生成して実行時に判定する。
+  home.activation.dotfilesWslBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.isLinux ''
+    if { [ -n "''${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; } \
+      && command -v xdg-mime >/dev/null 2>&1; then
+      _dotfiles_desktop="$HOME/.local/share/applications/dotfiles-wsl-browser.desktop"
+      $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_desktop")"
+      $DRY_RUN_CMD sh -c 'printf "%s\n" "[Desktop Entry]" "Type=Application" "Name=Windows Browser (WSL)" "Exec=$1 %u" "NoDisplay=true" "MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;" > "$2"' \
+        _ "$HOME/.local/bin/wsl-browser" "$_dotfiles_desktop"
+      for _dotfiles_mime in x-scheme-handler/http x-scheme-handler/https text/html; do
+        $DRY_RUN_CMD xdg-mime default dotfiles-wsl-browser.desktop "$_dotfiles_mime"
+      done
+      $VERBOSE_ECHO "dotfiles: xdg-open の URL・HTML を Windows 側の既定ブラウザ(wsl-browser)に向けました"
+    fi
+  '');
+
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
   # 設定ファイルの生成元をどこにするかとログインシェル本体は独立した話)。
