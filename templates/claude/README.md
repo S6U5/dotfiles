@@ -28,11 +28,14 @@ cp templates/claude/commands/*.md ~/.claude/commands/
   `~/.config/shell/local.sh`(git 管理外)の環境変数か `apiKeyHelper` 方式を使う。
 - マシン固有の設定はコピー先でのみ変更する。全マシンに効かせたい変更は
   この雛形に反映してコミットする(その際キー・個人情報が混ざっていないか全文確認)。
-- **コミット・PR の帰属表示は無効化してある**(`attribution.commit` / `attribution.pr` を空文字)。
-  既定では Claude Code がコミットに `Co-Authored-By: Claude` 行、PR 本文に「Generated with Claude Code」を付けるが、
-  作業文脈を公開リポジトリに残さないため雛形で消している(旧設定 `includeCoAuthoredBy` は非推奨)。
-  クラウドセッション(claude.ai/code)は環境側の指示で `Claude-Session:` 行を足してくることがあるので、
-  リポジトリ側のルール(AGENTS.md)や PR 作成前のチェックでも防ぐ
+- **コミット・PR の帰属表示は無効化してある**。`attribution.commit` / `attribution.pr` を空文字にして
+  `Co-Authored-By: Claude` 行と「Generated with Claude Code」を消し、`attribution.sessionUrl` を `false` にして
+  クラウド・Remote Control セッションで付く `Claude-Session:` 行と PR 本文のセッションリンクを消す
+  (`commit` を空にしてもセッションリンクは消えない)。作業文脈を公開リポジトリに残さないため。
+  `"attribution": false` でも全部消せるが、v2.1.281 未満は設定ファイルごと読み飛ばすため個別指定にしている。
+  旧設定 `includeCoAuthoredBy` は非推奨
+- クラウドセッション(claude.ai/code)は `~/.claude/settings.json` を読まないため、同じ設定をリポジトリの
+  `.claude/settings.json` にも置いている(このリポジトリ用。他のリポジトリでも消したければ同様に置く)
 - 通知フックはクロスプラットフォームの `notify` コマンド(`home/.local/bin/notify`)
   経由なので、macOS / WSL / Linux のどこでも動く。
 
