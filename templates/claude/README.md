@@ -36,6 +36,12 @@ cp templates/claude/commands/*.md ~/.claude/commands/
   旧設定 `includeCoAuthoredBy` は非推奨
 - クラウドセッション(claude.ai/code)は `~/.claude/settings.json` を読まないため、同じ設定をリポジトリの
   `.claude/settings.json` にも置いている(このリポジトリ用。他のリポジトリでも消したければ同様に置く)
+- **資格情報ファイルの読み取りを `permissions.deny` の `Read(...)` で禁止している**(SSH 鍵、`.env`、`~/.config/shell/local.sh`、
+  Git/gh の認証、各パッケージマネージャの認証ファイル(npm / yarn / bun / pip / uv / poetry / conda / cargo / gem /
+  composer / NuGet / Maven / Gradle / pub / Nix)、Docker・クラウド CLI・kubeconfig、GnuPG、AI エージェントの認証情報)。
+  `Read` の deny は Read / Grep / Glob に効き、sandbox を有効にすると Bash 用の読み取り禁止リストにも自動で合流する
+  (`cat .env` のような Bash 経由の読み取りまで止めるには sandbox が要る)。判断根拠は `docs/decisions/claude-secret-read-guard.md`。
+  対象を増やすときは、資格情報を書き込むファイルだけを足す(dotfiles 配布の設定ファイルを丸ごと塞がない)
 - 通知フックはクロスプラットフォームの `notify` コマンド(`home/.local/bin/notify`)
   経由なので、macOS / WSL / Linux のどこでも動く。
 
