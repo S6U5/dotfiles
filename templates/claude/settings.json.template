@@ -3,7 +3,8 @@
   "cleanupPeriodDays": 30,
   "attribution": {
     "commit": "",
-    "pr": ""
+    "pr": "",
+    "sessionUrl": false
   },
   "env": {
     "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1"

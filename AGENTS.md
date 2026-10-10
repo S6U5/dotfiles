@@ -137,7 +137,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - main は直push禁止・PR経由必須のブランチ保護を設定する(admin である自分への強制はしない。緊急時の直push退路を残すため)。CI(lint / home-manager-test / gitleaks)を required status check にする。個人リポジトリのためレビュー必須化はしない。
 - 外部からの Pull Request は受け付けない(GitHub の `pull_request_creation_policy` を `collaborators_only` にして技術的に制限する)。Issue は受け付ける。
 - 上記はいずれも GitHub の実設定として**設定済み**(公開への切り替え時に実施。main の branch protection は required status checks = lint / gitleaks / home-manager-test ×2、`pull_request_creation_policy` は `collaborators_only`)。判断の詳細は `docs/decisions/oss-publish-plan.md` 参照。
-- コミットメッセージ・PR 本文に、Claude Code のセッション URL(`Claude-Session:` 行)や `Co-authored-by: Claude` 行、「Generated with Claude Code」等のフッターを**含めない**(作業文脈を残さない方針の一環。公開後に混入が発覚し、履歴書き換えで除去した経緯がある)。
+- コミットメッセージ・PR 本文に、Claude Code のセッション URL(`Claude-Session:` 行)や `Co-authored-by: Claude` 行、「Generated with Claude Code」等のフッターを**含めない**(作業文脈を残さない方針の一環。公開後に混入が発覚し、履歴書き換えで除去した経緯がある)。設定でも抑止する: リポジトリの `.claude/settings.json` で `attribution`(`commit` / `pr` を空文字、`sessionUrl` を `false`)を指定済み(クラウドセッション向け)。ローカル向けは `templates/claude/settings.json.template` に同じ指定がある。設定が効かない場合に備え、ルールとしても守る。
 - **ローカル側では pre-commit フック(`.githooks/pre-commit`)が main ブランチへの直接コミットを検知してブロックする**(実装済み)。サーバー側のブランチ保護は push した時点で初めて弾かれるため手戻りが大きく、特にエージェント(Claude Code等)がブランチルールを見落として main のまま作業を進めてしまう事故を、コミット時点で早期に検知する狙い。緊急時は `git commit --no-verify` で回避できる。
 
 ## 命名規則
