@@ -6,9 +6,9 @@ Read when adding support for a new tool, or when you suspect a name collision.
 
 | | Agent Plugins standard | Claude Code | Codex | Antigravity |
 |---|---|---|---|---|
-| Manifest | `plugin.json` | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | `plugin.json` (only `name` required) |
-| Skills | `skills/` | `skills/` (by convention) | path named in the manifest | `skills/` |
-| MCP | `mcp.json` | `.mcp.json` | `mcpServers` in the manifest | packaged; shape unchecked |
+| Manifest | `plugin.json` | `.claude-plugin/plugin.json` | root `plugin.json` first (with an agent-plugins.org `$schema`), `.codex-plugin/plugin.json` on top for `interface` / `apps` / `hooks`; without a root manifest, `.codex-plugin/` → `.claude-plugin/` → `.cursor-plugin/` | `plugin.json` (only `name` required) |
+| Skills | `skills/` | `skills/` (by convention) | `skills/` by default; a `skills` path in the manifest replaces it | `skills/` |
+| MCP | `mcp.json` | `.mcp.json` | `mcp.json` under a root manifest; otherwise `mcpServers` in the manifest, defaulting to `.mcp.json` | packaged; shape unchecked |
 | Hooks | (not covered) | `hooks/hooks.json` | `hooks/hooks.json` (auto-detected) | packaged; shape unchecked |
 | Agents | (not covered) | `agents/*.md` | `~/.codex/agents/*.toml`, **not loadable from a plugin** | CLI only; shape unchecked |
 | Rules | (not covered) | `.claude/rules/` | — | packaged; shape unchecked |
@@ -17,13 +17,32 @@ Gemini CLI is no longer listed: Google stopped serving it for free and Google AI
 2026-06-18 and moved those users to Antigravity CLI (`agy`), a separate rewrite. Its layout does not
 carry over, so do not target it.
 
-**Codex does not discover components by convention.** Its manifest names the paths:
-`"skills": "./skills/"`, `"mcpServers": "./.mcp.json"`, `"hooks": "./hooks/hooks.json"`. Paths are
-relative to the plugin root and start with `./`. The one exception is hooks: a file at the default
-`./hooks/hooks.json` is picked up without an entry.
+**Codex discovers the default locations too.** With no `skills` entry it scans `skills/`, with no
+`mcpServers` entry it reads `.mcp.json`, and `hooks/hooks.json` is picked up without an entry. A
+manifest entry such as `"skills": "./skills/"` is still accepted (OpenAI's own scaffold writes it);
+for skills it replaces the default rather than adding to it. Paths are relative to the plugin root
+and start with `./`. (Source: `codex-rs/core-plugins/src/loader.rs`, `plugin_skill_roots` and the
+`DEFAULT_*` constants, unchanged from 0.152.1 to the 2026-10 main branch.)
 
-Neither Claude Code nor Codex reads the root `plugin.json`, so a plugin targeting both plus the
-standard carries three manifests.
+**Which manifest Codex reads.** `find_plugin_manifest_path` in `codex-rs/utils/plugins` takes the
+root `plugin.json` when its `$schema` is an agent-plugins.org URL; otherwise it falls back to
+`.codex-plugin/plugin.json`, then `.claude-plugin/plugin.json`, then `.cursor-plugin/plugin.json`.
+Under a root manifest, Codex takes `name` / `version` / `description` / `keywords` from it, fixes
+skills at `./skills` and MCP at `./mcp.json`, and then applies Codex-specific data from
+`extensions["com.openai"]` in the root manifest — or, when that is absent, from
+`.codex-plugin/plugin.json`. Only `interface`, `apps`, `hooks` and the onboarding skill come from that
+overlay; its `name`, `version` and `skills` are ignored. Without an `interface` there, the UI falls back
+to the plugin `name` as the display name and category `Other`.
+
+So a plugin targeting Claude Code, Codex and the standard still carries three manifests, for
+different reasons: Claude Code reads only its own; the standard needs the root one; and
+`.codex-plugin/plugin.json` carries Codex's presentation (and is the whole manifest for Codex
+before 0.147.0, or if the root manifest is ever dropped). Moving the `interface` block into
+`extensions["com.openai"]` makes the third file unnecessary for current Codex, at the cost of older
+versions.
+
+The root `$schema` has to be exactly the 1.0.0 identifier: Codex rejects any other agent-plugins.org
+version (the 1.1.0 draft included), and treats a symlinked `plugin.json` as no manifest at all.
 
 ## Hooks work in both, with one incompatibility
 
@@ -46,7 +65,7 @@ The standard says nothing about hooks, so this compatibility is incidental and c
 | VS Code | yes | documented: a `$schema` pointing at Agent Plugins 1.0 selects that format; `.claude-plugin/plugin.json` is also detected |
 | Antigravity | yes | measured: the standard manifest, extra fields included, passes `agy plugin validate` and its skills load |
 | Claude Code | no | measured |
-| Codex | no | documented: `.codex-plugin/plugin.json` is required |
+| Codex | **yes, first** (0.147.0+) | source: root manifest wins when its `$schema` is agent-plugins.org; `.codex-plugin/plugin.json` becomes an overlay for `interface` / `apps` / `hooks`. OpenAI's build guide still describes `.codex-plugin/plugin.json` as the required manifest |
 | Kiro, ChatGPT | unverified | listed as launch clients; not checked directly |
 
 Cursor also has its own `.cursor-plugin/plugin.json`, but that is for Cursor-specific components
@@ -58,7 +77,7 @@ manifest is ignored. Google's `chrome-devtools-mcp` ships both for exactly that 
 | Tool | Discovery |
 |---|---|
 | Claude Code | catalog at `.claude-plugin/marketplace.json`, then `plugin install` |
-| Codex | repo catalog at `$REPO_ROOT/.agents/plugins/marketplace.json` (personal: `~/.agents/plugins/marketplace.json`), then `plugin add` |
+| Codex | repo catalog at `$REPO_ROOT/.agents/plugins/marketplace.json` (personal: `~/.agents/plugins/marketplace.json`), then `plugin add`. Without one it also reads `.claude-plugin/marketplace.json` and `.cursor-plugin/marketplace.json`, in that order |
 | Cursor | **no catalog** — reads whatever sits in `~/.cursor/plugins/local/`, so a symlink is the install step |
 | Copilot CLI | catalog at `marketplace.json`, `.plugin/`, `.github/plugin/` or **`.claude-plugin/marketplace.json`** (searched in that order), so Claude Code's catalog serves it unchanged; `plugin install` **copies** into `~/.copilot/installed-plugins/<marketplace>/<name>/`, so follow edits with `plugin update` |
 | VS Code | picks up everything Copilot CLI installed; a local directory can also be registered in the `chat.pluginLocations` setting |
@@ -77,9 +96,9 @@ symlink it into their agents directory.
 
 So there is no file that serves both, and one of the two tools always needs a manual step. Put the
 behaviour in a skill unless enforcement (tool restrictions, a separate context) is the actual
-requirement. If it is, keep the Codex definition under `com.openai.codex/` — the reverse-domain
-namespace the standard reserves for client-specific components — so it is already in the right place
-if Codex gains bundle support.
+requirement. If it is, keep the Codex definition under `com.openai/` — Codex's extension namespace
+(`extensions["com.openai"]` in its loader), and the standard puts a client's files in a top-level
+directory of the same name — so it is already in the right place if Codex gains bundle support.
 
 Note that Claude Code ignores `hooks`, `mcpServers` and `permissionMode` inside a plugin-provided
 subagent for security reasons.

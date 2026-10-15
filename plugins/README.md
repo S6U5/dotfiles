@@ -10,9 +10,9 @@
 |------|------|
 | `.claude-plugin/marketplace.json` | Claude Code 用の目録(Copilot CLI もこれを読む) |
 | `.agents/plugins/marketplace.json` | Codex 用の目録(Codex で意味のあるものだけ載せる) |
-| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Cursor / Copilot / VS Code / Antigravity / Kiro / Gemini ほか) |
+| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Codex 0.147 以降 / Cursor / Copilot / VS Code / Antigravity / Kiro ほか) |
 | `plugins/<名前>/.claude-plugin/plugin.json` | Claude Code 用(ルートの標準版を読まないため別に要る) |
-| `plugins/<名前>/.codex-plugin/plugin.json` | Codex 用(同上。加えて `"skills": "./skills/"` のパス明示が要る) |
+| `plugins/<名前>/.codex-plugin/plugin.json` | Codex の表示用メタデータ(`interface`)。Codex はルートの標準版を先に読み、これを上乗せする。0.147 より前の Codex ではこれが唯一のマニフェスト |
 | `plugins/<名前>/skills/<名前>/SKILL.md` | **スキル本体(全ツールで共有する唯一の実体)** |
 | `plugins/<名前>/skills/<名前>/agents/openai.yaml` | Codex / ChatGPT 用の UI メタデータ(任意) |
 
@@ -240,19 +240,31 @@ project スコープを上書きするため)。古い実体が残っている�
 
 共有できるのは `skills/<名前>/SKILL.md` だけ。マニフェストは各ツールの分をそれぞれ置く。
 
-**Claude Code も Codex もルート直下の `plugin.json` を読まない。** Claude Code は
-`.claude-plugin/plugin.json` を、Codex は `.codex-plugin/plugin.json` を見る。しかも Codex は
-Claude Code と違って `skills/` を規約で自動検出しないため、マニフェストにパスを書く必要がある。
+**Claude Code はルート直下の `plugin.json` を読まない。Codex は読む(0.147.0 以降)。** Claude Code が
+見るのは `.claude-plugin/plugin.json` だけ。Codex はルートの `plugin.json` の `$schema` が
+agent-plugins.org を指していればそれを先に読み、`name` / `version` / `description` と `skills/` を
+そこから取る。`.codex-plugin/plugin.json` はその上に `interface`(表示名・説明・カテゴリ等)を
+上乗せするためだけに読まれ、そこに書いた `name` や `skills` は使われない。ルートの版が無ければ
+`.codex-plugin/` → `.claude-plugin/` → `.cursor-plugin/` の順に探す。`skills/` はどちらの形式でも
+既定で探索されるので、`"skills": "./skills/"` は書かなくても動く(OpenAI の雛形が書くので残している)。
+出典は openai/codex のソース(`codex-rs/utils/plugins/src/plugin_namespace.rs` と
+`codex-rs/core-plugins/src/`)で、OpenAI の手引きは今も `.codex-plugin/plugin.json` を必須の
+マニフェストとして説明している(手引きと実装が食い違っている)。
+
+ルートの `$schema` は `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` のまま固定する。
+Codex はそれ以外の版(作業中の 1.1.0 を含む)を拒否する。`plugin.json` をシンボリックリンクにすると
+Codex はマニフェスト無しとして扱う。
 
 紛らわしいのは、標準形式だけのプラグインでも Claude Code では `skills/` があれば動いてしまう
 こと。ただしそのときマニフェストは読まれておらず、プラグイン名はディレクトリ名から取られ、
 `version` も `displayName` も伝わらない(実測で確認)。**動くことと意図どおり読まれていることは
 別なので、1つに寄せて整理した気にならないこと。** 3つのマニフェストは重複ではなく、それぞれ
-別のツールが読む。`name` / `version` / `description` は3つとも揃えておく。
+別の役目を持つ(ルート版は標準と Codex の本体、`.claude-plugin/` は Claude Code、`.codex-plugin/` は
+Codex の表示用)。`name` / `version` / `description` は3つとも揃えておく。
 
 | 項目 | Claude Code | Codex |
 |------|-------------|-------|
-| 目録の場所 | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` |
+| 目録の場所 | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json`(無ければ `.claude-plugin/marketplace.json` も読む) |
 | スキルの UI メタデータ | 指定できない | `skills/<名前>/agents/openai.yaml` の `interface` |
 | 暗黙呼び出しの制御 | `SKILL.md` の frontmatter `disable-model-invocation` | 同ファイルの `policy.allow_implicit_invocation` |
 | マニフェストの検証 | `claude plugin validate <パス>` | `python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py <パス>`(Codex 同梱の plugin-creator スキル内) |

@@ -1,5 +1,6 @@
 {
   "name": "s6u5-dotfiles",
+  "description": "Agent plugins published from the S6U5/dotfiles repository.",
   "owner": {
     "name": "S6U5",
     "url": "https://github.com/S6U5"
