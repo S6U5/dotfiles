@@ -5,14 +5,14 @@ description: Create an agent plugin that reaches Claude Code, Codex and the Agen
 
 # Deciding what to share across agent plugin formats
 
-## Two standards, and two tools that sit outside them
+## Two standards, and how the two main tools relate to them
 
 - **Agent Skills** (agentskills.io) covers a single skill: `SKILL.md` is required, and client-specific settings are meant to live in **sidecar files** (Codex's `agents/openai.yaml` is one).
 - **Agent Plugins 1.0** (agent-plugins.org) covers packaging: `plugin.json`, `skills/`, `mcp.json`, `com.<reverse-domain>/`.
 
 Hooks, agents and rules fall outside both. Each tool decides those alone.
 
-**Neither Claude Code nor Codex reads the root `plugin.json`** — the two most likely targets are the two that sit outside the standard they helped write. Claude Code reads `.claude-plugin/plugin.json`; Codex requires `.codex-plugin/plugin.json` and, unlike Claude Code, does **not** discover `skills/` by convention, so the manifest has to name the path. Cursor, Copilot CLI / VS Code and Antigravity do read the root manifest, which is why it still earns its place.
+**Claude Code does not read the root `plugin.json`; Codex does, but only for part of what it needs.** Claude Code reads `.claude-plugin/plugin.json` alone. Codex (0.147.0 and later) reads the root manifest *first* whenever its `$schema` points at agent-plugins.org, and takes `name`, `version`, `description` and the default `skills/` from it — then applies `.codex-plugin/plugin.json` on top only for its `interface` (plus `apps` / `hooks`). So the Codex manifest is no longer what makes the skills load; it is where Codex's UI metadata lives (the same block can instead go under `extensions["com.openai"]` in the root manifest). Cursor, Copilot CLI / VS Code and Antigravity read the root manifest too, which is why it earns its place.
 
 So `skills/` is the only genuinely shared thing, and manifests are written once per tool.
 
@@ -68,16 +68,18 @@ for no return.
 
 ```
 plugins/<name>/
-├── plugin.json                    ← standard: Cursor, Copilot CLI/VS Code, Antigravity (confirmed); other conformant clients
+├── plugin.json                    ← standard: Codex 0.147+, Cursor, Copilot CLI/VS Code, Antigravity (confirmed); other conformant clients
 ├── .claude-plugin/plugin.json     ← Claude Code
-├── .codex-plugin/plugin.json      ← Codex; needs "skills": "./skills/" spelled out
+├── .codex-plugin/plugin.json      ← Codex UI metadata (interface); also the manifest for Codex before 0.147
 ├── README.md
 └── skills/<skill>/
     ├── SKILL.md                   ← the single real artifact; every tool reads this file
     └── agents/openai.yaml         ← Codex / ChatGPT UI metadata (optional)
 ```
 
-Three manifests is not duplication — each is read by a different tool, and collapsing any two silently drops that tool's metadata. **Keep `name`, `version` and `description` in step across all three.**
+Three manifests is not duplication — each is read by a different tool, and collapsing any two silently drops that tool's metadata. **Keep `name`, `version` and `description` in step across all three** — Codex shows the root manifest's values, older Codex the `.codex-plugin/` ones.
+
+Two things about the root manifest break Codex specifically. Keep `$schema` at `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json`: Codex rejects any other agent-plugins.org version, including the 1.1.0 working draft. And keep `plugin.json` a regular file — Codex treats a symlinked one as if the plugin had no manifest at all.
 
 **The condition is keeping the payload inside `skills/`.** Hold that, and new tools become reachable without restructuring.
 
@@ -114,7 +116,7 @@ The same holds inside a SKILL.md. Enumerating options a model already knows, or 
 
 ### Absence is not evidence
 
-Another repository having a file tells you a tool needs it. That file being **missing tells you nothing** — the plugin may simply not target that tool. Concluding "Codex needs no manifest of its own" because Google's `chrome-devtools-mcp` ships no `.codex-plugin/` was exactly this mistake; Codex requires it. Presence is evidence, absence is not.
+Another repository having a file tells you a tool needs it. That file being **missing tells you nothing** — the plugin may simply not target that tool. Google's `chrome-devtools-mcp` shipping no `.codex-plugin/` said nothing either way about Codex; what settled the question was Codex's own loader, which reads the root manifest first. The reverse slip happened here too: OpenAI's guide still calls `.codex-plugin/plugin.json` the required manifest, and that was taken as "Codex does not read the root one" — while the loader had been reading it since 0.147.0. Presence is evidence, absence is not, and when a guide and the implementation disagree, the implementation decides what loads.
 
 The same trap appears in tooling output: a plugin listed by `codex plugin list` only proves the catalog points at it. Whether its skills load is a separate question, and only installing it answers that.
 
