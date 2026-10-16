@@ -138,12 +138,12 @@ in
 
   # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化する。
   # 旧 install.sh 末尾のロジックの移植。dotfilesDir は Nix 側の値をそのまま文字列補間する
-  # (bash 変数ではない)。
+  # (bash 変数ではない)。git はストアのパスで呼ぶ(home-manager の activation は空の PATH で
+  # 走るため、command -v git では見つからず黙って飛ばされる)。
   home.activation.dotfilesGitHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if command -v git >/dev/null 2>&1 \
-      && [ -d "${dotfilesDir}/.git" ] \
+    if [ -d "${dotfilesDir}/.git" ] \
       && [ -d "${dotfilesDir}/.githooks" ]; then
-      $DRY_RUN_CMD git -C "${dotfilesDir}" config core.hooksPath .githooks
+      $DRY_RUN_CMD ${pkgs.git}/bin/git -C "${dotfilesDir}" config core.hooksPath .githooks
       $VERBOSE_ECHO "dotfiles: ${dotfilesDir} の pre-commit フックを有効化しました(core.hooksPath = .githooks)"
     fi
   '';
@@ -170,15 +170,15 @@ in
   # 既定アプリの登録先 ~/.config/mimeapps.list もブラウザ自身が書き換えるファイルなので管理外のまま
   # xdg-mime で書き込む(WSL 内のブラウザが既定を奪い返しても、次の switch で戻る)。
   # WSL かどうかはビルド時に分からないため、Linux 全般で生成して実行時に判定する。
+  # xdg-mime はストアのパスで呼ぶ(activation は空の PATH で走るため、/usr/bin の xdg-mime は見えない)。
   home.activation.dotfilesWslBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.isLinux ''
-    if { [ -n "''${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; } \
-      && command -v xdg-mime >/dev/null 2>&1; then
+    if [ -n "''${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
       _dotfiles_desktop="$HOME/.local/share/applications/dotfiles-wsl-browser.desktop"
       $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_desktop")"
       $DRY_RUN_CMD sh -c 'printf "%s\n" "[Desktop Entry]" "Type=Application" "Name=Windows Browser (WSL)" "Exec=$1 %u" "NoDisplay=true" "MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;" > "$2"' \
         _ "$HOME/.local/bin/wsl-browser" "$_dotfiles_desktop"
       for _dotfiles_mime in x-scheme-handler/http x-scheme-handler/https text/html; do
-        $DRY_RUN_CMD xdg-mime default dotfiles-wsl-browser.desktop "$_dotfiles_mime"
+        $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default dotfiles-wsl-browser.desktop "$_dotfiles_mime"
       done
       $VERBOSE_ECHO "dotfiles: xdg-open の URL・HTML を Windows 側の既定ブラウザ(wsl-browser)に向けました"
     fi

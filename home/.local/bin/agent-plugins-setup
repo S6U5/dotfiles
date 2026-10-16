@@ -122,11 +122,13 @@ if command -v codex >/dev/null 2>&1; then
           echo "  $p: 導入済み(有効/無効はそのまま)"
         else
           echo "  $p: 導入済み。中身が古いため入れ直します(有効/無効はそのまま)"
-          codex plugin add "$p@$marketplace" >/dev/null
+          codex plugin add "$p@$marketplace" >/dev/null ||
+            echo "  警告: $p の入れ直しに失敗しました(手動で確認してください)" >&2
         fi
       else
         echo "  $p: 導入します"
-        codex plugin add "$p@$marketplace" >/dev/null
+        codex plugin add "$p@$marketplace" >/dev/null ||
+          echo "  警告: $p の導入に失敗しました(手動で確認してください)" >&2
       fi
     done
   fi

@@ -177,11 +177,25 @@ else
   ng "bootstrap: バックアップ付き上書きに失敗"
 fi
 
-echo "== 9) pre-commit フック有効化(dotfilesGitHooks)が activation script に含まれるか"
+echo "== 9) pre-commit フック有効化(dotfilesGitHooks)と WSL のブラウザ設定が activation script に正しく含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
 else
   ng "pre-commit フック有効化ロジックが見つからない"
+fi
+# activation は空の PATH で走るため、外部コマンドはストアのパスで呼ぶ必要がある
+# (`command -v git` で判定すると見つからず、黙って飛ばされていた)
+if grep -qE '/nix/store/[^ ]+/bin/git -C ' "$RESULT/activate"; then
+  ok "git をストアのパスで呼んでいる"
+else
+  ng "git をストアのパスで呼んでいない(activation の PATH では見つからない)"
+fi
+if [ "$(uname -s)" = Linux ]; then
+  if grep -qE '/nix/store/[^ ]+/bin/xdg-mime default ' "$RESULT/activate"; then
+    ok "xdg-mime をストアのパスで呼んでいる"
+  else
+    ng "xdg-mime をストアのパスで呼んでいない(activation の PATH では見つからない)"
+  fi
 fi
 
 echo "== 10) 補完定義ファイルの構文"
