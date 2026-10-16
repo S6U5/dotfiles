@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, mdgridSrc, ... }:
 let
   # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
   # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
@@ -34,6 +34,25 @@ let
           { ${rel} = { source = outOfStore rel; }; }
       )
       (builtins.readDir dir);
+
+  # mdgrid(Markdown の frontmatter を表で見る TUI)。nixpkgs に無いため、flake の入力 mdgrid
+  # (nix/flake.nix)のソースからビルドする。取得するコミットと中身のハッシュは flake.lock が固定し、
+  # 依存のクレートは mdgrid 自身の Cargo.lock のハッシュで固定される(cargoHash を手で持たない)。
+  # 試験は mdgrid 側の CI で回っており、疑似端末を使う試験はビルドの隔離環境で動かないため省く。
+  # 判断根拠は docs/decisions/mdgrid.md 参照。
+  mdgrid = pkgs.rustPlatform.buildRustPackage {
+    pname = "mdgrid";
+    version = (lib.importTOML "${mdgridSrc}/Cargo.toml").package.version;
+    src = mdgridSrc;
+    cargoLock.lockFile = "${mdgridSrc}/Cargo.lock";
+    doCheck = false;
+    meta = {
+      description = "Browse and edit Markdown frontmatter as a table in the terminal";
+      homepage = "https://github.com/S6U5/mdgrid";
+      license = with lib.licenses; [ mit asl20 ];
+      mainProgram = "mdgrid";
+    };
+  };
 in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
@@ -195,6 +214,8 @@ in
   # `nodejs` エイリアス(= 現行 LTS)に追従する。プロジェクトごとのバージョン切り替えツール
   # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
+  # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
+  # 入力からビルドしたものを入れる。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -215,6 +236,7 @@ in
     zsh-syntax-highlighting
     wezterm
     nodejs
+    mdgrid
   ];
 
   programs.home-manager.enable = true;

@@ -7,10 +7,17 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # mdgrid のソース(nixpkgs に無いため、home.nix でここからビルドする。docs/decisions/mdgrid.md 参照)。
+    # flake の入力にしておくと、取得したコミットと中身のハッシュが flake.lock に固定され、
+    # 更新は他の入力と同じく Dependabot(.github/dependabot.yml の nix)が PR にする。
+    mdgrid = {
+      url = "github:S6U5/mdgrid";
+      flake = false;
+    };
   };
 
   outputs =
-    { nixpkgs, home-manager, ... }:
+    { nixpkgs, home-manager, mdgrid, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -25,6 +32,7 @@
         home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [ ./home.nix ];
+          extraSpecialArgs = { mdgridSrc = mdgrid; };
         }
       );
 
