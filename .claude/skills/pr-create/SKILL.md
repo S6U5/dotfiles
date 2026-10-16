@@ -25,7 +25,7 @@ description: このリポジトリで PR を作る・PR 本文を書くときに
 |---|---|---|
 | 実マシンの状態 | 「`~/.claude/skills/` に旧実体が残っている」「設定ファイルが 19:52 に作り直されている」 | PR は公開される。手元の環境で何が起きているかは読む人に不要 |
 | 作業過程 | 「3回テストして4件の誤りを見つけた」「イテレーションを回した」 | セッションの文脈。結論と根拠だけあればいい |
-| Claude の痕跡 | セッション URL、`Co-authored-by: Claude`、`Generated with Claude Code` | AGENTS.md の方針。作業文脈を残さない |
+| Claude の痕跡 | セッション URL、`Co-authored-by: Claude`、`Generated with Claude Code` | 作業文脈を残さない |
 
 **紛らわしい区別**: 配布先のパスを説明するのは問題ない。「`~/.config/zsh/.zshrc` は `home.activation` が生成する」は**設計の説明**であって実マシンの状態ではない。一方「`~/.codex/config.toml` を実機からコピーした状態だった」は実環境の話なので書かない。
 
