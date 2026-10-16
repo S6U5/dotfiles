@@ -20,6 +20,22 @@
         "type": "github"
       }
     },
+    "mdgrid": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792056509,
+        "narHash": "sha256-eo9Yql33nHCV+dCI31SEWM5CGpt9XywWWvUjnAlaBQs=",
+        "owner": "S6U5",
+        "repo": "mdgrid",
+        "rev": "eb510ad2c9485e87a05bfd9e3db2d72170ce45b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "S6U5",
+        "repo": "mdgrid",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790510107,
@@ -39,6 +55,7 @@
     "root": {
       "inputs": {
         "home-manager": "home-manager",
+        "mdgrid": "mdgrid",
         "nixpkgs": "nixpkgs"
       }
     }
