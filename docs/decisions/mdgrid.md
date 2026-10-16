@@ -1,27 +1,29 @@
-# mdgrid は nixpkgs に無いため、リリースのタグから Nix でビルドして導入
+# mdgrid は nixpkgs に無いため、flake の入力にしたソースから Nix でビルドして導入
 
 ## 検討した代替
 
-| 観点 | タグからビルド(採用) | GitHub Releases のビルド済みバイナリ | 各マシンで `cargo install mdgrid --locked` | nixpkgs への登録を待つ |
+| 観点 | flake の入力からビルド(採用) | `fetchFromGitHub` でタグからビルド | GitHub Releases のビルド済みバイナリ | 各マシンで `cargo install mdgrid --locked` |
 | --- | --- | --- | --- | --- |
-| 宣言的に入る(`home-manager switch` で揃う) | ○ | ○ | × | ○ |
-| 版を上げる手間 | △(version とハッシュ2つ) | △(OS・CPU ごとにハッシュ3つ) | ○ | ○ |
-| ビルド時間 | △(初回だけ数分) | ○ | △ | ○ |
-| すぐ使える | ○ | ○ | ○ | ×(登録まで時間がかかる) |
+| 宣言的に入る(`home-manager switch` で揃う) | ○ | ○ | ○ | × |
+| 取得元をコミットとハッシュで固定 | ○(flake.lock) | △(ハッシュを手で持つ) | △(OS・CPU ごとにハッシュ3つ) | × |
+| Dependabot で更新できる | ○(既存の nix の設定で拾う) | × | × | × |
+| ビルド時間 | △(初回だけ数分) | △ | ○ | △ |
+
+nixpkgs への登録も考えたが、登録まで時間がかかるため今は見送った。
 
 ## 選んだ理由
 
-- mdgrid は nixpkgs に無い。ほかのツールと同じく `home-manager switch` だけで全マシンに同じ版が入るようにしたかったため、`nix/home.nix` の `let` に `rustPlatform.buildRustPackage` の定義を置き、`home.packages` に加えた。
-- ビルド済みバイナリより、ソースからビルドする方が Nix の通常の形に近く、対応する OS・CPU ごとにハッシュを持たなくて済む。
+- ほかのツールと同じく `home-manager switch` だけで全マシンに同じ版が入るようにしたかった。
+- flake の入力にすると、取得するコミットと中身のハッシュが flake.lock に固定され、Dependabot(`.github/dependabot.yml` の `nix`)が nixpkgs などと同じく更新の PR を作る。依存のクレートは mdgrid の Cargo.lock のハッシュで固定される(`cargoLock.lockFile`)ので、`cargoHash` を手で持たなくて済む。
 - MIT / Apache-2.0 のデュアルライセンスなので、組み込みの条件(AGENTS.md「商用ツールは呼び出すのは OK、組み込むのは NG」)を満たす。
 
 ## トレードオフ
 
-- 入るのはリリースのタグの版だけ。新しい版を出したら `version`・`hash`・`cargoHash` を書き換える(ハッシュは `lib.fakeHash` にしてビルドすると、エラーに正しい値が出る)。
+- 入力は既定のブランチを追うので、リリースのタグではなく、Dependabot が PR を作った時点の既定のブランチの版が入る。
 - 試験(`doCheck`)は省いている。疑似端末を使う試験がビルドの隔離環境で動かず、試験自体は mdgrid 側の CI で回っているため。
-- mdgrid を開発するマシンでは、手元でビルドしたもの(`~/.cargo/bin`)と二重に入る。手元の版を使いたいときは PATH でそちらを先に置く。
+- 同じ名前のコマンドを別の方法でも入れているマシンでは、PATH で先にある方が動く。
 
 ## 履歴
 
-- (2026-10-16: v0.3.0 で導入。本ADR)
+- (2026-10-16: 導入。本ADR)
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)
