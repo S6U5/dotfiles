@@ -117,6 +117,7 @@
   "effortLevel": "high",
   "autoUpdatesChannel": "stable",
   "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
   "voiceEnabled": true,
   "agentPushNotifEnabled": true
 }

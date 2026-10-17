@@ -1,0 +1,173 @@
+/* ==============================================
+   Markdown Preview Enhanced カスタムスタイル
+   システム設計書向け（構造・可読性重視）
+   ============================================== */
+
+.markdown-preview.markdown-preview {
+  font-family: "Noto Sans JP", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: #1f2937;
+  background: #f8fafc;
+  padding: 2.5rem 3.5rem;
+  max-width: 980px;
+  margin: 0 auto;
+  word-break: break-word;
+}
+
+.markdown-preview.markdown-preview * {
+  box-sizing: border-box;
+}
+
+/* 見出し（設計書らしいセクション感） */
+.markdown-preview.markdown-preview h1 {
+  font-size: 2.1rem;
+  margin: 2.6rem 0 1.2rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.markdown-preview.markdown-preview h2 {
+  font-size: 1.6rem;
+  margin: 2.2rem 0 1rem;
+  padding-left: 0.6rem;
+  border-left: 4px solid #60a5fa;
+  color: #1e3a8a;
+}
+
+.markdown-preview.markdown-preview h3 {
+  font-size: 1.3rem;
+  margin: 1.8rem 0 0.8rem;
+  color: #1f2937;
+}
+
+.markdown-preview.markdown-preview h4,
+.markdown-preview.markdown-preview h5,
+.markdown-preview.markdown-preview h6 {
+  font-size: 1.1rem;
+  margin: 1.4rem 0 0.6rem;
+  color: #374151;
+}
+
+/* 本文 */
+.markdown-preview.markdown-preview p {
+  margin: 0 0 1.1rem;
+}
+
+/* リンク */
+.markdown-preview.markdown-preview a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* インラインコード */
+.markdown-preview.markdown-preview code {
+  background: #e2e8f0;
+  padding: 0.12em 0.3em;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.9em;
+  color: #0f172a;
+}
+
+/* コードブロック */
+.markdown-preview.markdown-preview pre {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  padding: 1rem 1.2rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 1.6rem 0;
+}
+
+.markdown-preview.markdown-preview pre code {
+  background: none;
+  padding: 0;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
+/* 引用（注釈・注意） */
+.markdown-preview.markdown-preview blockquote {
+  margin: 1.6rem 0;
+  padding: 1rem 1.2rem;
+  border-left: 4px solid #60a5fa;
+  background: #eef2ff;
+  color: #1e3a8a;
+}
+
+/* リスト */
+.markdown-preview.markdown-preview ul,
+.markdown-preview.markdown-preview ol {
+  margin: 0 0 1.1rem;
+  padding-left: 1.6rem;
+}
+
+.markdown-preview.markdown-preview li {
+  margin: 0.35rem 0;
+}
+
+/* テーブル（設計書の要） */
+.markdown-preview.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.8rem 0;
+  font-size: 0.95em;
+  background: #ffffff;
+}
+
+.markdown-preview.markdown-preview th,
+.markdown-preview.markdown-preview td {
+  border: 1px solid #cbd5e1;
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+}
+
+.markdown-preview.markdown-preview th {
+  background: #e5e7eb;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.markdown-preview.markdown-preview tr:nth-child(even) td {
+  background: #f3f4f6;
+}
+
+/* 罫線 */
+.markdown-preview.markdown-preview hr {
+  border: none;
+  border-top: 1px solid #cbd5e1;
+  margin: 2.2rem 0;
+}
+
+/* 画像 */
+.markdown-preview.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  margin: 1.4rem 0;
+  background: #ffffff;
+}
+
+/* チェックボックス */
+.markdown-preview.markdown-preview input[type="checkbox"] {
+  transform: scale(1.05);
+  margin-right: 0.5rem;
+}
+
+/* キーボード表示 */
+.markdown-preview.markdown-preview kbd {
+  background: #e5e7eb;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+}
+
+/* 選択 */
+.markdown-preview.markdown-preview ::selection {
+  background: rgba(59, 130, 246, 0.2);
+}
