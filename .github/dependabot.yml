@@ -8,6 +8,17 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # リリースから7日経つまで更新 PR を出さない(公開直後の汚染バージョンを掴まないため)。
+    # 未設定でも既定で3日効くが、GitHub Actions は npm 等に比べて汚染の検出が遅れる傾向が
+    # あるので延ばしている(tj-actions/changed-files の改ざんは検出まで2〜4日かかった)。
+    # - セキュリティ更新(GitHub Advisory 由来)は cooldown の対象外で即時来る
+    # - タグ書き換え型の攻撃には cooldown は効かない。そちらはアクションを
+    #   フルコミットハッシュで固定することで対策済み(AGENTS.md 参照)
+    # - nix 側に設定していないのは、nixpkgs-unstable が毎日更新されるため「最新版が常に
+    #   クールダウン期間内」となって更新が止まる不具合(dependabot-core#13691)を
+    #   踏むリスクが高いから
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
