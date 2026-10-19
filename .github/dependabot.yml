@@ -8,6 +8,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
     groups:
       actions:
         patterns: ["*"]
@@ -16,6 +19,8 @@ updates:
     directory: /nix
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       flake-inputs:
         patterns: ["*"]
