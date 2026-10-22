@@ -502,7 +502,12 @@ winget upgrade wez.wezterm
 
 ## Node.js のセキュリティリリースに追従する
 
-nixpkgs の `nodejs` はセキュリティリリースの反映が数週間遅れることがあるため、遅れているあいだだけ nodejs.org の公式バイナリを使います(判断根拠は [`docs/decisions/nodejs-security-releases.md`](docs/decisions/nodejs-security-releases.md))。GitHub Actions の `Node.js security check` が毎日遅れを調べ、遅れていればジョブが失敗して通知が届きます。通知が来たら次を実行し、変更された `nix/nodejs-bin.json` を PR にしてください(署名の検証に `gpgv` が必要です)。
+nixpkgs の `nodejs` はセキュリティリリースの反映が数週間遅れることがあるため、遅れているあいだだけ nodejs.org の公式バイナリを使います(判断根拠は [`docs/decisions/nodejs-security-releases.md`](docs/decisions/nodejs-security-releases.md))。遅れは次の2か所で分かります。
+
+- GitHub Actions の `Node.js security check` が毎日調べ、遅れていればジョブが失敗して通知が届きます(下の設定が必要)。
+- `dotfiles-update`(`update.sh`)の実行時にも調べ、遅れていれば警告を表示します(nix が無い・オフライン等で判定できないときは何も表示しません)。
+
+通知が来たら次を実行し、変更された `nix/nodejs-bin.json` を PR にしてください(署名の検証に `gpgv` が必要です)。
 
 ```sh
 ./scripts/nodejs-security.sh check   # 遅れているかだけを調べる
@@ -510,6 +515,14 @@ nixpkgs の `nodejs` はセキュリティリリースの反映が数週間遅�
 ```
 
 マージ後に `home-manager switch` を実行すると反映されます。nixpkgs が追いついたら、Dependabot の flake.lock 更新で自動的に nixpkgs 版へ戻ります(`nix/nodejs-bin.json` を手で戻す必要はありません)。
+
+Actions の失敗をメールで受け取るには、次の設定が必要です(GitHub の仕様上、スケジュール実行の通知はワークフローを作った人・cron を変更した人・無効化→再有効化した人にしか届かず、通知設定も既定で有効とは限りません)。
+
+1. リポジトリを Watch する。
+2. GitHub の Settings → Notifications → System → Actions で「Email」を選び、「Only notify for failed workflows」にする。
+3. Actions タブで `Node.js security check` を一度 Disable workflow → Enable workflow する(再有効化した人に通知が届くようになる)。続けて Run workflow で手動実行し、動くことを確かめる。
+
+公開リポジトリのスケジュール実行は、60 日間リポジトリに動きが無いと GitHub に止められます。止まったら手順 3 と同じく Enable workflow で戻してください。
 
 ## テスト
 

@@ -48,8 +48,22 @@ if [ -n "$(git -C "$DOTFILES_DIR" status --porcelain)" ]; then
   exit 1
 fi
 
+# Node.js のセキュリティリリースに nixpkgs が遅れていないかを表示する
+# (判断根拠は docs/decisions/nodejs-security-releases.md)。判定できなかったとき
+# (nix が無い・オフライン等)は何も表示しない。
+check_nodejs_security() {
+  local out rc=0
+  out=$("$DOTFILES_DIR/scripts/nodejs-security.sh" check 2>&1) || rc=$?
+  if [ "$rc" -eq 10 ]; then
+    log ""
+    warn "Node.js のセキュリティリリースに nixpkgs が追いついていません:"
+    printf '%s\n' "$out" | sed 's/^/  /' >&2
+  fi
+}
+
 if [ "$DRY_RUN" -eq 1 ]; then
   log "[dry-run] git pull はスキップします。"
+  check_nodejs_security
   exit 0
 fi
 
@@ -66,3 +80,5 @@ if [ "$old_head" != "$new_head" ]; then
   log "同梱プラグインも更新する場合(Claude Code / Codex):"
   log "  agent-plugins-setup"
 fi
+
+check_nodejs_security

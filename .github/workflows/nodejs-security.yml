@@ -1,8 +1,10 @@
 name: Node.js security check
 
 # Node.js のセキュリティリリースに、flake.lock の nixpkgs の nodejs(と nix/nodejs-bin.json)が
-# 追いついているかを毎日調べる。遅れていればジョブが失敗し、GitHub からメールで通知が届く
-# (スケジュール実行の失敗通知は、cron を最後に編集した人に届く)。
+# 追いついているかを毎日調べる。遅れていればジョブが失敗し、GitHub の Actions 通知が届く。
+# スケジュール実行の通知は、ワークフローを作った人(cron を変更した人、無効化→再有効化した人が
+# いればその人)にしか届かず、Actions の通知設定を有効にしていないと届かない。
+# 受け取る側の設定手順は README「Node.js のセキュリティリリースに追従する」参照。
 # 通知が来たら手元で ./scripts/nodejs-security.sh update を実行して PR にする。
 # PR を自動で作らないのは、そのためだけに書き込み権限を置かないため
 # (判断根拠は docs/decisions/nodejs-security-releases.md)。

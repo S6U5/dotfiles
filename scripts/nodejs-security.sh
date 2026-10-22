@@ -4,7 +4,7 @@
 # 遅れているあいだは nodejs.org の公式ビルド済みバイナリで補うため、その固定値
 # (nix/nodejs-bin.json)を更新する(判断根拠は docs/decisions/nodejs-security-releases.md)。
 #
-#   ./scripts/nodejs-security.sh check   # 遅れていれば非0で終了する(読み取りのみ。CI 用)
+#   ./scripts/nodejs-security.sh check   # 遅れていれば 10 で終了する(読み取りのみ。CI と update.sh 用)
 #   ./scripts/nodejs-security.sh update  # 遅れていれば nix/nodejs-bin.json を書き換える
 #
 # 比べる対象は、flake.lock に固定された nixpkgs の nodejs と同じメジャーの、
@@ -91,7 +91,8 @@ fi
 if [ "$mode" = check ]; then
   echo "nodejs-security: nixpkgs の nodejs が $target に追いついていません。" >&2
   echo "nodejs-security: ./scripts/nodejs-security.sh update を実行して PR にしてください。" >&2
-  exit 1
+  # 判定できなかった場合(ネットワーク不調等)の非0と区別するため、遅れは専用の値で返す
+  exit 10
 fi
 
 if ! command -v gpgv >/dev/null 2>&1; then
