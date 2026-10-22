@@ -1,0 +1,31 @@
+name: Node.js security check
+
+# Node.js のセキュリティリリースに、flake.lock の nixpkgs の nodejs(と nix/nodejs-bin.json)が
+# 追いついているかを毎日調べる。遅れていればジョブが失敗し、GitHub からメールで通知が届く
+# (スケジュール実行の失敗通知は、cron を最後に編集した人に届く)。
+# 通知が来たら手元で ./scripts/nodejs-security.sh update を実行して PR にする。
+# PR を自動で作らないのは、そのためだけに書き込み権限を置かないため
+# (判断根拠は docs/decisions/nodejs-security-releases.md)。
+on:
+  schedule:
+    - cron: "17 21 * * *"
+  workflow_dispatch:
+
+# 読み取りのみ。このワークフローはリポジトリに何も書き込まない
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        # test.yml と同じく、SHA 固定した公式 action で入れる
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: experimental-features = nix-command flakes
+      - name: Check Node.js security releases
+        run: |
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          ./scripts/nodejs-security.sh check

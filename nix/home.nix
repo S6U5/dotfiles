@@ -53,6 +53,16 @@ let
       mainProgram = "mdgrid";
     };
   };
+
+  # Node.js ランタイム。nixpkgs の nodejs が nix/nodejs-bin.json のバージョン(Node.js の
+  # セキュリティリリース)に追いついていなければ、nodejs.org の公式バイナリで補う。
+  # nixpkgs が追いつけば Dependabot の flake.lock 更新だけで自動的に nixpkgs 版へ戻るため、
+  # nodejs-bin.json は古いまま残しておいてよい(判断根拠は docs/decisions/nodejs-security-releases.md)。
+  nodejsPin = lib.importJSON ./nodejs-bin.json;
+  nodejsRuntime =
+    if lib.versionAtLeast pkgs.nodejs.version nodejsPin.version
+    then pkgs.nodejs
+    else pkgs.callPackage ./nodejs-bin.nix { pin = nodejsPin; };
 in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
@@ -211,7 +221,8 @@ in
   # eza は ls の代替(アイコン・色付き表示)。ls/ll/la/lt エイリアスとして使う
   # (home/.config/shell/aliases.sh 側。無い環境では色付き ls にフォールバック)。
   # nodejs は JavaScript/TypeScript ランタイム(npm 同梱)。バージョンを固定せず nixpkgs の
-  # `nodejs` エイリアス(= 現行 LTS)に追従する。プロジェクトごとのバージョン切り替えツール
+  # `nodejs` エイリアス(= 現行 LTS)に追従する(セキュリティリリースで nixpkgs が遅れている
+  # あいだだけ、上の let の nodejsRuntime が公式バイナリに差し替える)。プロジェクトごとのバージョン切り替えツール
   # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
   # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
@@ -235,7 +246,7 @@ in
     zsh-autosuggestions
     zsh-syntax-highlighting
     wezterm
-    nodejs
+    nodejsRuntime
     mdgrid
   ];
 

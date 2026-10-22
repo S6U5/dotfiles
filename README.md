@@ -478,7 +478,7 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
                    プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
                    詳細な手順は plugins/README.md)
-scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
+scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック・Node.js のセキュリティリリース追従
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
@@ -499,6 +499,17 @@ WezTerm はプライバシー上の理由で組み込みの自動更新チェッ
 ```powershell
 winget upgrade wez.wezterm
 ```
+
+## Node.js のセキュリティリリースに追従する
+
+nixpkgs の `nodejs` はセキュリティリリースの反映が数週間遅れることがあるため、遅れているあいだだけ nodejs.org の公式バイナリを使います(判断根拠は [`docs/decisions/nodejs-security-releases.md`](docs/decisions/nodejs-security-releases.md))。GitHub Actions の `Node.js security check` が毎日遅れを調べ、遅れていればジョブが失敗して通知が届きます。通知が来たら次を実行し、変更された `nix/nodejs-bin.json` を PR にしてください(署名の検証に `gpgv` が必要です)。
+
+```sh
+./scripts/nodejs-security.sh check   # 遅れているかだけを調べる
+./scripts/nodejs-security.sh update  # 遅れていれば nix/nodejs-bin.json を更新する
+```
+
+マージ後に `home-manager switch` を実行すると反映されます。nixpkgs が追いついたら、Dependabot の flake.lock 更新で自動的に nixpkgs 版へ戻ります(`nix/nodejs-bin.json` を手で戻す必要はありません)。
 
 ## テスト
 
