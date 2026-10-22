@@ -6,6 +6,14 @@ Taken 2026-09 against Claude Code (bundled version), Codex CLI 0.152.1, and Agen
 re-run them before trusting the guidance — and update SKILL.md if a result moved. That is the
 maintenance path for a 2.0.
 
+## 2026-10-23 — documentation review (not a re-probe)
+
+A documentation pass (not an on-machine re-measurement) added a per-tool table for **repo-committed
+auto-loading of a bundled plugin** to `tool-differences.md`, covering Claude Code, Codex, Copilot,
+Cursor and Antigravity. It is doc-based; trust and headless behaviour are mostly unstated upstream
+and were left as "unconfirmed". The probes below are still the 2026-09 run and are due for a re-run
+against current tool versions.
+
 ## Where a skill outside a plugin is discovered
 
 Taken 2026-09 against Codex CLI 0.153.0 and Claude Code, for the case where a `SKILL.md` sits in a
