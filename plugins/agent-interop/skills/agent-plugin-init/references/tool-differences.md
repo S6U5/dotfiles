@@ -86,6 +86,35 @@ manifest is ignored. Google's `chrome-devtools-mcp` ships both for exactly that 
 A root `plugin.json` therefore earns its place even with no catalog entry pointing at it: Cursor
 picks it up straight from that directory. Reload the window after linking.
 
+## Repo-committed auto-loading of a bundled plugin (documented 2026-10-23)
+
+Discovery (above) is one question; whether a file **committed in the repo** auto-enables a
+repo-bundled plugin for anyone who clones it — with no per-user install — is another. The table
+below is **documentation-based, not re-measured**; trust and headless rows are marked where the docs
+are silent.
+
+| Tool | Committed config auto-enables a bundled plugin? | Key file(s) | Trust gate | Headless (`-p`/CI) |
+|---|---|---|---|---|
+| Claude Code | yes | `.claude/settings.json` — `enabledPlugins` + `extraKnownMarketplaces` (directory source) | required | no |
+| Codex | partial — `[plugins."x@mkt"] enabled = true` + marketplace `INSTALLED_BY_DEFAULT`; "clone-only, no approval" is not documented | `.codex/config.toml` + `$REPO_ROOT/.agents/plugins/marketplace.json` | yes — trusted project; bundled hooks are reviewed before running | unconfirmed (`codex exec` unstated) |
+| GitHub Copilot | yes — the nearest match to Claude Code; also reads `.claude-plugin/marketplace.json`; the cloud agent's official distribution path | `.github/copilot/settings.json` — `enabledPlugins` + `extraKnownMarketplaces` | "trusted working directory" concept exists; enable-time prompt unconfirmed | unconfirmed (auto-update skipped in CI) |
+| Cursor | no — plugins load from `~/.cursor/plugins/local/` or the marketplace; rules/skills are the committed path instead | `.cursor/rules/*.mdc`, `.cursor/skills` or `.agents/skills` | Enterprise "Allow Local Plugin Imports" (off by default) | unconfirmed |
+| Antigravity | IDE/App yes (`.agents/plugins/`, project-scoped); CLI no — manual `agy plugin install` | `<workspace>/.agents/plugins/` | unconfirmed | unconfirmed |
+
+Two takeaways. The confirmed cross-tool path for a repo-local component is still a **skill** in
+`.agents/skills/` (every tool reads it; Claude Code via the symlink). And the committed-settings
+*plugin* path is **not Claude Code-only** — Copilot is near-identical (the same two keys, and it
+reads `.claude-plugin/marketplace.json`), and Codex has a close equivalent. Trust gating and headless
+behaviour are the shaky parts: mostly unstated upstream, so verify them on-machine before relying on
+them.
+
+Sources (official docs, read 2026-10-23): Codex — developers.openai.com/codex/skills,
+developers.openai.com/plugins/build/plugins; Cursor — cursor.com/docs/plugins; Copilot CLI —
+docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference and
+.../concepts/agents/copilot-cli/about-cli-plugins; Antigravity — antigravity.google/docs/plugins,
+antigravity.google/docs/skills. The measured probes in `measurements.md` are from 2026-09 and predate
+this review; re-run them before trusting the measured rows.
+
 ## Subagents cannot be shipped to both
 
 Claude Code loads `agents/*.md` from the plugin root. Codex uses TOML in `~/.codex/agents/` or
