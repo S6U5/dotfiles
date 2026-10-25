@@ -274,6 +274,19 @@ home-manager switch --flake ./nix#<system> --impure
 </details>
 
 <details>
+<summary><b>公式インストーラで入れた uv が残っているとき</b></summary>
+
+uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。`command -v uv` が `~/.local/bin/uv` を指していたら、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
+
+```sh
+rm ~/.local/bin/uv ~/.local/bin/uvx
+```
+
+Nix 版の uv は `uv self update` が使えません。更新は他のツールと同じく flake.lock の更新(Dependabot の PR)で入ります。
+
+</details>
+
+<details>
 <summary><b>ネイティブ Windows 側の npm / pnpm / uv にもサプライチェーン対策を効かせる(手動コピー)</b></summary>
 
 home-manager の配布が届くのは WSL 内の `$HOME` までで、Windows に直接インストールした npm / pnpm / uv には効きません(この dotfiles は Nix 前提のため、ネイティブ Windows 向けの自動配布は意図的に作っていません。判断根拠は [`docs/decisions/windows-supply-chain.md`](docs/decisions/windows-supply-chain.md))。

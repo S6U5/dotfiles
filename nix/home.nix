@@ -216,6 +216,9 @@ in
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
   # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
   # 入力からビルドしたものを入れる。
+  # uv は Python のパッケージ・プロジェクト管理ツール。公式インストーラ(`curl | sh`)を使わず、
+  # 他のツールと同じく nixpkgs から入れて Dependabot の flake.lock 更新に乗せる
+  # (docs/decisions/dependency-tooling-scope.md の履歴参照)。設定は home/.config/uv/uv.toml。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -237,6 +240,7 @@ in
     wezterm
     nodejs
     mdgrid
+    uv
   ];
 
   programs.home-manager.enable = true;
