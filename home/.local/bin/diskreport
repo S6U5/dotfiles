@@ -4,12 +4,15 @@
 #   diskreport --projects DIR   # 加えて DIR 配下のプロジェクト成果物(target / node_modules / .venv 等)を集計
 #                               # (マーカーで見つけて中へは降りないので数十秒で終わる)
 #   diskreport --nix-brief      # Nix の状態だけを数行で(dotfiles-switch / dotfiles-update の最後に呼ばれる)
-#   diskreport --windows        # WSL のみ: Windows 側の既知の場所(%LOCALAPPDATA% の Temp や各種キャッシュ)も測る
-#                               # (/mnt 越しの du は遅いので既定では測らない)
+#   diskreport --windows        # WSL のみ: Windows の「ストレージ」設定(種類別の内訳と Storage Sense)を開く
 #
 # WSL での見方: WSL の中の df は仮想ディスクの上限(既定 1TB)を全体として見せるので当てにならない。
 # 本当の制約は vhdx を置いている Windows 側ドライブの空きで、これを「Windows 側」として別に出す。
 # 他のディストリや Docker の vhdx も同じドライブを食うので、見つかる範囲で一覧にする。
+# WSL から /mnt 越しに見るのは df とファイルサイズ(stat)だけにする。/mnt 越しの du は Windows 側の
+# ファイルを1つずつ 9P 経由で読むため WSL 内の数十倍遅く、速さでも精度でも Windows 側の道具
+# (OS の「ストレージ」設定、NTFS の MFT を直接読む WizTree 等)に勝てない。Windows の中身は
+# Windows の帳簿で見る、という分担にする。
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
 #   - 測る場所は固定し、ディスク全体の走査はしない(全走査は dua / gdu / ncdu 等の専用ツールに任せる)。
@@ -66,17 +69,6 @@ dir_kib() {
 
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
 is_macos() { [ "$(uname -s)" = Darwin ]; }
-
-# WSL: Windows の環境変数を WSL 側のパスで返す(functions.sh の _dotfiles_win_profile と同じ手順)
-win_env_path() {
-  command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1 || return 1
-  _w=$(
-    cd /mnt/c 2>/dev/null || cd /
-    cmd.exe /c "echo %$1%" 2>/dev/null | tr -d '\r'
-  )
-  [ -n "$_w" ] && [ "$_w" != "%$1%" ] || return 1
-  wslpath -u "$_w" 2>/dev/null
-}
 
 # WSL: 登録されている全ディストリの「名前<TAB>BasePath(Windows パス)」を出力する(wsl-compact と同じ方法)。
 # Store 版の BasePath に付く \\?\ の接頭辞は落とす
@@ -251,40 +243,29 @@ $HOME/Library/Logs	アプリのログ(macOS)
 EOF
 }
 
-# WSL: Windows 側の既知の場所(/mnt 越しの du は遅いので --windows のときだけ)
-windows_paths() { # $1: %LOCALAPPDATA%、$2: %USERPROFILE%(どちらも WSL 側のパス)
-  cat <<WINPATHS
-$1/Temp	一時ファイル(Storage Sense の掃除対象)
-$1/npm-cache	npm のキャッシュ(Windows 側)
-$1/pnpm	pnpm のストア(Windows 側)
-$1/pip/Cache	pip のキャッシュ(Windows 側)
-$1/uv/cache	uv のキャッシュ(Windows 側)
-$1/Docker/wsl	Docker Desktop の仮想ディスク(中で消しても縮まない)
-$1/Microsoft/Windows/INetCache	ブラウザ・Office の一時キャッシュ
-$2/.cargo	Rust のクレート(Windows 側)
-$2/Downloads	ダウンロード(人が開く場所だが溜まりやすい)
-WINPATHS
-}
-
+# WSL: Windows 側の中身は Windows の道具で見る(--windows)。/mnt 越しの du はしない
 report_windows() {
   [ "$WINDOWS" -eq 1 ] || return 0
   if ! is_wsl; then
     echo "diskreport: --windows は WSL でだけ意味があります(この環境では何もしません)" >&2
     return 0
   fi
-  local_app=$(win_env_path LOCALAPPDATA || true)
-  profile=$(win_env_path USERPROFILE || true)
-  if [ -z "$local_app" ] || [ -z "$profile" ]; then
-    echo "diskreport: Windows 側のパスを解決できませんでした(cmd.exe / wslpath が無い?)" >&2
+  if ! command -v cmd.exe >/dev/null 2>&1; then
+    echo "diskreport: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
     return 0
   fi
-  echo "== Windows 側の既知の場所(/mnt 越しのため時間がかかります)"
-  windows_paths "$local_app" "$profile" | while IFS='	' read -r p desc; do
-    [ -e "$p" ] || continue
-    k=$(du -sk "$p" 2>/dev/null | cut -f1)
-    [ -n "${k:-}" ] || continue
-    printf '  %8s  %s\n' "$(human "$k")" "$p"
-    printf '  %8s  %s\n' "" "$desc"
+  echo "== Windows 側"
+  echo "  Windows の「ストレージ」設定を開きます(種類別の内訳。Storage Sense で一時ファイル・ごみ箱の自動掃除を設定できます)"
+  (
+    cd /mnt/c 2>/dev/null || cd /
+    cmd.exe /c start "" ms-settings:storagesense >/dev/null 2>&1
+  ) || echo "  (開けませんでした。Windows の 設定 → システム → ストレージ を手で開いてください)"
+  # どのフォルダが大きいかを掘るなら、NTFS の MFT を直接読む WizTree 等が /mnt 越しの du より速くて正確
+  for wt in "/mnt/c/Program Files/WizTree/WizTree64.exe" "/mnt/c/Program Files/WizTree/WizTree.exe"; do
+    if [ -x "$wt" ]; then
+      echo "  フォルダ単位で掘るなら WizTree が入っています: $wt"
+      break
+    fi
   done
   echo ""
 }
@@ -400,6 +381,6 @@ if [ -z "$PROJECTS" ]; then
   echo "  diskreport --projects <DIR>                 # プロジェクト成果物(node_modules / target 等)も集計"
 fi
 if is_wsl && [ "$WINDOWS" -eq 0 ]; then
-  echo "  diskreport --windows                        # Windows 側の Temp や各種キャッシュも測る(遅い)"
+  echo "  diskreport --windows                        # Windows の「ストレージ」設定を開く(Windows 側の中身は Windows の道具で)"
 fi
 echo "  ディスク全体を対話的に掘るには dua / gdu / ncdu などの専用ツールを使ってください。"
