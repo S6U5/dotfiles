@@ -34,7 +34,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 ## リポジトリ構成
 
 - `home/` — `$HOME` に配置する設定ファイル群。ディレクトリ構造がそのまま `$HOME` にマッピングされる(`home/.tmux.conf` → `~/.tmux.conf`)。新しい設定ファイルは基本ここに置く。配布は `nix/home.nix` の `walkHome` ヘルパーが `home/` を再帰的に走査して自動的に行う(新規ファイルを置くだけで対象になる)。**bash / zsh のエントリポイントは例外**で、設定本体(bash は `home/.config/bash/bashrc`、zsh は `home/.config/zsh/zshrc`)は対応する `$HOME` 上のパスに配布されるが、エントリポイント自体(`~/.bashrc` / `~/.bash_profile` / `~/.config/zsh/.zshrc`)は home/ 側に対応物が無い(`nix/home.nix` の `home.activation` が生成する管理外の実ファイル)。zsh の `home/.zshenv`(ZDOTDIR 設定のみ)は通常どおり home/ から配布される(理由は後述の「シェル設定の構成」、および `docs/decisions/zshrc-pollution.md` 参照)。
-- `nix/` — Nix + home-manager による**パッケージ導入 + dotfiles 配布の一本化**(`flake.nix` + `home.nix`)。導入・反映は明示実行のみ(`home-manager switch --flake ./nix#<system> --impure`)。`home/` 配下は `home.file`(`config.lib.file.mkOutOfStoreSymlink`)で `home/` の実体ファイルへ直接シンボリックリンクする(Nix store へコピーしないため、`home/` を直接編集すればすぐ反映される)。`programs.zsh`/`programs.bash` のような設定生成モジュールは使わない(home-managerの生成ロジックに依存すると `switch` 未実行時に何も効かなくなるという過去の失敗があるため。判断根拠は `docs/decisions/zshrc-pollution.md` の履歴、`docs/decisions/dotfiles-distribution.md` 参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。**Nix が使えない環境ではこの dotfiles は機能しない**(フォールバックは意図的に作らない)。
+- `nix/` — Nix + home-manager による**パッケージ導入 + dotfiles 配布の一本化**(`flake.nix` + `home.nix`)。導入・反映は明示実行のみ(`./switch.sh` / `dotfiles-switch`。`home-manager switch --flake ./nix#<system> --impure` に `DOTFILES_DIR` を揃えて渡すラッパーで、判断根拠は `docs/decisions/home-manager-switch-invocation.md`)。`home/` 配下は `home.file`(`config.lib.file.mkOutOfStoreSymlink`)で `home/` の実体ファイルへ直接シンボリックリンクする(Nix store へコピーしないため、`home/` を直接編集すればすぐ反映される)。`programs.zsh`/`programs.bash` のような設定生成モジュールは使わない(home-managerの生成ロジックに依存すると `switch` 未実行時に何も効かなくなるという過去の失敗があるため。判断根拠は `docs/decisions/zshrc-pollution.md` の履歴、`docs/decisions/dotfiles-distribution.md` 参照)。zsh バイナリ(ログインシェル本体)は引き続きここでは管理しない(判断根拠は `docs/decisions/login-shell.md` 参照。設定ファイルの生成元とログインシェル本体は独立した話)。**Nix が使えない環境ではこの dotfiles は機能しない**(フォールバックは意図的に作らない)。
   - **`nix/home.nix` にツールを追加・変更する前に、必ず公式リポジトリのメンテナンス状況(アーカイブされていないか、直近のコミット)と nixpkgs 側のパッケージが `broken` 等のフラグ付きでないかを確認する。**「〇〇を入れて」のように依頼側で決まっているように見える場合や、一見1行追記するだけの単純な依頼に見える場合でも省略しない。手順は `package-researcher` スキル(`.claude/skills/package-researcher/`)を参照。
 - `herdr-plugins/` — 自作の herdr プラグイン置き場(`$HOME` には配置しない)。`nix/home.nix` の `home.activation` が `home-manager switch` 時に `herdr plugin link` で自動登録する(`plugins/` はエージェント用 Marketplace で別物。`~/.config/herdr/plugins/` は herdr 自身が使うパスのため `home/` にも置かない)。判断根拠は `docs/decisions/herdr-notification.md`。
 - `templates/` — 機密を含みうる単一設定ファイルの雛形置き場。`$HOME` にはリンクされない(home/ と分離)。プロジェクト用のエージェント指示は `AGENTS.md` を本体とし、`CLAUDE.md` は `@AGENTS.md` 参照のみの薄いファイルにする(二重管理を避ける)。
@@ -59,11 +59,11 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - **自作コマンド(実行可能スクリプト)は `home/.local/bin/` に置く**(`env.sh` で PATH に追加済み)。使い分け:
   - シェルの状態を変えるもの(`cd` する等)や一行で済むもの → 関数・エイリアス(`.config/shell/`)
   - 独立して動くもの・シェル以外からも呼びたいもの → `home/.local/bin/` のスクリプト(シェバン付き・実行権限付与)
-  - スクリプト内でリポジトリのパスをハードコードしない。必要なら `dotfiles-update` のように自身のシンボリックリンクをたどって解決する。
+  - スクリプト内でリポジトリのパスをハードコードしない。必要なら `dotfiles-update` / `dotfiles-switch` のように自身のシンボリックリンクをたどって解決する。
 
 ## 運用方針
 
-- **「設定の配置」と「パッケージ導入」は同じ経路(Nix + home-manager)に一本化する**(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。導入・反映は明示実行のみ(`home-manager switch --flake ./nix#<system> --impure`。自動実行はしない)。
+- **「設定の配置」と「パッケージ導入」は同じ経路(Nix + home-manager)に一本化する**(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。導入・反映は明示実行のみ(`./switch.sh` / `dotfiles-switch`。中身は `home-manager switch --flake ./nix#<system> --impure` で、`DOTFILES_DIR` / `<system>` / `--impure` の手動指定をラッパーに吸収している。判断根拠は `docs/decisions/home-manager-switch-invocation.md`。自動実行はしない)。
 - リポジトリは単一で「共通レイヤー + OS別レイヤー」構造とする。OS別の管理が辛くなったら、リポジトリ分割も選択肢として残す(TODO.md 参照)。
 - **既存ファイルとの衝突は home-manager 本体が検知する**。home.file が管理しようとするパスに既存ファイルがあると `home-manager switch` はエラーで停止する(黙って上書きしない)。`-b <拡張子>` オプションで既存ファイルを退避してから上書きできる(判断根拠・詳細は README「既存の設定ファイルとぶつかったとき」参照)。
 - パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)も Nix(home-manager の `home.file`)で配布する(zsh の設定内容も含む。判断根拠は `docs/decisions/dotfiles-distribution.md`、`docs/decisions/zshrc-pollution.md` の履歴参照)。**Nix が使えない環境ではこの dotfiles は機能しない**(意図的にフォールバックは作らない)。

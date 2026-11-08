@@ -5,7 +5,8 @@
 
 ## 導入は「明示実行のみ」
 
-- `home-manager switch --flake ./nix#<system> --impure` は **ユーザーが明示的に実行した
+- `home-manager switch`(ラッパーの `dotfiles-switch` / `./switch.sh` 経由。中身は
+  `home-manager switch --flake ./nix#<system> --impure`)は **ユーザーが明示的に実行した
   ときだけ**動く。`update.sh`(pull のみ)からは絶対に呼ばれない。
 
 ## `nix/home.nix` の役割
