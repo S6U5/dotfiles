@@ -1,15 +1,11 @@
 #!/bin/sh
 # 何がストレージを食っているかを、全走査せずに数秒で報告する(読み取り専用。何も消さない)。
-#   diskreport                  # 既定: 器 → 会計(カテゴリ別と残差、前回比) → 内訳(既知の場所、増分順) → Nix → 案内
-#   diskreport --projects DIR   # 加えて DIR 配下のプロジェクト成果物(target / node_modules / .venv 等)を集計
-#                               # (マーカーで見つけて中へは降りないので数十秒で終わる)
-#   diskreport --scan           # 索引を作る(時間がかかる作業を1回だけ): $HOME 配下を深さ 6 まで du し、
-#                               # WSL なら Windows 側ドライブを WizTree(NTFS の MFT を直接読む)に数えさせて
-#                               # CSV を取り込む。普段のレポートはこの索引を読むだけなので一瞬で細かく出せる
-#   diskreport --deep           # 残差の場所を探す深掘り(macOS: Spotlight の索引で大きいファイル /
-#                               # Linux・WSL: $HOME の大きいファイルと全走査 TUI の案内)
-#   diskreport --windows        # WSL のみ: Windows の「ストレージ」設定(種類別の内訳と Storage Sense)を開く
-#   diskreport --nix-brief      # Nix の状態だけを数行で(dotfiles-switch / dotfiles-update の最後に呼ばれる)
+#   diskreport            # これだけ覚えればよい。器 → 会計(カテゴリ別と残差、前回比)→ いますぐ戻せる見込み
+#                         # → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 案内
+#                         # 索引が無い/古い(30 日超)ときは、端末なら「今作りますか?」と聞く
+#   diskreport scan       # 索引を作り直す(時間がかかる作業をここに隔離。既定 15 分で打ち切り)
+#   diskreport windows    # WSL のみ: Windows の「ストレージ」設定(種類別の内訳と Storage Sense)を開く
+#   diskreport --nix-brief  # (人向けではない)dotfiles-switch / dotfiles-update の最後が呼ぶ Nix の数行
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
 #   - 会計モデル。使用量を「帰属できた分(OS・アプリ・ユーザーデータ・クラウド同期・仮想ディスク・
@@ -20,7 +16,7 @@
 #   - 既知パスの一覧は ~/.config/dotfiles/diskreport.paths(home/ から配布)と、git 管理外の
 #     ~/.config/dotfiles/diskreport.local(個人の追加)から読む。
 #   - 履歴は ~/.local/state/dotfiles/diskreport.tsv に直近 30 回残し、前回・約1週間前・約1か月前と比べる。
-#   - 「細かく、しかし速く」は「数える」と「見せる」を分けて両立する。--scan が作る索引
+#   - 「細かく、しかし速く」は「数える」と「見せる」を分けて両立する。scan が作る索引
 #     (~/.local/state/dotfiles/diskindex-*.tsv)を普段のレポートが読み、鮮度(何日前に数えたか)を添える。
 #   - 削除は既にある道具(cachesweep / nix-collect-garbage / home-manager expire-generations /
 #     wsl-compact)に任せ、このコマンドは末尾で案内するだけ。
@@ -30,34 +26,22 @@
 set -eu
 
 MODE=full
-PROJECTS=
-DEEP=0
-WINDOWS=0
 SCAN=0
-while [ $# -gt 0 ]; do
-  case "$1" in
+WINDOWS=0
+for arg in "$@"; do
+  case "$arg" in
+    scan) SCAN=1 ;;
+    windows) WINDOWS=1 ;;
     --nix-brief) MODE=nix-brief ;;
-    --deep) DEEP=1 ;;
-    --scan) SCAN=1 ;;
-    --windows) WINDOWS=1 ;;
-    --projects)
-      shift
-      [ $# -gt 0 ] || {
-        echo "diskreport: --projects にはディレクトリを指定してください" >&2
-        exit 1
-      }
-      PROJECTS=$1
-      ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
       exit 0
       ;;
     *)
-      echo "diskreport: 不明なオプション: $1" >&2
+      echo "diskreport: 使い方は diskreport / diskreport scan / diskreport windows(詳しくは --help)" >&2
       exit 1
       ;;
   esac
-  shift
 done
 
 TAB=$(printf '\t')
@@ -65,8 +49,9 @@ BSEP=$(printf '\134') # バックスラッシュ1文字(Windows のパス区切�
 NOW=$(date +%s)
 STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles
 STATE_FILE=$STATE_DIR/diskreport.tsv
-INDEX_HOME=$STATE_DIR/diskindex-home.tsv   # $HOME 配下の索引: KiB<TAB>パス(先頭行は #time)
-INDEX_WIN=$STATE_DIR/diskindex-windows.tsv # Windows 側ドライブの索引: KiB<TAB>パス(WizTree の CSV から)
+INDEX_HOME=$STATE_DIR/diskindex-home.tsv    # $HOME 配下の索引: KiB<TAB>パス(先頭行は #time)
+INDEX_WIN=$STATE_DIR/diskindex-windows.tsv  # Windows 側ドライブの索引: KiB<TAB>パス(WizTree の CSV から)
+INDEX_BIG=$STATE_DIR/diskindex-bigfiles.tsv # $HOME 配下の 512MiB 超のファイル: KiB<TAB>パス(scan のついでに拾う)
 CONF_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles
 # ディスクが満杯のときでも動くよう、作業ファイルはまず tmpfs(/dev/shm)に置く(無ければ通常の一時領域)
 WORK=$(mktemp -d /dev/shm/diskreport.XXXXXX 2>/dev/null || mktemp -d)
@@ -331,28 +316,40 @@ collect_paths() {
 }
 
 # プロジェクト成果物(マーカー探索層)。見つけた成果物の中へは降りない(-prune)
+# 開発成果物(消しても再生成できるもの)を索引から拾う。名前で候補を選び、target / build / dist は
+# 親にマーカー(Cargo.toml 等)があるときだけ。別の成果物の配下にあるもの(node_modules の中の
+# node_modules 等)は数えない。索引が無ければ空
 collect_projects() {
-  [ -n "$PROJECTS" ] || return 0
-  if [ ! -d "$PROJECTS" ]; then
-    echo "diskreport: --projects のディレクトリが見つかりません: $PROJECTS" >&2
-    return 0
-  fi
   : >"$WORK/projects"
-  find "$PROJECTS" -xdev \( -name .git -o -name node_modules -o -name target -o -name .venv -o -name venv \
-    -o -name build -o -name dist -o -name .next -o -name .turbo -o -name __pycache__ -o -name .gradle -o -name .tox \) -prune -print 2>/dev/null |
-    grep -v '/\.git$' |
-    while IFS= read -r d; do
-      # target は Cargo、build は Gradle 等のマーカーがある場合だけ(無関係な同名ディレクトリを避ける)
+  [ -f "$INDEX_HOME" ] || return 0
+  # 既知パス(~/.cache 等)の配下にある成果物は、そちらで数えているので除く(二重計上を避ける)。
+  # __pycache__ は小さく数が多いだけなので対象外、~/.gradle は成果物ではなくキャッシュなので対象外
+  tail -n +2 "$INDEX_HOME" | awk -F'\t' -v home="$HOME" '
+    FILENAME == ARGV[1] { known[++nk] = $1; next }
+    { n = split($2, seg, "/"); b = seg[n]
+      if (!(b == "node_modules" || b == "target" || b == ".venv" || b == "venv" || b == "build" || b == "dist" || b == ".next" || b == ".turbo" || b == ".tox" || b == ".gradle")) next
+      if (b == ".gradle" && $2 == home "/.gradle") next
+      for (i = 1; i <= nk; i++) if ($2 == known[i] || index($2, known[i] "/") == 1) next
+      print }' "$WORK/pathcat" - |
+    while IFS="$TAB" read -r k d; do
+      parent=$(dirname "$d")
       case "$(basename "$d")" in
-        target) [ -f "$(dirname "$d")/Cargo.toml" ] || [ -f "$d/CACHEDIR.TAG" ] || continue ;;
-        build) [ -f "$(dirname "$d")/build.gradle" ] || [ -f "$(dirname "$d")/build.gradle.kts" ] || [ -f "$(dirname "$d")/setup.py" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
-        dist) [ -f "$(dirname "$d")/package.json" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
+        target) [ -f "$parent/Cargo.toml" ] || [ -f "$d/CACHEDIR.TAG" ] || continue ;;
+        build) [ -f "$parent/build.gradle" ] || [ -f "$parent/build.gradle.kts" ] || [ -f "$parent/setup.py" ] || [ -f "$parent/pyproject.toml" ] || continue ;;
+        dist) [ -f "$parent/package.json" ] || [ -f "$parent/pyproject.toml" ] || continue ;;
       esac
-      k=$(dir_kib "$d")
-      [ -n "${k:-}" ] && printf '%s\t%s\n' "$k" "$d"
-    done | sort -t"$TAB" -k1,1nr >"$WORK/projects"
+      printf '%s\t%s\n' "$k" "$d"
+    done | awk -F'\t' '
+      { k[NR] = $1; p[NR] = $2 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          nested = 0
+          for (j = 1; j <= NR; j++) if (i != j && index(p[i], p[j] "/") == 1) { nested = 1; break }
+          if (!nested) printf "%s\t%s\n", k[i], p[i]
+        }
+      }' | sort -t"$TAB" -k1,1nr >"$WORK/projects"
   k=$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")
-  add_item "projects:$PROJECTS" "$k"
+  [ "$k" -gt 0 ] && add_item "projects:index" "$k"
   return 0
 }
 
@@ -437,7 +434,7 @@ report_accounting() {
       [ "$th" -lt $((2 * 1024 * 1024)) ] && th=$((2 * 1024 * 1024))
       if [ $((RESIDUAL - rp)) -gt "$th" ]; then
         RESIDUAL_SPIKE=1
-        echo "  WARN: 残差が前回から $(signed $((RESIDUAL - rp))) 増えています。一覧に無い場所で何かが増えました(diskreport --deep で探す)"
+        echo "  WARN: 残差が前回から $(signed $((RESIDUAL - rp))) 増えています。一覧に無い場所で何かが増えました(diskreport scan で索引を作り直すと「残差の候補」に出ます)"
       fi
     fi
   fi
@@ -488,12 +485,11 @@ report_breakdown() {
 }
 
 report_projects() {
-  [ -n "$PROJECTS" ] && [ -f "$WORK/projects" ] || return 0
-  echo "== 開発成果物($PROJECTS 配下。消しても再生成できるもの)"
-  case "$PROJECTS" in /mnt/*) echo "  (/mnt 越しの走査は WSL 内より桁違いに遅いことがあります)" ;; esac
-  head -n 20 "$WORK/projects" | while IFS="$TAB" read -r k d; do printf '  %8s  %s\n' "$(human "$k")" "$d"; done
+  [ -s "$WORK/projects" ] || return 0
+  echo "== 開発成果物(索引から。消しても再生成できるもの)"
+  head -n 15 "$WORK/projects" | while IFS="$TAB" read -r k d; do printf '  %8s  %s\n' "$(human "$k")" "$d"; done
   n=$(wc -l <"$WORK/projects" | tr -d ' ')
-  echo "  合計 $(human "$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")")($n 件。上位 20 件を表示)"
+  echo "  合計 $(human "$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")")($n 件。上位 15 件を表示)"
   echo ""
   return 0
 }
@@ -595,7 +591,7 @@ win_apps_kib() {
 
 report_windows_ledger() {
   is_wsl || return 0
-  echo "== Windows 側(帳簿だけ。中身は Windows の道具で見る。diskreport --windows で「ストレージ」設定を開く)"
+  echo "== Windows 側(帳簿だけ。中身は Windows の道具で見る。diskreport windows で「ストレージ」設定を開く)"
   echo "  (WSL の中の df は仮想ディスクの上限を全体として見せるため、本当の制約はここの空きです)"
   distros=$(wsl_distros || true)
   base=$(printf '%s\n' "$distros" | awk -F'\t' -v d="${WSL_DISTRO_NAME:-}" '$1 == d { print $2; exit }')
@@ -663,7 +659,7 @@ report_windows_ledger() {
 report_windows_open() {
   [ "$WINDOWS" -eq 1 ] || return 0
   if ! is_wsl; then
-    echo "diskreport: --windows は WSL でだけ意味があります(この環境では何もしません)" >&2
+    echo "diskreport: windows は WSL でだけ意味があります(この環境では何もしません)" >&2
     return 0
   fi
   if ! command -v cmd.exe >/dev/null 2>&1; then
@@ -686,7 +682,7 @@ report_windows_open() {
 }
 
 # ---------------------------------------------------------------------------
-# 索引(--scan で作り、普段は読むだけ)。「数える」と「見せる」を分けて、細かさと速さを両立する
+# 索引(scan で作り、普段は読むだけ)。「数える」と「見せる」を分けて、細かさと速さを両立する
 # ---------------------------------------------------------------------------
 index_time() { awk -F'\t' 'NR == 1 && $1 == "#time" { print $2; exit }' "$1" 2>/dev/null; }
 index_age_label() { # $1: 索引ファイル
@@ -727,8 +723,17 @@ scan_home() {
     echo ""
     return 0
   fi
+  # 大きいファイル(512MiB 超)も同じ機会に拾う(2回目の走査だがメタデータは OS がキャッシュ済みで速い)
+  {
+    printf '#time\t%s\n' "$NOW"
+    scan_cmd find "$HOME" -xdev -type f -size +512M 2>/dev/null | head -n 500 | while IFS= read -r f; do
+      sz=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null || echo 0)
+      printf '%s\t%s\n' "$((sz / 1024))" "$f"
+    done | sort -t"$TAB" -k1,1nr
+  } >"$WORK/idx-big" || true
   rotate_index "$INDEX_HOME"
   mkdir -p "$STATE_DIR" 2>/dev/null || true
+  cp "$WORK/idx-big" "$INDEX_BIG" 2>/dev/null || true
   if cp "$WORK/idx-home" "$INDEX_HOME" 2>/dev/null; then
     echo "  完了: $n ディレクトリ、$(($(date +%s) - start)) 秒"
   else
@@ -791,7 +796,7 @@ scan_windows() {
   done
   if [ -z "$wt" ]; then
     echo "  WizTree が見つかりません。入れると Windows 側を数秒で数えられます(個人利用は無償。インストーラ版または portable 版)"
-    echo "  代わりに Windows の「ストレージ」設定を使うには: diskreport --windows"
+    echo "  代わりに Windows の「ストレージ」設定を使うには: diskreport windows"
     echo ""
     return 0
   fi
@@ -904,7 +909,7 @@ show_index_rows() { # $1: prev 索引(無ければ空), $2: 件数
 
 report_index_home() {
   [ -f "$INDEX_HOME" ] || return 0
-  echo "== 詳細: \$HOME 配下(索引から。数えたのは $(index_age_label "$INDEX_HOME")。更新は diskreport --scan)"
+  echo "== 詳細: \$HOME 配下(索引から。数えたのは $(index_age_label "$INDEX_HOME")。更新は diskreport scan)"
   prev=
   [ -f "$INDEX_HOME.prev" ] && prev=$INDEX_HOME.prev
   home_depth=$(printf '%s' "$HOME" | tr -cd '/' | wc -c | tr -d ' ')
@@ -950,7 +955,7 @@ win_category() {
 report_index_windows() {
   is_wsl || return 0
   [ -f "$INDEX_WIN" ] || return 0
-  echo "== 詳細: Windows 側(索引から。数えたのは $(index_age_label "$INDEX_WIN")。更新は diskreport --scan)"
+  echo "== 詳細: Windows 側(索引から。数えたのは $(index_age_label "$INDEX_WIN")。更新は diskreport scan)"
   prev=
   [ -f "$INDEX_WIN.prev" ] && prev=$INDEX_WIN.prev
   # カテゴリ別: 深さ 1(ドライブ直下)と、Users\<名前>\ 直下(深さ 3)の行で振り分ける
@@ -1088,42 +1093,68 @@ report_apps_windows() {
 }
 
 # ---------------------------------------------------------------------------
-# 深掘り(--deep、または残差が跳ねたとき): 残差の場所を探す
+# 大きいファイル(macOS は Spotlight の索引から走査なしで。他は scan のついでに拾った索引から)
 # ---------------------------------------------------------------------------
-report_deep() {
-  [ "$DEEP" -eq 1 ] || return 0
-  echo "== 深掘り(残差の場所を探す)"
+report_bigfiles() {
   if is_macos && command -v mdfind >/dev/null 2>&1; then
-    echo "  Spotlight の索引から 1GiB 超のファイル(走査なし):"
+    echo "== 大きいファイル(1GiB 超。Spotlight の索引から、走査なし)"
     mdfind -onlyin "$HOME" 'kMDItemFSSize > 1073741824' 2>/dev/null | head -n 200 | while IFS= read -r f; do
-      s=$(stat -f %z "$f" 2>/dev/null || echo 0)
-      printf '%s\t%s\n' "$((s / 1024))" "$f"
-    done | sort -t"$TAB" -k1,1nr | head -n 20 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
-  else
-    echo "  \$HOME 配下の 512MiB 超のファイル(ファイル一覧の走査。数十秒かかることがあります):"
-    find "$HOME" -xdev -type f -size +512M 2>/dev/null | head -n 200 | while IFS= read -r f; do
-      s=$(stat -c %s "$f" 2>/dev/null || echo 0)
-      printf '%s\t%s\n' "$((s / 1024))" "$f"
-    done | sort -t"$TAB" -k1,1nr | head -n 20 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
+      sz=$(stat -f %z "$f" 2>/dev/null || echo 0)
+      printf '%s\t%s\n' "$((sz / 1024))" "$f"
+    done | sort -t"$TAB" -k1,1nr | head -n 15 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
+    echo ""
+  elif [ -f "$INDEX_BIG" ]; then
+    echo "== 大きいファイル(512MiB 超。索引から。数えたのは $(index_age_label "$INDEX_BIG"))"
+    n=$(($(wc -l <"$INDEX_BIG") - 1))
+    if [ "$n" -le 0 ]; then
+      echo "  (該当なし)"
+    else
+      tail -n +2 "$INDEX_BIG" | head -n 15 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
+    fi
+    echo ""
   fi
-  echo "  ディレクトリ単位で掘るには全走査の TUI を使ってください(WSL 内なら 1 分前後):"
-  found=0
+  return 0
+}
+
+# 全走査 TUI の案内(入っているものだけ)
+tui_hint() {
   for t in dua gdu ncdu dust; do
     if command -v "$t" >/dev/null 2>&1; then
       case "$t" in
-        dua) echo "    dua i $HOME" ;;
-        gdu) echo "    gdu $HOME" ;;
-        ncdu) echo "    ncdu -x $HOME" ;;
-        dust) echo "    dust -d 3 $HOME" ;;
+        dua) add_hint "dua i \$HOME                                # 対話的に掘る(全走査。WSL 内なら 1 分前後)" ;;
+        gdu) add_hint "gdu \$HOME                                  # 対話的に掘る(全走査。WSL 内なら 1 分前後)" ;;
+        ncdu) add_hint "ncdu -x \$HOME                              # 対話的に掘る(全走査。WSL 内なら 1 分前後)" ;;
+        dust) add_hint "dust -d 3 \$HOME                            # ディレクトリ単位で掘る(全走査)" ;;
       esac
-      found=1
+      return 0
     fi
   done
-  [ "$found" -eq 0 ] && echo "    (dua / gdu / ncdu のいずれも入っていません。nix run nixpkgs#dua -- i \$HOME などで使えます)"
-  if is_wsl; then
-    echo "  Windows 側は Windows の道具で: diskreport --windows(ストレージ設定)、Everything(es.exe)や WizTree があればそちら"
+  return 0
+}
+
+# 索引が無い、または 30 日より古いとき、端末で対話中なら「今作りますか?」と聞く(覚える引数を減らす)
+offer_scan() {
+  [ "$SCAN" -eq 0 ] || return 0
+  [ -t 0 ] && [ -t 1 ] || return 0
+  reason=
+  if [ ! -f "$INDEX_HOME" ]; then
+    reason="索引がまだありません"
+  else
+    t=$(index_time "$INDEX_HOME")
+    if [ -n "$t" ] && [ $((NOW - t)) -gt $((30 * 86400)) ]; then reason="索引が $(((NOW - t) / 86400)) 日前のものです"; fi
   fi
-  echo ""
+  [ -n "$reason" ] || return 0
+  printf '%s。今作りますか?(ホームフォルダを1回歩きます。上限 %d 分、Ctrl-C で中断可)[y/N] ' "$reason" "$((SCAN_TIMEOUT / 60))"
+  read -r ans || ans=
+  case "$ans" in
+    y | Y | yes)
+      echo ""
+      scan_home
+      scan_windows
+      SCAN=1
+      ;;
+    *) echo "" ;;
+  esac
   return 0
 }
 
@@ -1136,10 +1167,15 @@ if [ "$MODE" = nix-brief ]; then
   exit 0
 fi
 
+if [ "$WINDOWS" -eq 1 ]; then
+  report_windows_open
+  exit 0
+fi
 if [ "$SCAN" -eq 1 ]; then
   scan_home
   scan_windows
 fi
+offer_scan
 report_disk
 collect_ledgers
 collect_paths
@@ -1149,28 +1185,26 @@ report_breakdown
 report_index_home
 report_apps_home
 report_projects
+report_bigfiles
 report_nix
 report_windows_ledger
 report_index_windows
 report_apps_windows
-report_windows_open
 if [ "${RESIDUAL_SPIKE:-0}" -eq 1 ]; then
-  add_hint "diskreport --scan                           # 残差が増えた場所を索引で探す(1回だけ全部数える)"
+  add_hint "diskreport scan                             # 残差が増えた場所を索引で探す(1回だけ全部数える)"
 fi
-report_deep
+tui_hint
 save_history "$WORK/save"
 
 echo "== 次の一手(このコマンドは何も消しません)"
 echo "  cachesweep                                  # 開発キャッシュのサイズ。--clean で削除"
 printf '%s\n' "$hints" | sed '/^$/d'
-if [ -z "$PROJECTS" ]; then
-  echo "  diskreport --projects <DIR>                 # プロジェクト成果物(node_modules / target 等)も集計"
-fi
 if [ ! -f "$INDEX_HOME" ]; then
-  echo "  diskreport --scan                           # 索引を作る(1回だけ時間をかけて数え、以後の詳細表示は一瞬)"
+  echo "  diskreport scan                             # 索引を作る(1回だけ時間をかけて数え、以後の詳細・アプリ別は一瞬)"
+elif [ "$SCAN" -eq 0 ]; then
+  echo "  diskreport scan                             # 索引を作り直す(いまの索引は $(index_age_label "$INDEX_HOME"))"
 fi
-[ "$DEEP" -eq 0 ] && echo "  diskreport --deep                           # 大きいファイルと全走査 TUI の案内"
-if is_wsl && [ "$WINDOWS" -eq 0 ]; then
-  echo "  diskreport --windows                        # Windows の「ストレージ」設定を開く(Windows 側の中身は Windows の道具で)"
+if is_wsl; then
+  echo "  diskreport windows                          # Windows の「ストレージ」設定を開く(Windows 側の中身は Windows の道具で)"
 fi
 echo "  自分の環境の場所を一覧に足すには: ${CONF_DIR}/diskreport.local(形式は diskreport.paths と同じ)"

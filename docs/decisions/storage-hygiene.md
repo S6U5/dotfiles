@@ -68,6 +68,11 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - **「終わらない検査」にしない**: 重い処理は `--scan` の中だけで、既定 15 分(`DOTFILES_DISKREPORT_SCAN_TIMEOUT`)の `timeout` を付け、超えたら索引を保存せずに諦める。普段のレポートは木を歩かないので、ディスクの大きさに関係なく数秒で終わる。
 - 常駐して索引を更新し続ける方式(fanotify のデーモン)なら鮮度の問題は消えるが、「常駐やタイマーを持たない」方針と衝突するので採らない。
 
+### 使い方は1語に絞る(人に引数を覚えさせない)
+
+- 覚えるのは `diskreport` だけ。普段はこれ一発で、索引があれば詳細・アプリ別・開発成果物・大きいファイルまで全部出す。索引が無い、または 30 日より古いときは、端末で対話中なら「今作りますか?」と聞く(端末でなければ案内だけ)。明示的に作り直す語は `diskreport scan`、Windows の「ストレージ」設定を開く語は `diskreport windows`。`--nix-brief` は `switch.sh` が呼ぶ内部用で、人向けではない。
+- 以前あった `--projects DIR` / `--deep` は廃止し、どちらも索引から自動で出す(開発成果物は索引の中の `node_modules` / `target` 等をマーカーで確認して集計、大きいファイルは scan のついでに拾う。macOS の大きいファイルは Spotlight から走査なし)。選択肢を増やすより「いつもの1語で全部出る」方が、覚えなくて済む。
+
 ### アプリ別の見方(どのパスを見ればよいかを固定する)
 
 - OS ごとに「アプリがデータを置く決まった入れ物」があり、その直下のフォルダ名がアプリ名になる。この対応をコマンドに固定し、毎回調べない(AI に聞くたびに違うパスを教えられる、という問題への答え)。
@@ -124,14 +129,15 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 
 ## 実装状況(2026-11)
 
-- 実装済み(索引・アプリ別): `--scan`(`$HOME` の `du -xkd 6`、WSL では WizTree の CSV 取り込み、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
+- 実装済み(索引・アプリ別): `scan`(`$HOME` の `du -xkd 6`、WSL では WizTree の CSV 取り込み、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`--windows`(Windows の「ストレージ」設定を開く)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
 - 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
-- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に WizTree のコマンドライン引数(`/export` `/admin=1` `/exportfolders=1` `/exportfiles=0` `/exportdrivecapacity=0`)と CSV の見出し行は公式ガイドをこの環境から読めず、記憶に基づく。実機で `diskreport --scan` を1回走らせて CSV が取り込めるかを確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
+- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に WizTree のコマンドライン引数(`/export` `/admin=1` `/exportfolders=1` `/exportfiles=0` `/exportdrivecapacity=0`)と CSV の見出し行は公式ガイドをこの環境から読めず、記憶に基づく。実機で `diskreport scan` を1回走らせて CSV が取り込めるかを確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)
 - (2026-11: `diskreport --windows` は `/mnt` 越しの `du` をやめ、Windows の「ストレージ」設定を開くだけに変更。理由は本文「帳簿優先の原則」)
-- (2026-11: 「細かく、しかし速く」のために索引方式(`--scan`)とアプリ別の見方を追加。重い処理に上限時間を付けた)
+- (2026-11: 「細かく、しかし速く」のために索引方式(`scan`)とアプリ別の見方を追加。重い処理に上限時間を付けた)
+- (2026-11: 引数を `scan` / `windows` の2語に絞り、`--projects` / `--deep` は索引からの自動表示に置き換えた。索引が無い・古いときは対話で聞く)
 - (2026-11: 「固定パス + 前回差分」の3つの穴(一覧の外が見えない、`$HOME` しか見ていない、比較が一覧の中で閉じている)を受け、会計モデル(帰属 + 残差、帳簿優先)に設計を改めた。対象も開発キャッシュからマシンのストレージ全般へ広げた。本 ADR の本文を書き直し)
