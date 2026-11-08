@@ -344,7 +344,8 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ) |
+| `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧(説明は各スクリプトの先頭コメントから生成。名前を付けるとそのコマンドのヘッダ全文) |
+| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
 | `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `diskreport [--projects DIR] [--nix-brief]` | 何がストレージを食っているかを全走査せずに数秒で報告(読み取り専用)。空き容量、Nix の世代数と自動 GC の有無、既知のキャッシュ・アプリデータの場所を**前回からの増分順**に表示し、末尾で掃除コマンドを案内する。`--projects DIR` で `node_modules` / `target` / `.venv` 等のプロジェクト成果物も集計(マーカーで見つけて中へは降りない)。WSL では vhdx の実サイズと中の使用量の差も出す(判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md)) |
