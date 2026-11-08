@@ -508,12 +508,17 @@ report_nix() {
   done
   keep=${DOTFILES_HM_KEEP_GENERATIONS:-}
   case "$keep" in '' | *[!0-9]* | 0) keep= ;; esac
-  if [ -n "$keep" ]; then
-    echo "  世代の数: $gens(上限 $keep。DOTFILES_HM_KEEP_GENERATIONS により switch のたびに切り詰める)"
+  kdays=${DOTFILES_HM_KEEP_DAYS:-}
+  case "$kdays" in '' | *[!0-9]* | 0) kdays= ;; esac
+  rule=
+  [ -n "$keep" ] && rule="直近 $keep 世代"
+  [ -n "$kdays" ] && rule="${rule:+${rule}と }$kdays 日以内"
+  if [ -n "$rule" ]; then
+    echo "  世代の数: $gens(残す範囲: $rule。switch のたびにそれ以外を切り詰める)"
   else
     echo "  世代の数: $gens(古い世代は GC で消えない。戻す必要が無くなったら expire-generations)"
   fi
-  if [ -z "$keep" ] && [ "$gens" -gt 10 ]; then
+  if [ -z "$rule" ] && [ "$gens" -gt 10 ]; then
     add_hint "home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(戻せなくなる)"
   fi
   if [ -z "${NIX_STORE_KIB:-}" ] && command -v nix >/dev/null 2>&1; then

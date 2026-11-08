@@ -68,13 +68,17 @@ else
 fi
 cmd=("${hm[@]}" switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
 
-# 世代の掃除。既定は「聞く」で、マシンごとに「直近 N 世代だけ残す」と宣言することもできる。
+# 世代の掃除。既定は「聞く」で、マシンごとに「残す範囲」を宣言することもできる。
 #   - 既定(何も設定しない): 端末で対話中に限り、30 日より前の世代を消すか y/N で聞く(下記)。
-#   - local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N(正の整数)を書いたマシン: switch のたびに
-#     直近 N 世代へ自動で切り詰めて GC する(聞かない。そのマシンで書いたこと自体を同意とみなす。
-#     N=1 なら毎回「2 世代ある」状態になり、聞くと毎回聞かれるため)。home-manager expire-generations は
-#     日時しか受け付けないので、Nix 本体の nix-env --delete-generations +N を home-manager の
-#     プロファイルに対して使う。
+#   - local.sh に次のどちらか、または両方を書いたマシン: switch のたびに聞かずに切り詰めて GC する
+#     (そのマシンで書いたこと自体を同意とみなす。N=1 のように毎回切り詰めたい設定で毎回聞かれないように)。
+#       export DOTFILES_HM_KEEP_GENERATIONS=N   # 直近 N 世代は残す
+#       export DOTFILES_HM_KEEP_DAYS=D          # D 日以内の世代は残す
+#     両方書いたときは「どちらかの条件で残るものは残す」(D 日より古く、かつ直近 N 世代にも入らない
+#     ものだけを消す。nh clean の --keep-since / --keep と同じ意味)。今の世代はどの場合も消えない。
+#     home-manager expire-generations は日時しか受け付けないので、消す世代の番号を自分で決めて
+#     Nix 本体の nix-env --delete-generations に渡す。世代の作成日時は世代リンクの更新日時で判定する
+#     (find -mtime。GNU と BSD のどちらの find でも同じに動く)。
 #
 # 世代の掃除を聞く(端末で対話中のときだけ)。home-manager は switch のたびに世代を増やし、
 # 自分では一つも消さない。古い世代は GC ルートなので nix-collect-garbage でも残り、store が
@@ -108,28 +112,61 @@ hm_profile() {
   return 1
 }
 
-# DOTFILES_HM_KEEP_GENERATIONS が宣言されていれば、直近 N 世代へ切り詰めて GC する。
-# 戻り値 0: 宣言があり処理した(または不要だった) / 1: 宣言が無い(既定の「聞く」に任せる)
-keep_generations() {
-  local keep=${DOTFILES_HM_KEEP_GENERATIONS:-} profile gens
-  [ -n "$keep" ] || return 1
-  case "$keep" in
-    '' | *[!0-9]* | 0)
-      warn "DOTFILES_HM_KEEP_GENERATIONS は 1 以上の整数で指定してください(いまの値: $keep)。既定の動きにします"
-      return 1
+# 1 以上の整数か(不正なら警告して空を返す)。$1: 変数名, $2: 値
+_positive_int() {
+  case "$2" in
+    '') return 0 ;;
+    *[!0-9]* | 0)
+      warn "$1 は 1 以上の整数で指定してください(いまの値: $2)。この設定は使いません" >&2
+      return 0
       ;;
   esac
+  printf '%s' "$2"
+  return 0
+}
+
+# DOTFILES_HM_KEEP_GENERATIONS / DOTFILES_HM_KEEP_DAYS が宣言されていれば、残す範囲の外の世代を消して GC する。
+# 戻り値 0: 宣言があり処理した(または不要だった) / 1: 宣言が無い(既定の「聞く」に任せる)
+keep_generations() {
+  local keep days profile dir base current ids old lastk del
+  keep=$(_positive_int DOTFILES_HM_KEEP_GENERATIONS "${DOTFILES_HM_KEEP_GENERATIONS:-}")
+  days=$(_positive_int DOTFILES_HM_KEEP_DAYS "${DOTFILES_HM_KEEP_DAYS:-}")
+  [ -n "$keep" ] || [ -n "$days" ] || return 1
   if ! command -v nix-env >/dev/null 2>&1; then
-    warn "nix-env が見つからないため、世代の切り詰め(DOTFILES_HM_KEEP_GENERATIONS=$keep)を飛ばします"
+    warn "nix-env が見つからないため、世代の切り詰めを飛ばします"
     return 0
   fi
   profile=$(hm_profile) || return 0
-  gens=$(find "$(dirname "$profile")" -maxdepth 1 -name "$(basename "$profile")-*-link" 2>/dev/null | wc -l | tr -d ' ')
-  [ "$gens" -gt "$keep" ] || return 0
-  log "世代が $gens あります。DOTFILES_HM_KEEP_GENERATIONS=$keep に従い、直近 $keep 世代だけ残して GC します"
-  # 今の世代は nix-env が消さない
-  nix-env -p "$profile" --delete-generations "+$keep" || {
-    warn "世代の切り詰めに失敗しました"
+  dir=$(dirname "$profile")
+  base=$(basename "$profile")
+  current=$(readlink "$profile" 2>/dev/null | sed -n "s/^.*$base-\([0-9][0-9]*\)-link\$/\1/p")
+  # 世代の番号(昇順)
+  ids=$(find "$dir" -maxdepth 1 -name "$base-*-link" 2>/dev/null | sed -n "s/^.*$base-\([0-9][0-9]*\)-link\$/\1/p" | sort -n)
+  [ -n "$ids" ] || return 0
+  # 消してよい候補: 日数の宣言があれば D 日より古いもの、無ければ全部
+  if [ -n "$days" ]; then
+    old=$(find "$dir" -maxdepth 1 -name "$base-*-link" -mtime "+$days" 2>/dev/null | sed -n "s/^.*$base-\([0-9][0-9]*\)-link\$/\1/p" | sort -n)
+  else
+    old=$ids
+  fi
+  # 世代数の宣言があれば、直近 N 世代は候補から外す
+  lastk=
+  [ -n "$keep" ] && lastk=$(printf '%s\n' "$ids" | tail -n "$keep")
+  del=$(printf '%s\n' "$old" | while IFS= read -r i; do
+    [ -n "$i" ] || continue
+    [ "$i" = "$current" ] && continue
+    if [ -n "$lastk" ] && printf '%s\n' "$lastk" | grep -qx "$i"; then continue; fi
+    printf '%s\n' "$i"
+  done)
+  [ -n "$del" ] || return 0
+  local rule
+  rule=""
+  [ -n "$keep" ] && rule="直近 $keep 世代"
+  [ -n "$days" ] && rule="${rule:+${rule}と }$days 日以内"
+  log "世代が $(printf '%s\n' "$ids" | wc -l | tr -d ' ') あります。${rule}を残し、$(printf '%s\n' "$del" | wc -l | tr -d ' ') 世代を消して GC します"
+  # shellcheck disable=SC2046  # 世代番号を1つずつ引数にする(意図した単語分割)
+  nix-env -p "$profile" --delete-generations $(printf '%s\n' "$del" | tr '\n' ' ') || {
+    warn "世代の削除に失敗しました"
     return 0
   }
   nix-collect-garbage || warn "GC に失敗しました"
@@ -157,7 +194,7 @@ offer_expire_generations() {
     y | Y | yes) ;;
     *)
       log "スキップしました。あとで消すなら: home-manager expire-generations \"-30 days\" && nix-collect-garbage"
-      log "(このマシンでは常に直近 N 世代だけにしたいなら、local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N)"
+      log "(このマシンでは聞かずに切り詰めたいなら、local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N や DOTFILES_HM_KEEP_DAYS=D)"
       return 0
       ;;
   esac
