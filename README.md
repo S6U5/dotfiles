@@ -183,12 +183,18 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 <details>
 <summary><b>世代・パッケージのガベージコレクション</b></summary>
 
-古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください:
+Nix は宣言的ですが、`/nix/store` は「足すだけで勝手には引かない」置き場です。`switch` のたびに新しい世代ができ、前の世代は戻せるように残り、ビルドに使ったコンパイラ等もそのまま残ります。放置すると静かに太るので、この dotfiles では次の形で扱います(判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md)):
+
+- **知らせる**: `dotfiles-switch` / `dotfiles-update` の最後に、世代の数と自動 GC の有無を数行で表示します(表示だけ。何も消しません)。詳しくは `diskreport`。
+- **上限を決める**: `nix-gc-setup --apply` で Nix 本体の `min-free` / `max-free` を設定すると、ビルド中に空きが下限を切ったときだけ、その場で GC が走ります。人が打った `switch` の中でしか動かないので、「反映は明示実行のみ」の方針と両立します。複数ユーザー方式(nix-installer の既定)では daemon が読む `/etc/nix/nix.conf` に書く必要があるため、このコマンドが構成を見て書き先を選びます。
+- **消す**: 自動 GC で消えるのは「誰からも指されていない」store パスだけで、古い世代が指している分は残ります。世代ごと減らすときは手で実行してください:
 
 ```sh
-home-manager expire-generations   # 古い世代を削除
-nix-collect-garbage -d            # 到達不能な store パスを回収
+home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(その世代へは戻せなくなる)
+nix-collect-garbage -d                       # 到達不能な store パスと古い世代を回収
 ```
+
+WSL では、中で消しても仮想ディスクは縮まないため、続けて `wsl-compact` で Windows に返してください。
 
 </details>
 
@@ -338,9 +344,12 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ) |
-| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ) |
+| `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧(説明は各スクリプトの先頭コメントから生成。名前を付けるとそのコマンドのヘッダ全文) |
+| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
+| `diskreport [scan\|windows]` | 何がストレージを食っているかを報告(読み取り専用)。**覚えるのは `diskreport` だけ**で、普段はこれ一発: 器 → 会計 → いますぐ戻せる見込み → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 次の一手。**会計モデル**: 使用量を OS・インストール済みアプリ・ユーザーデータ・クラウド同期・仮想ディスク・キャッシュ・ごみ箱に振り分け、残りを**残差(知らない場所)**として出す。数えるときは帳簿(dpkg の申告サイズ、Nix の DB、`docker system df`、`journalctl`、Windows のレジストリ)を先に引き、普段はファイルを歩かないので数秒で終わる。**細かさは索引で出す**: 索引が無い・30 日より古いときは端末なら「今作りますか?」と聞き、`diskreport scan` でも作り直せる(`$HOME` を1回 `du`、WSL では Windows 側ドライブを WizTree に数えさせて CSV を取り込む。既定 15 分で打ち切り、`DOTFILES_DISKREPORT_SCAN_TIMEOUT`)。索引からは「大きい順」「前回の索引から増えた順」「残差の候補(一覧に無い大きな場所)」「**アプリ別**(XDG / macOS の Library / Windows の AppData・Program Files という決まった入れ物の直下をアプリ名として合計)」「開発成果物(`node_modules` / `target` / `.venv` 等。マーカーで確認)」「大きいファイル(macOS は Spotlight)」を鮮度付きで一瞬で出す。既知パスは `~/.config/dotfiles/diskreport.paths`(個人の追加は git 管理外の `diskreport.local`)。履歴を直近 30 回残して前回・週・月との差を付け、残差が跳ねたら警告。満杯で困っているときは「いますぐ戻せる見込み」を先に見る。WSL では中の `df` が当てにならないため Windows 側ドライブの空き・各 vhdx・レジストリの申告値も出し、`diskreport windows` で Windows の「ストレージ」設定を開く(`/mnt` 越しの `du` はしない)。判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md) |
+| `nix-gc-setup [--apply] [下限 上限]` | Nix の自動 GC の上限(`min-free` / `max-free`。既定 1G / 8G)を設定。既定は表示のみで、`--apply` で書き込む。daemon 構成なら `/etc/nix/nix.conf` に sudo で書いて daemon を再起動、単一ユーザー方式なら `~/.config/nix/nix.conf` に書く |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--log\|--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す。圧縮前後のサイズは Windows 側の `%LOCALAPPDATA%\dotfiles\wsl-compact.log` に 1 回 1 行で残り、`--log` で表示できる(diskpart 自体は結果を記録しないため) |
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |

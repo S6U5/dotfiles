@@ -1,0 +1,63 @@
+# diskreport が測る「既知の場所」の一覧(タブ区切り: カテゴリ、パス、何のデータか・消してよいか)。
+# - パスの先頭の ~ は $HOME に展開する。無い場所は静かに飛ばす。
+# - カテゴリ: userdata(人が開くユーザーデータ) / cloud(クラウド同期のローカルコピー) /
+#   vm(仮想ディスク・コンテナ) / cache(アプリデータ・キャッシュ) / trash(ごみ箱・バックアップ)
+# - 入れ子の場所(例: ~/.cache と ~/.cache/huggingface)は内訳として表示するが、合計は外側だけ数える。
+# - 自分の環境でしか意味の無い場所は、この repo ではなく ~/.config/dotfiles/diskreport.local に同じ形式で書く
+#   (git 管理外。プライベートなパスをコミットしないため)。
+# - 一覧を増やすときは「何のデータか・消してよいか」を必ず添える(判断根拠は docs/decisions/storage-hygiene.md)。
+
+# --- ユーザーデータ(人が開く場所。消す判断は人) ---
+userdata	~/Documents	書類
+userdata	~/Pictures	写真(macOS の Photos ライブラリもここ)
+userdata	~/Videos	動画(Linux)
+userdata	~/Movies	動画(macOS)
+userdata	~/Music	音楽
+userdata	~/Downloads	ダウンロード(溜まりやすい)
+userdata	~/Desktop	デスクトップ
+
+# --- クラウド同期(ローカルコピー。プレースホルダは論理サイズで見えることがある) ---
+cloud	~/OneDrive	OneDrive(個人用)
+cloud	~/Library/CloudStorage	OneDrive / Google Drive / Dropbox 等のローカルコピー(macOS)
+cloud	~/Library/Mobile Documents	iCloud Drive(macOS)
+cloud	~/Google Drive	Google Drive
+cloud	~/Dropbox	Dropbox
+
+# --- 仮想ディスク・コンテナ(中で消しても外は縮まない) ---
+vm	~/.docker	Docker CLI の設定・キャッシュ(イメージ本体は docker system df)
+vm	~/Library/Containers/com.docker.docker	Docker Desktop の仮想ディスク(macOS)
+vm	~/.orbstack	OrbStack の仮想ディスク(macOS)
+vm	~/.colima	Colima の仮想ディスク
+vm	~/.lima	Lima の仮想ディスク
+vm	~/.minikube	minikube の仮想マシン・イメージ
+vm	~/.local/share/containers	Podman のイメージ・コンテナ
+vm	~/.local/share/libvirt	libvirt の仮想マシンイメージ
+vm	~/VirtualBox VMs	VirtualBox の仮想マシン
+
+# --- アプリデータ・キャッシュ(誰も開かない場所) ---
+cache	~/.cache	アプリのキャッシュ全般(XDG。消しても再生成される)
+cache	~/.cache/huggingface	Hugging Face のモデル・データセット(再ダウンロードできる)
+cache	~/.cargo	Rust のクレート・レジストリ(1.88 以降は自動で古いものが消える)
+cache	~/.rustup	Rust のツールチェーン(rustup toolchain list で整理)
+cache	~/go/pkg/mod	Go のモジュールキャッシュ(go clean -modcache)
+cache	~/.npm	npm のキャッシュ(npm cache clean)
+cache	~/.local/share/pnpm	pnpm のストア(pnpm store prune)
+cache	~/.gradle	Gradle のキャッシュ
+cache	~/.m2	Maven のリポジトリ
+cache	~/.local/share/nvim	Neovim のプラグイン・データ
+cache	~/.config/Code	VS Code のユーザーデータ・拡張のキャッシュ(Linux)
+cache	~/.vscode	VS Code の拡張(Linux / macOS)
+cache	~/.claude/projects	Claude Code の会話ログ(cleanupPeriodDays で自動削除)
+cache	~/.codex	Codex CLI のデータ
+cache	~/.ollama	ローカル LLM のモデル(ollama rm で整理)
+cache	~/Library/Caches	アプリのキャッシュ(macOS。消しても再生成される)
+cache	~/Library/Application Support	アプリのデータ(macOS。キャッシュと大事なデータが混在)
+cache	~/Library/Containers	サンドボックス化されたアプリのデータ(macOS)
+cache	~/Library/Developer	Xcode の DerivedData・シミュレータ(macOS。DerivedData は消してよい)
+cache	~/Library/Logs	アプリのログ(macOS)
+cache	~/Library/Mail	Mail のメールと添付(macOS)
+
+# --- ごみ箱・バックアップ(消し忘れの定番) ---
+trash	~/.local/share/Trash	ごみ箱(Linux)
+trash	~/.Trash	ごみ箱(macOS)
+trash	~/Library/Application Support/MobileSync/Backup	iPhone / iPad のバックアップ(macOS)

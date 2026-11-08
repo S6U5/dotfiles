@@ -18,6 +18,11 @@
 
 - `home-manager-test` は mdgrid を Rust のソースからビルドするため、Ubuntu / macOS の両方で毎回フルビルドになっている可能性がある。まず実行時間を確認し、長いようなら `nix-community/cache-nix-action` 等でストアをキャッシュする(Action は方針どおりコミットハッシュで固定し、Dependabot の追跡対象に入れる)。
 
+## mdgrid を nixpkgs に登録する(2026-11時点、未着手。mdgrid 側の作業)
+
+- 現状は nixpkgs に無いため flake の入力からソースビルドしている(`docs/decisions/mdgrid.md`)。nixpkgs-unstable の更新で Rust ツールチェーンが変わるたびに各マシンと CI でビルドし直しになるが、ビルド時間は許容し、バイナリキャッシュ(Cachix 等)は作らないと決めた(ストレージへの影響は GC で消える一時的なもの)。
+- 登録が通ったら、この repo 側は `nix/flake.nix` の入力 `mdgrid` と `nix/home.nix` の derivation を消して `pkgs.mdgrid` に置き換え、`docs/decisions/mdgrid.md` の履歴に追記する。
+
 ## 個人的なこと・特定の文脈が分かることは一切含めない(最重要ルール)
 
 プロンプトは特に、書いた人物の状況が特定できる文脈が混ざりやすい。このファイルも含め、コミット前に必ず全文精査し、少しでも疑わしければ入れない。
