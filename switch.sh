@@ -62,11 +62,42 @@ fi
 # 毎回 HEAD を未認証の GitHub API で解決するためレート制限で失敗することがあり、
 # 固定版を呼ぶ方が再現性も高い(scripts/test-home-manager.sh と同じ)。
 if command -v home-manager >/dev/null 2>&1; then
-  cmd=(home-manager)
+  hm=(home-manager)
 else
-  cmd=(nix run "$DOTFILES_DIR/nix#home-manager" --)
+  hm=(nix run "$DOTFILES_DIR/nix#home-manager" --)
 fi
-cmd+=(switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
+cmd=("${hm[@]}" switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
+
+# 世代の掃除を聞く(端末で対話中のときだけ)。home-manager は switch のたびに世代を増やし、
+# 自分では一つも消さない。古い世代は GC ルートなので nix-collect-garbage でも残り、store が
+# 「宣言には無いのに消していない分」で太っていく。戻せなくなる削除なので黙っては行わず、
+# 世代が 10 を超え、かつ 30 日より前のものがあるときに限って、人に y/N を聞く。
+# 端末でなければ(CI や他スクリプトからの呼び出し)何も聞かず、diskreport の案内に任せる。
+# 判断根拠は docs/decisions/storage-hygiene.md。
+offer_expire_generations() {
+  [ -t 0 ] && [ -t 1 ] || return 0
+  local dir gens=0 old=0 ans
+  for dir in "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles" "/nix/var/nix/profiles/per-user/${USER:-$(id -un)}"; do
+    [ -d "$dir" ] || continue
+    gens=$((gens + $(find "$dir" -maxdepth 1 -name 'home-manager-*-link' 2>/dev/null | wc -l)))
+    old=$((old + $(find "$dir" -maxdepth 1 -name 'home-manager-*-link' -mtime +30 2>/dev/null | wc -l)))
+  done
+  [ "$gens" -gt 10 ] && [ "$old" -gt 0 ] || return 0
+  printf '世代が %d あります(30 日より前が %d)。30 日より前の世代を消して GC しますか?(戻せなくなります)[y/N] ' "$gens" "$old"
+  read -r ans || ans=
+  case "$ans" in
+    y | Y | yes) ;;
+    *) return 0 ;;
+  esac
+  "${hm[@]}" expire-generations "-30 days"
+  # 消した世代が指していた store パスは誰からも指されなくなったので回収する。
+  # -d は付けない(home-manager 以外のプロファイルの世代まで消さない)
+  nix-collect-garbage
+  if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+    log "空いた分を Windows に返すには: wsl-compact"
+  fi
+  return 0
+}
 
 log "dotfiles switch: 対象 $DOTFILES_DIR($system)"
 log "  \$ ${cmd[*]}"
@@ -78,3 +109,4 @@ log "  \$ ${cmd[*]}"
 # でも動くよう、リポジトリ内の実体を直接呼ぶ。失敗しても switch の成否には影響させない。
 log ""
 "$DOTFILES_DIR/home/.local/bin/diskreport" --nix-brief || true
+offer_expire_generations || true
