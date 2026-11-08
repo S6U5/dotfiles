@@ -1,0 +1,40 @@
+#!/bin/sh
+# OS のクリップボードの内容を標準出力へ書き出す。
+#   macOS: pbpaste / WSL: Windows のクリップボード(PowerShell) / Linux: wl-paste・xclip・xsel
+# 使い方: clippaste > memo.txt / clippaste | jq .
+# WSL では Windows 側の改行(CRLF)を LF にそろえて出す。手段が無いときは非0で終わる。
+set -eu
+
+case "$(uname -s)" in
+  Darwin)
+    pbpaste
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v powershell.exe >/dev/null 2>&1; then
+        echo "clippaste: powershell.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 1
+      fi
+      # 出力を UTF-8 にしないと日本語が化ける。Write は末尾に改行を足さないので内容がそのまま出る。
+      # カレントが WSL 側(UNC パス)だと警告が出ることがあるため、Windows 側のドライブから起動する
+      (
+        cd /mnt/c 2>/dev/null || cd /
+        powershell.exe -NoProfile -NonInteractive -Command \
+          '[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write((Get-Clipboard -Raw))'
+      ) | tr -d '\r'
+    elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-paste >/dev/null 2>&1; then
+      wl-paste --no-newline
+    elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null 2>&1; then
+      xclip -selection clipboard -out
+    elif [ -n "${DISPLAY:-}" ] && command -v xsel >/dev/null 2>&1; then
+      xsel --clipboard --output
+    else
+      echo "clippaste: クリップボードを扱う手段が見つかりません(wl-paste / xclip / xsel が無いか、表示環境が無い)" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "clippaste: 未対応の OS です($(uname -s))" >&2
+    exit 1
+    ;;
+esac

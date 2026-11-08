@@ -345,6 +345,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `arduino [ファイル]` | Arduino IDE で開く(Linux に本物の arduino コマンドがあればそちらを優先) |
 | `ov [名前]` | Obsidian を vault 指定で起動 |
 | `explorer [パス]` | ファイルマネージャで開く(WSL: エクスプローラー / macOS: Finder / Linux: xdg-open) |
+| `herdrs [名前]` | herdr のセッションを選んで入る(fzf で一覧から選択。一覧に無い名前を打てば新規作成。`herdrs 名前` で直接。herdr の中からは入れ子になるので実行しない) |
 | `wsl-browser <URL\|ファイル>` | Windows 側の既定ブラウザで開く(WSL 用)。WSL では `BROWSER` と xdg-open の URL・HTML の既定アプリがこれに向くため、ツールが開くページも WSL 内のブラウザではなく Windows 側で開く(判断根拠は [`docs/decisions/wsl-browser.md`](docs/decisions/wsl-browser.md)) |
 
 ### ユーティリティ
@@ -354,7 +355,10 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧(説明は各スクリプトの先頭コメントから生成。名前を付けるとそのコマンドのヘッダ全文) |
 | `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
 | `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
+| `extract <ファイル...>` | アーカイブを形式を気にせず展開(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。中身がばらまかれないよう、最上位が複数ならアーカイブ名のフォルダにまとめる。既存のファイルは上書きしない。zip は unzip が無ければ bsdtar → python3 で代用、7z / rar は各ツールがあるときだけ |
+| `git-branch-sweep [--delete] [--no-fetch]` | マージ済み(merged)・リモートで削除済み(gone。スカッシュマージした PR もこちらで拾う)のローカルブランチを一覧表示。`--delete` で確認してから削除し、マージの形跡が無い gone のブランチは1本ずつ聞いてから強制削除する。現在・既定・他の worktree で使用中のブランチは対象外。`git branch-sweep` でも呼べる |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
+| `clipcopy [ファイル...]` / `clippaste` | クリップボードへコピー(標準入力かファイル)/ クリップボードの中身を標準出力へ(macOS: pbcopy・pbpaste / WSL: Windows のクリップボード。日本語が化けないよう変換し、貼り付け時は CRLF を LF に / Linux: wl-copy・xclip・xsel)。手段が無ければ非0で終わる |
 | `diskreport [scan\|windows]` | 何がストレージを食っているかを報告(読み取り専用)。**覚えるのは `diskreport` だけ**で、普段はこれ一発: 器 → 会計 → いますぐ戻せる見込み → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 次の一手。**会計モデル**: 使用量を OS・インストール済みアプリ・ユーザーデータ・クラウド同期・仮想ディスク・キャッシュ・ごみ箱に振り分け、残りを**残差(知らない場所)**として出す。数えるときは帳簿(dpkg の申告サイズ、Nix の DB、`docker system df`、`journalctl`、Windows のレジストリ)を先に引き、普段はファイルを歩かないので数秒で終わる。**細かさは索引で出す**: 索引が無い・30 日より古いときは端末なら「今作りますか?」と聞き、`diskreport scan` でも作り直せる(`$HOME` を1回 `du`、WSL では Windows 側ドライブを WizTree に数えさせて CSV を取り込む。既定 15 分で打ち切り、`DOTFILES_DISKREPORT_SCAN_TIMEOUT`)。索引からは「大きい順」「前回の索引から増えた順」「残差の候補(一覧に無い大きな場所)」「**アプリ別**(XDG / macOS の Library / Windows の AppData・Program Files という決まった入れ物の直下をアプリ名として合計)」「開発成果物(`node_modules` / `target` / `.venv` 等。マーカーで確認)」「大きいファイル(macOS は Spotlight)」を鮮度付きで一瞬で出す。既知パスは `~/.config/dotfiles/diskreport.paths`(個人の追加は git 管理外の `diskreport.local`)。履歴を直近 30 回残して前回・週・月との差を付け、残差が跳ねたら警告。満杯で困っているときは「いますぐ戻せる見込み」を先に見る。WSL では中の `df` が当てにならないため Windows 側ドライブの空き・各 vhdx・レジストリの申告値も出し、`diskreport windows` で Windows の「ストレージ」設定を開く(`/mnt` 越しの `du` はしない)。判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md) |
 | `nix-gc-setup [--apply] [下限 上限]` | Nix の自動 GC の上限(`min-free` / `max-free`。既定 1G / 8G)を設定。既定は表示のみで、`--apply` で書き込む。daemon 構成なら `/etc/nix/nix.conf` に sudo で書いて daemon を再起動、単一ユーザー方式なら `~/.config/nix/nix.conf` に書く |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
@@ -365,6 +369,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex / Copilot CLI / Antigravity / Cursor のうち入っているものへ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
+| `fzkill [-シグナル] [絞り込み語]` | 自分のプロセスを fzf で選んで kill(Tab で複数選択。既定は TERM、止まらなければ `-9`。fzf のある環境のみ) |
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。`ls` / `ll` / `la` / `lt`(ツリー表示)は eza があればアイコン・色付き表示になります(無い環境では色付き ls にフォールバック。判断根拠は [`docs/decisions/ls-replacement.md`](docs/decisions/ls-replacement.md) 参照)。
 
