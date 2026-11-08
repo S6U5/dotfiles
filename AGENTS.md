@@ -90,6 +90,8 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 - シェルスクリプトは shellcheck(lint)と shfmt(フォーマット、`-i 2 -ci`)に準拠する。
 - チェックは `./scripts/lint.sh`、自動修正は `./scripts/lint.sh --fix`。
 - CI(`.github/workflows/lint.yml`)で必ず実行。ローカルの pre-commit フックでもツールがあれば実行される(無ければスキップ)。
+- shellcheck は静的検査なので、`home/.config/shell/` の共通設定や bash / zsh の設定本体を変えたら `./scripts/test-shell.sh` も実行する(dash / bash / zsh で実際に読み込み、関数の定義と cd 系の終了コードの決まりを確かめる。CI の lint ジョブでも実行される)。
+- CI のジョブ名(`lint` / `home-manager-test` / `gitleaks`)は main の required status check として参照されているため変えない(`docs/decisions/oss-publish-plan.md`)。ジョブを足すのは自由だが、required にするには GitHub 側の設定も要る。
 
 ## ツール設定を dotfiles に入れるかの判断基準
 

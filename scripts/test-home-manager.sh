@@ -83,18 +83,27 @@ fi
 
 RESULT="$BUILD_DIR/result"
 
-echo "== 3) 代表ファイルが home/ の実体を指しているか"
-for f in .config/bash/bashrc .tmux.conf .npmrc \
-  .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch \
-  .zshenv .config/zsh/zshrc .config/nvim/lazy-lock.json; do
-  linked_to=$(readlink -f "$RESULT/home-files/$f" 2>/dev/null || true)
-  expected="$DOTFILES_DIR/home/$f"
+echo "== 3) home/ 配下の全ファイルが配布対象になり、home/ の実体を指しているか"
+# git 管理下の home/ 全ファイルを対象にする(代表ファイルだけだと、walkHome の除外ロジックを
+# 変えたときの漏れや、新しく置いたファイルが配布されないケースを見逃す)。
+# .gitkeep は walkHome が意図的に除外するため対象外
+linked=0
+while IFS= read -r f; do
+  rel=${f#home/}
+  case "$rel" in */.gitkeep | .gitkeep) continue ;; esac
+  linked_to=$(readlink -f "$RESULT/home-files/$rel" 2>/dev/null || true)
+  expected="$DOTFILES_DIR/$f"
   if [ "$linked_to" = "$expected" ]; then
-    ok "リンク先が一致: $f"
+    linked=$((linked + 1))
   else
-    ng "リンク先が不一致: $f (got: $linked_to, want: $expected)"
+    ng "リンク先が不一致: $rel (got: ${linked_to:-リンク無し}, want: $expected)"
   fi
-done
+done < <(git ls-files -- home)
+if [ "$linked" -gt 0 ]; then
+  ok "home/ の $linked ファイルすべてが home/ の実体にリンクされている"
+else
+  ng "home/ に配布対象のファイルが見つからない"
+fi
 
 echo "== 4) 実行可能属性が維持されているか"
 for f in .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch; do
