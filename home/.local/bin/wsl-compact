@@ -71,7 +71,13 @@ printf 'select vdisk file="%s"\r\nattach vdisk readonly\r\ncompact vdisk\r\ndeta
 dp_win_q=$(printf '%s' "$dp_win" | sed "s/'/''/g")
 ps_win_q=$(printf '%s' "$ps_win" | sed "s/'/''/g")
 
-cat >"$(wslpath -u "$ps_win")" <<EOF
+# Windows PowerShell 5.1 は BOM なしのファイルをシステムのコードページ(日本語環境
+# なら CP932)で読むため、UTF-8 の日本語が化けて「文字列に終端記号 " がありません」
+# という構文エラーになり、管理者ウィンドウが何もせず即閉じる。UTF-8 と判定させる
+# ために先頭に BOM(EF BB BF)を付ける。
+ps_unix=$(wslpath -u "$ps_win")
+printf '\357\273\277' >"$ps_unix"
+cat >>"$ps_unix" <<EOF
 Write-Host "WSL を終了します..."
 wsl --shutdown
 Start-Sleep -Seconds 3
@@ -82,7 +88,7 @@ Write-Host "完了しました。Enter キーで閉じます"
 Read-Host
 EOF
 
-echo "対象: $vhdx"
+printf '対象: %s\n' "$vhdx"
 echo "管理者権限の PowerShell を起動します(UAC の確認が出ます)。"
 echo "この WSL セッションはまもなく終了し、続きは Windows 側のウィンドウで実行されます。"
 (
