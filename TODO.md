@@ -17,14 +17,11 @@
 ## CI の Nix ストアをキャッシュする(2026-11時点、未着手)
 
 - `home-manager-test` は mdgrid を Rust のソースからビルドするため、Ubuntu / macOS の両方で毎回フルビルドになっている可能性がある。まず実行時間を確認し、長いようなら `nix-community/cache-nix-action` 等でストアをキャッシュする(Action は方針どおりコミットハッシュで固定し、Dependabot の追跡対象に入れる)。
-- 下の「nixpkgs に無いツールのビルド結果を共有する」と対象が重なる。各マシンへも配るバイナリキャッシュを採るなら、CI はそこへ push するだけでよく、この項は不要になる。
 
-## nixpkgs に無いツールのビルド結果を各マシンで共有する(2026-11時点、未決定)
+## mdgrid を nixpkgs に登録する(2026-11時点、未着手。mdgrid 側の作業)
 
-- `nix/home.nix` の他のツールは cache.nixos.org からビルド済みが落ちるが、nixpkgs に無い mdgrid だけはソースからビルドしている。nixpkgs-unstable の更新で Rust ツールチェーンが変わるたびに、各マシンと CI でビルドし直しになる(ストレージへの影響は GC で消える一時的なもので、問題はビルド時間)。今後 nixpkgs に無いツールを足すたびに同じことが起きる。
-- 本命は mdgrid を nixpkgs に登録すること(mdgrid 側の作業。登録後はこの repo の flake 入力と derivation を消して `pkgs.mdgrid` に置き換える1コミットになる)。ただし「nixpkgs に無いツール全般」の対策にはならない。
-- 一般解は、CI(`home-manager-test`。既に Linux / macOS 両方でビルドしている)の結果をバイナリキャッシュへ push し、各マシンの `nix.conf` に `extra-substituters` / `extra-trusted-public-keys` を配ること。候補は Cachix(OSS 向けの無償枠がある外部サービス。署名鍵とトークンをリポジトリの Secrets に置く必要がある)と、`nix copy --to file://` で作った静的キャッシュを GitHub Pages 等に置く方法(外部サービス不要だが容量上限が小さく、署名鍵の管理は同じ)。どちらも daemon 構成では `trusted-users` か `trusted-substituters` の設定が要る。
-- 外部サービスのアカウントと鍵が要るため、採るかどうかはユーザーの判断待ち。採るなら `package-researcher` の基準(メンテ状況・ライセンス)で Cachix の action を調べ、ADR を書いてから着手する。GitHub Releases のビルド済みバイナリを `fetchurl` する案は `docs/decisions/mdgrid.md` で退けたとおり(OS ごとのハッシュを手で持ち Dependabot が更新できない)、今回も採らない。
+- 現状は nixpkgs に無いため flake の入力からソースビルドしている(`docs/decisions/mdgrid.md`)。nixpkgs-unstable の更新で Rust ツールチェーンが変わるたびに各マシンと CI でビルドし直しになるが、ビルド時間は許容し、バイナリキャッシュ(Cachix 等)は作らないと決めた(ストレージへの影響は GC で消える一時的なもの)。
+- 登録が通ったら、この repo 側は `nix/flake.nix` の入力 `mdgrid` と `nix/home.nix` の derivation を消して `pkgs.mdgrid` に置き換え、`docs/decisions/mdgrid.md` の履歴に追記する。
 
 ## 個人的なこと・特定の文脈が分かることは一切含めない(最重要ルール)
 
