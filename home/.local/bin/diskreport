@@ -4,6 +4,12 @@
 #   diskreport --projects DIR   # 加えて DIR 配下のプロジェクト成果物(target / node_modules / .venv 等)を集計
 #                               # (マーカーで見つけて中へは降りないので数十秒で終わる)
 #   diskreport --nix-brief      # Nix の状態だけを数行で(dotfiles-switch / dotfiles-update の最後に呼ばれる)
+#   diskreport --windows        # WSL のみ: Windows 側の既知の場所(%LOCALAPPDATA% の Temp や各種キャッシュ)も測る
+#                               # (/mnt 越しの du は遅いので既定では測らない)
+#
+# WSL での見方: WSL の中の df は仮想ディスクの上限(既定 1TB)を全体として見せるので当てにならない。
+# 本当の制約は vhdx を置いている Windows 側ドライブの空きで、これを「Windows 側」として別に出す。
+# 他のディストリや Docker の vhdx も同じドライブを食うので、見つかる範囲で一覧にする。
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
 #   - 測る場所は固定し、ディスク全体の走査はしない(全走査は dua / gdu / ncdu 等の専用ツールに任せる)。
@@ -15,9 +21,11 @@ set -eu
 
 MODE=full
 PROJECTS=
+WINDOWS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --nix-brief) MODE=nix-brief ;;
+    --windows) WINDOWS=1 ;;
     --projects)
       shift
       [ $# -gt 0 ] || {
@@ -58,6 +66,42 @@ dir_kib() {
 
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
 is_macos() { [ "$(uname -s)" = Darwin ]; }
+
+# WSL: Windows の環境変数を WSL 側のパスで返す(functions.sh の _dotfiles_win_profile と同じ手順)
+win_env_path() {
+  command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1 || return 1
+  _w=$(
+    cd /mnt/c 2>/dev/null || cd /
+    cmd.exe /c "echo %$1%" 2>/dev/null | tr -d '\r'
+  )
+  [ -n "$_w" ] && [ "$_w" != "%$1%" ] || return 1
+  wslpath -u "$_w" 2>/dev/null
+}
+
+# WSL: 登録されている全ディストリの「名前<TAB>BasePath(Windows パス)」を出力する(wsl-compact と同じ方法)。
+# Store 版の BasePath に付く \\?\ の接頭辞は落とす
+wsl_distros() {
+  command -v reg.exe >/dev/null 2>&1 || return 1
+  reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s 2>/dev/null | tr -d '\r' | awk '
+    /^HKEY_/ { if (name != "" && path != "") printf "%s\t%s\n", name, path; name = ""; path = "" }
+    $1 == "DistributionName" { name = $3 }
+    $1 == "BasePath" { path = $3; for (i = 4; i <= NF; i++) path = path " " $i }
+    END { if (name != "" && path != "") printf "%s\t%s\n", name, path }' | sed 's/\t\\\\?\\/\t/'
+}
+
+# 掴まれたまま応答しないマウント(切断されたネットワークドライブ等)で止まらないよう、あれば timeout を使う
+with_timeout() {
+  if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi
+}
+
+# df -Pk の1行を「使用 / 全体 / 空き」の読みやすい形にする。$1: 表示名
+df_line() {
+  awk -v label="$1" 'NR == 2 {
+    split("K M G T", u, " ")
+    for (c = 2; c <= 4; c++) { v = $c; i = 1; while (v >= 1024 && i < 4) { v /= 1024; i++ }; h[c] = sprintf((i == 1 ? "%d%s" : "%.1f%s"), v, u[i]) }
+    printf "  %s: 使用 %s / 全体 %s / 空き %s(%s 使用)\n", label, h[3], h[2], h[4], $5
+  }'
+}
 
 hints=""
 add_hint() { hints="$hints
@@ -111,34 +155,56 @@ report_nix() {
 # ---------------------------------------------------------------------------
 report_disk() {
   echo "== 空き容量"
-  df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 {
-    split("K M G T", u, " ")
-    for (c = 2; c <= 4; c++) { v = $c; i = 1; while (v >= 1024 && i < 4) { v /= 1024; i++ }; h[c] = sprintf((i == 1 ? "%d%s" : "%.1f%s"), v, u[i]) }
-    printf "  $HOME のファイルシステム: 使用 %s / 全体 %s / 空き %s(%s 使用)\n", h[3], h[2], h[4], $5
-  }'
+  df -Pk "$HOME" 2>/dev/null | df_line "\$HOME のファイルシステム"
   avail_kib=$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 { print $4 }')
   if [ -n "${avail_kib:-}" ] && [ "$avail_kib" -lt $((10 * 1024 * 1024)) ]; then
     echo "  WARN: 空きが 10GiB を切っています"
   fi
 
   if is_wsl; then
-    # wsl-compact と同じ方法で vhdx の実サイズを引く。中で消しても縮まないので df との差が「返せる量」
-    if command -v reg.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
-      base=$(reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s 2>/dev/null | tr -d '\r' | awk -v d="${WSL_DISTRO_NAME:-}" '
-        /^HKEY_/ { name=""; path="" }
-        $1 == "DistributionName" { name = $3 }
-        $1 == "BasePath" { path = $3; for (i = 4; i <= NF; i++) path = path " " $i }
-        name == d && path != "" { print path; exit }' | sed 's/^\\\\?\\//')
+    echo "  (WSL の中の df は仮想ディスクの上限を全体として見せるため、本当の制約は下の Windows 側の空きです)"
+    distros=$(wsl_distros || true)
+    # 現在のディストリの vhdx。中で消しても縮まないので、中の使用量との差が「wsl-compact で返せる量」
+    base=$(printf '%s\n' "$distros" | awk -F'\t' -v d="${WSL_DISTRO_NAME:-}" '$1 == d { print $2; exit }')
+    host_mnt=
+    if [ -n "$base" ] && command -v wslpath >/dev/null 2>&1; then
       vhdx=$(wslpath -u "$base\\ext4.vhdx" 2>/dev/null || true)
       if [ -n "$vhdx" ] && [ -e "$vhdx" ]; then
         vk=$(du -sk "$vhdx" 2>/dev/null | cut -f1)
         used_kib=$(df -Pk / 2>/dev/null | awk 'NR == 2 { print $3 }')
-        echo "  vhdx の実サイズ: $(human "$vk")(中の使用量 $(human "${used_kib:-0}"))"
+        echo "  この WSL の vhdx: $(human "$vk")(中の使用量 $(human "${used_kib:-0}"))"
         if [ -n "${used_kib:-}" ] && [ "$vk" -gt $((used_kib + 2 * 1024 * 1024)) ]; then
           add_hint "wsl-compact                                 # 中で空いた分を Windows に返す"
         fi
       fi
+      # vhdx を置いているドライブ(C:\... → /mnt/c)。ここの空きが本当の上限
+      drive=$(printf '%s' "$base" | cut -c1 | tr '[:upper:]' '[:lower:]')
+      [ -d "/mnt/$drive" ] && host_mnt=/mnt/$drive
     fi
+    if [ -z "$host_mnt" ] && [ -d /mnt/c ]; then host_mnt=/mnt/c; fi
+    if [ -n "$host_mnt" ]; then
+      with_timeout df -Pk "$host_mnt" 2>/dev/null | df_line "Windows 側 $(printf '%s' "$host_mnt" | cut -c6 | tr '[:lower:]' '[:upper:]'):(vhdx の置き場)"
+      host_avail=$(with_timeout df -Pk "$host_mnt" 2>/dev/null | awk 'NR == 2 { print $4 }')
+      if [ -n "${host_avail:-}" ] && [ "$host_avail" -lt $((10 * 1024 * 1024)) ]; then
+        echo "  WARN: Windows 側の空きが 10GiB を切っています(vhdx はこれ以上大きくなれません)"
+      fi
+    fi
+    # 他のディストリの vhdx(同じドライブを食う)
+    if [ -n "$distros" ] && command -v wslpath >/dev/null 2>&1; then
+      printf '%s\n' "$distros" | while IFS='	' read -r dname dpath; do
+        [ "$dname" = "${WSL_DISTRO_NAME:-}" ] && continue
+        dv=$(wslpath -u "$dpath\\ext4.vhdx" 2>/dev/null || true)
+        [ -n "$dv" ] && [ -e "$dv" ] || continue
+        echo "  他の WSL($dname)の vhdx: $(human "$(du -sk "$dv" 2>/dev/null | cut -f1)")"
+      done
+    fi
+    # Windows 側の他のドライブ(D: 等)。drvfs / 9p のマウントだけを対象にし、応答しない場合は timeout で諦める
+    for m in /mnt/[a-z]; do
+      [ -d "$m" ] || continue
+      [ "$m" = "$host_mnt" ] && continue
+      grep -qE "^[^ ]+ $m (drvfs|9p) " /proc/mounts 2>/dev/null || continue
+      with_timeout df -Pk "$m" 2>/dev/null | df_line "Windows 側 $(printf '%s' "$m" | cut -c6 | tr '[:lower:]' '[:upper:]'):"
+    done
   fi
 
   if is_macos && command -v tmutil >/dev/null 2>&1; then
@@ -183,6 +249,44 @@ $HOME/Library/Containers	サンドボックス化されたアプリのデータ(
 $HOME/Library/Developer	Xcode の DerivedData・シミュレータ(macOS)
 $HOME/Library/Logs	アプリのログ(macOS)
 EOF
+}
+
+# WSL: Windows 側の既知の場所(/mnt 越しの du は遅いので --windows のときだけ)
+windows_paths() { # $1: %LOCALAPPDATA%、$2: %USERPROFILE%(どちらも WSL 側のパス)
+  cat <<WINPATHS
+$1/Temp	一時ファイル(Storage Sense の掃除対象)
+$1/npm-cache	npm のキャッシュ(Windows 側)
+$1/pnpm	pnpm のストア(Windows 側)
+$1/pip/Cache	pip のキャッシュ(Windows 側)
+$1/uv/cache	uv のキャッシュ(Windows 側)
+$1/Docker/wsl	Docker Desktop の仮想ディスク(中で消しても縮まない)
+$1/Microsoft/Windows/INetCache	ブラウザ・Office の一時キャッシュ
+$2/.cargo	Rust のクレート(Windows 側)
+$2/Downloads	ダウンロード(人が開く場所だが溜まりやすい)
+WINPATHS
+}
+
+report_windows() {
+  [ "$WINDOWS" -eq 1 ] || return 0
+  if ! is_wsl; then
+    echo "diskreport: --windows は WSL でだけ意味があります(この環境では何もしません)" >&2
+    return 0
+  fi
+  local_app=$(win_env_path LOCALAPPDATA || true)
+  profile=$(win_env_path USERPROFILE || true)
+  if [ -z "$local_app" ] || [ -z "$profile" ]; then
+    echo "diskreport: Windows 側のパスを解決できませんでした(cmd.exe / wslpath が無い?)" >&2
+    return 0
+  fi
+  echo "== Windows 側の既知の場所(/mnt 越しのため時間がかかります)"
+  windows_paths "$local_app" "$profile" | while IFS='	' read -r p desc; do
+    [ -e "$p" ] || continue
+    k=$(du -sk "$p" 2>/dev/null | cut -f1)
+    [ -n "${k:-}" ] || continue
+    printf '  %8s  %s\n' "$(human "$k")" "$p"
+    printf '  %8s  %s\n' "" "$desc"
+  done
+  echo ""
 }
 
 report_known() {
@@ -245,6 +349,7 @@ report_projects() {
     return 0
   fi
   echo "== プロジェクト成果物($PROJECTS 配下。消しても再生成できるもの)"
+  case "$PROJECTS" in /mnt/*) echo "  (/mnt 越しの走査は WSL 内より桁違いに遅いことがあります)" ;; esac
   # 名前で判定する成果物ディレクトリ。.git の中は見ない
   find "$PROJECTS" -xdev \( -name .git -o -name node_modules -o -name target -o -name .venv -o -name venv \
     -o -name build -o -name dist -o -name .next -o -name .turbo -o -name __pycache__ -o -name .gradle -o -name .tox \) -prune -print 2>/dev/null |
@@ -285,6 +390,7 @@ fi
 report_disk
 report_nix
 report_known
+report_windows
 report_projects
 
 echo "== 次の一手(このコマンドは何も消しません)"
@@ -292,5 +398,8 @@ echo "  cachesweep                                  # 開発キャッシュの�
 printf '%s\n' "$hints" | sed '/^$/d'
 if [ -z "$PROJECTS" ]; then
   echo "  diskreport --projects <DIR>                 # プロジェクト成果物(node_modules / target 等)も集計"
+fi
+if is_wsl && [ "$WINDOWS" -eq 0 ]; then
+  echo "  diskreport --windows                        # Windows 側の Temp や各種キャッシュも測る(遅い)"
 fi
 echo "  ディスク全体を対話的に掘るには dua / gdu / ncdu などの専用ツールを使ってください。"
