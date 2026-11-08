@@ -4,7 +4,7 @@
 #
 # リポジトリを最新化(git pull)する。dotfiles 本体の配布・パッケージ導入は
 # home-manager に一本化しているため(判断根拠は docs/decisions/dotfiles-distribution.md
-# 参照)、反映には別途 home-manager switch の実行が必要。
+# 参照)、反映には別途 home-manager switch(dotfiles-switch / switch.sh)の実行が必要。
 #
 #   ./update.sh            # 更新
 #   ./update.sh --dry-run  # pull はせず状態表示のみ
@@ -60,8 +60,8 @@ new_head=$(git -C "$DOTFILES_DIR" rev-parse HEAD)
 if [ "$old_head" != "$new_head" ]; then
   log ""
   log "更新を反映するには以下を実行してください:"
-  log "  DOTFILES_DIR=\"$DOTFILES_DIR\" home-manager switch --flake \"$DOTFILES_DIR/nix#<system>\" --impure"
-  log "  (<system> は x86_64-linux / aarch64-linux / aarch64-darwin から選択)"
+  log "  dotfiles-switch"
+  log "  (または $DOTFILES_DIR/switch.sh。DOTFILES_DIR / <system> / --impure は自動で揃えます)"
   log ""
   log "同梱プラグインも更新する場合(Claude Code / Codex):"
   log "  agent-plugins-setup"

@@ -43,7 +43,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 > [!IMPORTANT]
 > **Nix 本体のインストールが必須です**。パッケージ一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / eza / starship / wezterm 等)も `home/` 配下の設定ファイル配布も、すべて Nix + home-manager 経由で行うため、**Nix が使えない環境ではこの dotfiles は機能しません**(意図的にフォールバックは作っていません)。
 
-対応システムと、`home-manager switch` に渡す flake ターゲット(後述の `<system>`):
+対応システム(`<system>` は `home-manager switch` に渡す flake ターゲット。後述の `switch.sh` が `uname` から自動判定するため、手動で実行するとき以外は意識しなくてよい):
 
 | システム | `<system>` | 備考 |
 |---|---|---|
@@ -72,19 +72,29 @@ curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable
 
 **3. 配布を適用**
 
-リポジトリのルートで `DOTFILES_DIR` を設定し(`nix/home.nix` が `home/` の実体パスを解決するために必要)、初回だけ `nix run` 経由で `home-manager` を呼びます(初回は `home-manager` コマンドがまだ PATH に無いため)。`<system>` は[対応システム表](#前提)の値に置き換えてください。
-
 ```sh
-export DOTFILES_DIR=$(pwd)
-nix run home-manager -- switch --flake ./nix#<system> --impure
+./switch.sh
 ```
 
-初回の `switch` が完了すると home-manager 自体も導入され、以降は短い形で実行できます。`DOTFILES_DIR` は永続化していないため、2回目以降もリポジトリのルートで毎回設定してから実行します(未設定のまま実行するとエラーで止まります):
+`switch.sh` は `home-manager switch` のラッパーで、毎回必要な `DOTFILES_DIR`(`nix/home.nix` が `home/` の実体パスを解決するために必要)・`<system>`・`--impure` を自動で揃え、実行するコマンドを表示してから走らせます。初回は `home-manager` コマンドがまだ PATH に無いため、この flake が `flake.lock` で固定する home-manager を `nix run` 経由で呼びます(2回目以降は導入済みの `home-manager` を使います。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。
+
+初回の `switch` が完了すると `dotfiles-switch` コマンドが PATH に入り、以降はどこからでも同じことを実行できます:
+
+```sh
+dotfiles-switch
+```
+
+<details>
+<summary><b>手動で <code>home-manager switch</code> を実行する場合</b></summary>
+
+`switch.sh` が内部で実行しているのは次のコマンドです(`<system>` は[対応システム表](#前提)の値に置き換えてください)。`DOTFILES_DIR` は永続化していないため、リポジトリのルートで毎回設定してから実行します(未設定のまま実行するとエラーで止まります):
 
 ```sh
 export DOTFILES_DIR=$(pwd)
 home-manager switch --flake ./nix#<system> --impure
 ```
+
+</details>
 
 **4. ターミナルのフォントを設定**
 
@@ -148,7 +158,7 @@ agent-plugins-setup
 <details>
 <summary><b><code>--impure</code> が必要な理由</b></summary>
 
-実際のユーザー名やリポジトリパスをコミットにハードコードしないため、`nix/home.nix` は `builtins.getEnv` で実行時に解決しています。flake の pure 評価では環境変数を読めないため、`--impure` が必要です。
+実際のユーザー名やリポジトリパスをコミットにハードコードしないため、`nix/home.nix` は `builtins.getEnv` で実行時に解決しています。flake の pure 評価では環境変数を読めないため、`--impure` が必要です。`switch.sh` / `dotfiles-switch` 経由なら自動で付きます。
 
 </details>
 
@@ -247,8 +257,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 1. 中身が不要、またはこのリポジトリに取り込み済み → 既存ファイルを `<ファイル名>.bak` に退避してから上書き:
 
    ```sh
-   export DOTFILES_DIR=$(pwd)
-   home-manager switch --flake ./nix#<system> --impure -b bak
+   dotfiles-switch -b bak   # 初回セットアップ中(dotfiles-switch がまだ無い)なら ./switch.sh -b bak
    ```
 2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `-b bak` を付けて再実行
 3. 判断に迷う → 事前に手動で退避してから進めてください:
@@ -264,11 +273,10 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 <details>
 <summary><b>リポジトリを別の場所へ移動したとき</b></summary>
 
-`DOTFILES_DIR` を設定し直してから `home-manager switch` を再実行してください:
+移動先のリポジトリで `./switch.sh` を実行してください(対象はスクリプト自身の場所で決まるため、`DOTFILES_DIR` の設定し直しは不要です)。`~/.local/bin/dotfiles-switch` を含む `$HOME` 側のシンボリックリンクは移動前のパスを指したまま壊れていて、コマンド自体が実行できないので、この1回だけはリポジトリ内のスクリプトを直接呼びます:
 
 ```sh
-export DOTFILES_DIR=$(pwd)
-home-manager switch --flake ./nix#<system> --impure
+./switch.sh
 ```
 
 </details>
@@ -330,7 +338,8 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update` | どこからでもこのリポジトリを更新(`git pull`。更新があれば `home-manager switch` の実行を促すメッセージを表示。実行はしない) |
+| `dotfiles-update` | どこからでもこのリポジトリを更新(`git pull`。更新があれば `dotfiles-switch` の実行を促すメッセージを表示。実行はしない) |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
@@ -487,12 +496,11 @@ scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テス
 ## 更新
 
 ```sh
-git pull --ff-only
-export DOTFILES_DIR=$(pwd)
-home-manager switch --flake ./nix#<system> --impure
+dotfiles-update
+dotfiles-switch
 ```
 
-どこからでも `dotfiles-update` コマンドで `git pull` 相当を実行できます。未コミットのローカル変更がある場合は安全のため中断します。更新があれば `home-manager switch` の実行を促すメッセージが表示されます(自動実行はしません。パッケージ導入・dotfiles 反映は明示実行のみという方針のため)。
+`dotfiles-update` はどこからでも `git pull --ff-only` 相当を実行します。未コミットのローカル変更がある場合は安全のため中断します。更新があれば `dotfiles-switch` の実行を促すメッセージが表示されますが、自動実行はしません(パッケージ導入・dotfiles 反映は明示実行のみという方針のため)。
 
 WezTerm はプライバシー上の理由で組み込みの自動更新チェックを無効化しています(判断根拠は [`docs/decisions/terminal-emulator.md`](docs/decisions/terminal-emulator.md) 参照)。macOS / Linux(WSL 内)は `home-manager switch` で他のツールと同様に更新されますが、**Windows ネイティブ側だけは手動での更新が必要**です:
 

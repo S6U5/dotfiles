@@ -3,11 +3,13 @@ let
   # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
   # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
   # pure 評価では空文字になるため、呼び出し側は `--impure` を付けたうえで、事前に
-  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある(README 参照)。
+  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある。通常は
+  # これらを揃える `switch.sh` / `dotfiles-switch` 経由で実行する(README、
+  # docs/decisions/home-manager-switch-invocation.md 参照)。
   dotfilesDir =
     let e = builtins.getEnv "DOTFILES_DIR";
     in if e != "" then e
-       else throw "DOTFILES_DIR が未設定です。リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
+       else throw "DOTFILES_DIR が未設定です。リポジトリルートの `./switch.sh`(導入後は `dotfiles-switch`)経由で実行するか、リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
 
   homeSrcDir = dotfilesDir + "/home";
 

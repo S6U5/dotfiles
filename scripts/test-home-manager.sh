@@ -85,7 +85,7 @@ RESULT="$BUILD_DIR/result"
 
 echo "== 3) 代表ファイルが home/ の実体を指しているか"
 for f in .config/bash/bashrc .tmux.conf .npmrc \
-  .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update \
+  .config/shell/init.sh .config/pnpm/rc .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch \
   .zshenv .config/zsh/zshrc .config/nvim/lazy-lock.json; do
   linked_to=$(readlink -f "$RESULT/home-files/$f" 2>/dev/null || true)
   expected="$DOTFILES_DIR/home/$f"
@@ -97,7 +97,7 @@ for f in .config/bash/bashrc .tmux.conf .npmrc \
 done
 
 echo "== 4) 実行可能属性が維持されているか"
-for f in .local/bin/word .local/bin/dotfiles-update; do
+for f in .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch; do
   if [ -x "$RESULT/home-files/$f" ]; then
     ok "実行可能: $f"
   else
@@ -217,8 +217,53 @@ if command -v zsh >/dev/null 2>&1; then
   fi
 fi
 
+echo "== 11) switch.sh / dotfiles-switch が正しい home-manager コマンドを組み立てるか"
+# 偽の home-manager を PATH の先頭に置き、実際には switch せず渡された引数だけを記録する
+FAKE_BIN=$(mktemp -d)
+FAKE_HOME=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME"' EXIT
+cat >"$FAKE_BIN/home-manager" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >"$FAKE_ARGS"
+printf '%s\n' "${DOTFILES_DIR:-unset}" >"$FAKE_ENV"
+FAKE
+chmod +x "$FAKE_BIN/home-manager"
+want_args="switch --flake $DOTFILES_DIR/nix#$SYSTEM --impure -b bak"
+if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$DOTFILES_DIR/switch.sh" -b bak >/dev/null) &&
+  [ "$(cat "$FAKE_BIN/args")" = "$want_args" ] && [ "$(cat "$FAKE_BIN/env")" = "$DOTFILES_DIR" ]; then
+  ok "switch.sh: DOTFILES_DIR / <system> / --impure を揃え、追加引数を素通しする"
+else
+  ng "switch.sh: 組み立てたコマンドが想定外 (got: $(cat "$FAKE_BIN/args" 2>/dev/null), DOTFILES_DIR: $(cat "$FAKE_BIN/env" 2>/dev/null))"
+fi
+# home-manager 配布後と同じ形(~/.local/bin からリポジトリへのシンボリックリンク)で呼べるか
+mkdir -p "$FAKE_HOME/.local/bin"
+ln -s "$DOTFILES_DIR/home/.local/bin/dotfiles-switch" "$FAKE_HOME/.local/bin/dotfiles-switch"
+rm -f "$FAKE_BIN/args"
+if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$FAKE_HOME/.local/bin/dotfiles-switch" -b bak >/dev/null) &&
+  [ "$(cat "$FAKE_BIN/args")" = "$want_args" ]; then
+  ok "dotfiles-switch: シンボリックリンク越しにリポジトリの switch.sh を解決する"
+else
+  ng "dotfiles-switch: リンク越しの解決に失敗 (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+fi
+# カレントディレクトリが別のクローンの中なら、配布済みのクローンではなくそのクローンを対象にする
+OTHER_CLONE=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_CLONE"' EXIT
+mkdir -p "$OTHER_CLONE/nix" "$OTHER_CLONE/home/.config"
+cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
+cp "$DOTFILES_DIR/nix/home.nix" "$OTHER_CLONE/nix/home.nix"
+rm -f "$FAKE_BIN/args"
+if (cd "$OTHER_CLONE/home/.config" && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$FAKE_HOME/.local/bin/dotfiles-switch" >/dev/null 2>&1) &&
+  [ "$(cat "$FAKE_BIN/args")" = "switch --flake $OTHER_CLONE/nix#$SYSTEM --impure" ]; then
+  ok "dotfiles-switch: カレントディレクトリが別クローン内ならそのクローンを対象にする"
+else
+  ng "dotfiles-switch: カレントディレクトリのクローンを対象にできない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+fi
+
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
-  echo "== 11) home-manager switch(実 HOME に適用。使い捨て環境専用)"
+  echo "== 12) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
     ok "switch 成功"
   else
