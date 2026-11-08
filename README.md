@@ -187,6 +187,11 @@ Nix は宣言的ですが、`/nix/store` は「足すだけで勝手には引か
 
 - **知らせる**: `dotfiles-switch` / `dotfiles-update` の最後に、世代の数・store 全体と今の世代の差・自動 GC の有無を数行で表示します(表示だけ。何も消しません)。詳しくは `diskreport`。
 - **聞く**: 世代が 10 を超え、かつ 30 日より前のものがあるときは、端末で打っていれば「30 日より前の世代を消して GC しますか?[y/N]」と聞きます。`y` なら `home-manager expire-generations "-30 days"` と `nix-collect-garbage` をその場で実行します(戻せなくなる削除なので黙っては行わず、端末でなければ聞きません)。
+- **世代数で決める**: 容量を切り詰めたいマシンでは、`~/.config/shell/local.sh` に次の1行を書くと、`switch` のたびに直近 N 世代へ自動で切り詰めて GC します(聞きません。書いたこと自体をそのマシンでの同意とみなします)。`home-manager expire-generations` は日時しか受け付けないため、中身は Nix 本体の `nix-env --delete-generations +N` です。今の世代は消えません。
+
+  ```sh
+  export DOTFILES_HM_KEEP_GENERATIONS=1   # 今の世代だけ残す(戻し先は無くなる)
+  ```
 - **上限を決める**: `nix-gc-setup --apply` で Nix 本体の `min-free` / `max-free` を設定すると、ビルド中に空きが下限を切ったときだけ、その場で GC が走ります。人が打った `switch` の中でしか動かないので、「反映は明示実行のみ」の方針と両立します。複数ユーザー方式(nix-installer の既定)では daemon が読む `/etc/nix/nix.conf` に書く必要があるため、このコマンドが構成を見て書き先を選びます。
 - **消す**: 自動 GC で消えるのは「誰からも指されていない」store パスだけで、古い世代が指している分は残ります。世代ごと減らすときは手で実行してください:
 

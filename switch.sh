@@ -68,6 +68,14 @@ else
 fi
 cmd=("${hm[@]}" switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
 
+# 世代の掃除。既定は「聞く」で、マシンごとに「直近 N 世代だけ残す」と宣言することもできる。
+#   - 既定(何も設定しない): 端末で対話中に限り、30 日より前の世代を消すか y/N で聞く(下記)。
+#   - local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N(正の整数)を書いたマシン: switch のたびに
+#     直近 N 世代へ自動で切り詰めて GC する(聞かない。そのマシンで書いたこと自体を同意とみなす。
+#     N=1 なら毎回「2 世代ある」状態になり、聞くと毎回聞かれるため)。home-manager expire-generations は
+#     日時しか受け付けないので、Nix 本体の nix-env --delete-generations +N を home-manager の
+#     プロファイルに対して使う。
+#
 # 世代の掃除を聞く(端末で対話中のときだけ)。home-manager は switch のたびに世代を増やし、
 # 自分では一つも消さない。古い世代は GC ルートなので nix-collect-garbage でも残り、store が
 # 「宣言には無いのに消していない分」で太っていく。戻せなくなる削除なので黙っては行わず、
@@ -88,7 +96,51 @@ drain_tty_input() {
   return 0
 }
 
+# home-manager のプロファイル(世代のリンクの親)。新しい置き場所(XDG state)を優先し、無ければ旧来の per-user
+hm_profile() {
+  local p
+  for p in "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" "/nix/var/nix/profiles/per-user/${USER:-$(id -un)}/home-manager"; do
+    if [ -e "$p" ] || [ -L "$p" ]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# DOTFILES_HM_KEEP_GENERATIONS が宣言されていれば、直近 N 世代へ切り詰めて GC する。
+# 戻り値 0: 宣言があり処理した(または不要だった) / 1: 宣言が無い(既定の「聞く」に任せる)
+keep_generations() {
+  local keep=${DOTFILES_HM_KEEP_GENERATIONS:-} profile gens
+  [ -n "$keep" ] || return 1
+  case "$keep" in
+    '' | *[!0-9]* | 0)
+      warn "DOTFILES_HM_KEEP_GENERATIONS は 1 以上の整数で指定してください(いまの値: $keep)。既定の動きにします"
+      return 1
+      ;;
+  esac
+  if ! command -v nix-env >/dev/null 2>&1; then
+    warn "nix-env が見つからないため、世代の切り詰め(DOTFILES_HM_KEEP_GENERATIONS=$keep)を飛ばします"
+    return 0
+  fi
+  profile=$(hm_profile) || return 0
+  gens=$(find "$(dirname "$profile")" -maxdepth 1 -name "$(basename "$profile")-*-link" 2>/dev/null | wc -l | tr -d ' ')
+  [ "$gens" -gt "$keep" ] || return 0
+  log "世代が $gens あります。DOTFILES_HM_KEEP_GENERATIONS=$keep に従い、直近 $keep 世代だけ残して GC します"
+  # 今の世代は nix-env が消さない
+  nix-env -p "$profile" --delete-generations "+$keep" || {
+    warn "世代の切り詰めに失敗しました"
+    return 0
+  }
+  nix-collect-garbage || warn "GC に失敗しました"
+  if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+    log "空いた分を Windows に返すには: wsl-compact"
+  fi
+  return 0
+}
+
 offer_expire_generations() {
+  keep_generations && return 0
   [ -t 0 ] && [ -t 1 ] || return 0
   local dir gens=0 old=0 ans
   for dir in "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles" "/nix/var/nix/profiles/per-user/${USER:-$(id -un)}"; do
@@ -105,6 +157,7 @@ offer_expire_generations() {
     y | Y | yes) ;;
     *)
       log "スキップしました。あとで消すなら: home-manager expire-generations \"-30 days\" && nix-collect-garbage"
+      log "(このマシンでは常に直近 N 世代だけにしたいなら、local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N)"
       return 0
       ;;
   esac

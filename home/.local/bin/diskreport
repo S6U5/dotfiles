@@ -506,8 +506,14 @@ report_nix() {
     n=$(find "$d" -maxdepth 1 -name 'home-manager-*-link' 2>/dev/null | wc -l | tr -d ' ')
     gens=$((gens + n))
   done
-  echo "  世代の数: $gens(古い世代は GC で消えない。戻す必要が無くなったら expire-generations)"
-  if [ "$gens" -gt 10 ]; then
+  keep=${DOTFILES_HM_KEEP_GENERATIONS:-}
+  case "$keep" in '' | *[!0-9]* | 0) keep= ;; esac
+  if [ -n "$keep" ]; then
+    echo "  世代の数: $gens(上限 $keep。DOTFILES_HM_KEEP_GENERATIONS により switch のたびに切り詰める)"
+  else
+    echo "  世代の数: $gens(古い世代は GC で消えない。戻す必要が無くなったら expire-generations)"
+  fi
+  if [ -z "$keep" ] && [ "$gens" -gt 10 ]; then
     add_hint "home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(戻せなくなる)"
   fi
   if [ -z "${NIX_STORE_KIB:-}" ] && command -v nix >/dev/null 2>&1; then
