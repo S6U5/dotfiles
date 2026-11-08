@@ -93,7 +93,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | 役割 | 担うもの |
 | --- | --- |
 | 上限(予防) | `nix-gc-setup`(`min-free` / `max-free`)、各ツールの設定(`cleanupPeriodDays` 等)。システム側(journald、Docker daemon)は README に書くだけ |
-| 通知 | `switch.sh` の末尾で `diskreport --nix-brief`(表示だけ) |
+| 通知 | `switch.sh` の末尾で `diskreport --nix-brief`(表示だけ)。続けて、世代が 10 を超え 30 日より前のものがあれば、端末で対話中に限り「消して GC しますか?」と聞く(`y` で `expire-generations "-30 days"` と `nix-collect-garbage`) |
 | 分析 | `diskreport`(読み取り専用。既定は 1〜4 の手段だけで数秒。全走査・成果物探索・Windows 側の道具は明示指定) |
 | 削除 | `cachesweep` / `nix-collect-garbage` / `home-manager expire-generations` / `wsl-compact`、OS の道具(Storage Sense 等)。分析コマンドは案内するだけ |
 
@@ -123,7 +123,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 帳簿の値は申告値で、実測とずれる。Windows のレジストリ `EstimatedSize` はインストーラが書いた KB 値で、書かないインストーラもあり Store アプリは出ない。dpkg の `Installed-Size` も同様に申告値。ずれは残差に吸収される。
 - OneDrive のプレースホルダは論理サイズで見えるため、`du` で数えると実サイズより大きく出る。Windows 側の道具の「ディスク上のサイズ」で見るか、クラウド同期カテゴリの注記にとどめる。
 - 新しいツールの上限を先回りする仕組みは作れない。残差で気付いてから個別に上限を入れる運用になる(世間にも先回りの手は無い)。
-- 世代の削減は自動化しないので、`switch` 後の表示を見て人が `expire-generations` を打つ。
+- 世代の削減は自動化しない。`switch` 後の表示と対話(y/N)で人が決める。案内だけでは溜まる(26 世代・store 15.5G のうち過去分 11.9G という例があった)ため、対話を足した。
 - Everything / WizTree / Storage Sense は Windows 専用、`mdfind` / `tmutil` は macOS 専用。各 OS で使える帳簿が違うため、OS 別の分岐は増える。無いものは静かに飛ばす。
 - ユーザー側 `nix.conf` の `min-free` が daemon 構成で無視される点は Nix の挙動からの推定で、実機で `nix config show min-free` と実際のビルド時の GC で確かめる(確かめ次第ここに追記する)。
 
@@ -139,5 +139,6 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)
 - (2026-11: `diskreport --windows` は `/mnt` 越しの `du` をやめ、Windows の「ストレージ」設定を開くだけに変更。理由は本文「帳簿優先の原則」)
 - (2026-11: 「細かく、しかし速く」のために索引方式(`scan`)とアプリ別の見方を追加。重い処理に上限時間を付けた)
+- (2026-11: `switch.sh` の末尾で、世代が 10 を超え 30 日より前のものがあるときに限り、端末で対話中なら世代削除と GC を y/N で聞くようにした。表示と案内だけでは 26 世代まで溜まったため。`min-free` は空きが減ったときにしか動かず世代は消さないので、世代の上限はこの対話が担当する)
 - (2026-11: 引数を `scan` / `windows` の2語に絞り、`--projects` / `--deep` は索引からの自動表示に置き換えた。索引が無い・古いときは対話で聞く)
 - (2026-11: 「固定パス + 前回差分」の3つの穴(一覧の外が見えない、`$HOME` しか見ていない、比較が一覧の中で閉じている)を受け、会計モデル(帰属 + 残差、帳簿優先)に設計を改めた。対象も開発キャッシュからマシンのストレージ全般へ広げた。本 ADR の本文を書き直し)
