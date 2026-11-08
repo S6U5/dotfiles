@@ -273,7 +273,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 <details>
 <summary><b>リポジトリを別の場所へ移動したとき</b></summary>
 
-移動先のリポジトリで `./switch.sh` を実行してください(対象はスクリプト自身の場所で決まるため、`DOTFILES_DIR` の設定し直しは不要です)。`~/.local/bin/dotfiles-switch` を含む `$HOME` 側のシンボリックリンクは移動前のパスを指したまま壊れているので、この1回だけは PATH 上のコマンドではなくリポジトリ内のスクリプトを直接呼びます:
+移動先のリポジトリで `./switch.sh` を実行してください(対象はスクリプト自身の場所で決まるため、`DOTFILES_DIR` の設定し直しは不要です)。`~/.local/bin/dotfiles-switch` を含む `$HOME` 側のシンボリックリンクは移動前のパスを指したまま壊れていて、コマンド自体が実行できないので、この1回だけはリポジトリ内のスクリプトを直接呼びます:
 
 ```sh
 ./switch.sh
@@ -339,7 +339,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | コマンド | 動作 |
 |---|---|
 | `dotfiles-update` | どこからでもこのリポジトリを更新(`git pull`。更新があれば `dotfiles-switch` の実行を促すメッセージを表示。実行はしない) |
-| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。リポジトリ内の `./switch.sh` と同じ) |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |

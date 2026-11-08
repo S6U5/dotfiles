@@ -247,6 +247,20 @@ if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/e
 else
   ng "dotfiles-switch: リンク越しの解決に失敗 (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
 fi
+# カレントディレクトリが別のクローンの中なら、配布済みのクローンではなくそのクローンを対象にする
+OTHER_CLONE=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_CLONE"' EXIT
+mkdir -p "$OTHER_CLONE/nix" "$OTHER_CLONE/home/.config"
+cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
+cp "$DOTFILES_DIR/nix/home.nix" "$OTHER_CLONE/nix/home.nix"
+rm -f "$FAKE_BIN/args"
+if (cd "$OTHER_CLONE/home/.config" && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$FAKE_HOME/.local/bin/dotfiles-switch" >/dev/null 2>&1) &&
+  [ "$(cat "$FAKE_BIN/args")" = "switch --flake $OTHER_CLONE/nix#$SYSTEM --impure" ]; then
+  ok "dotfiles-switch: カレントディレクトリが別クローン内ならそのクローンを対象にする"
+else
+  ng "dotfiles-switch: カレントディレクトリのクローンを対象にできない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+fi
 
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
   echo "== 12) home-manager switch(実 HOME に適用。使い捨て環境専用)"

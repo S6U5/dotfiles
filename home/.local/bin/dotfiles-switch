@@ -1,10 +1,26 @@
 #!/bin/sh
 # home-manager switch を実行して dotfiles を反映する(switch.sh をどこからでも呼べるようにするラッパー)。
-# インストール後の実体はリポジトリへのシンボリックリンクなので、
-# 自身のリンクをたどってリポジトリの場所を割り出す(パスのハードコードを避ける)。
+# 対象のクローンは次の順で決める(どちらになったかは switch.sh が実行前に表示する):
+#   1. カレントディレクトリが dotfiles のクローン内(上位に switch.sh と nix/home.nix がある)なら、そのクローン
+#      (別の場所に clone した作業用のクローンや、移動直後のリポジトリの中で打てばそれが対象になる)
+#   2. そうでなければ、インストール後の実体はリポジトリへのシンボリックリンクなので、
+#      自身のリンクをたどって配布済みのクローンを割り出す(パスのハードコードを避ける)
 # 引数はそのまま switch.sh(→ home-manager switch)に渡す(例: dotfiles-switch -b bak)。
 set -eu
 
+# 1. カレントディレクトリから上へたどる
+cwd_repo=
+dir=$PWD
+while :; do
+  if [ -x "$dir/switch.sh" ] && [ -f "$dir/nix/home.nix" ]; then
+    cwd_repo=$dir
+    break
+  fi
+  [ "$dir" = / ] && break
+  dir=$(dirname "$dir")
+done
+
+# 2. 自身のシンボリックリンクをたどる
 target=$0
 while [ -L "$target" ]; do
   link=$(readlink "$target")
@@ -13,11 +29,19 @@ while [ -L "$target" ]; do
     *) target=$(dirname "$target")/$link ;;
   esac
 done
+link_repo=$(cd "$(dirname "$target")/../../.." 2>/dev/null && pwd) || link_repo=
 
-repo=$(cd "$(dirname "$target")/../../.." && pwd)
+if [ -n "$cwd_repo" ]; then
+  repo=$cwd_repo
+  if [ -n "$link_repo" ] && [ "$link_repo" != "$cwd_repo" ]; then
+    echo "dotfiles-switch: カレントディレクトリのクローンを対象にします(配布済みのクローン $link_repo ではありません)" >&2
+  fi
+else
+  repo=$link_repo
+fi
 
-if [ ! -x "$repo/switch.sh" ]; then
-  echo "dotfiles-switch: リポジトリが見つかりません($repo に switch.sh がありません)" >&2
+if [ -z "$repo" ] || [ ! -x "$repo/switch.sh" ]; then
+  echo "dotfiles-switch: リポジトリが見つかりません(${repo:-不明} に switch.sh がありません)" >&2
   exit 1
 fi
 
