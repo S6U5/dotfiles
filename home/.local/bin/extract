@@ -1,0 +1,178 @@
+#!/bin/sh
+# アーカイブを形式を気にせず展開する(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。
+# 使い方: extract ファイル...
+# 中身がばらまかれないよう、いったん一時ディレクトリに展開してから置き場所を決める:
+#   最上位が1つだけ(フォルダ1つ等) → そのままカレントへ / 複数 → アーカイブ名のフォルダにまとめる
+# 既存のファイル・フォルダは上書きしない(同名があればエラーで止まり、展開結果は一時ディレクトリに残す)。
+# 必要なツール: tar 系は tar、zip は unzip(無ければ bsdtar → python3 で代用)。7z / rar は 7z / unrar が要る
+set -eu
+
+if [ "$#" -eq 0 ]; then
+  echo "使い方: extract ファイル..." >&2
+  exit 1
+fi
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# アーカイブ名から拡張子を外した名前(展開先フォルダ名・単体解凍の出力名)
+# (拡張子は ASCII なので、小文字にした名前で判定して元の名前の末尾をその文字数だけ削る)
+strip_ext() {
+  se_name=${1##*/}
+  se_lower=$(printf '%s' "$se_name" | tr '[:upper:]' '[:lower:]')
+  for se_ext in .tar.gz .tar.bz2 .tar.xz .tar.zst .tar.lzma .tar.lz .tar.z \
+    .tgz .tbz2 .tbz .txz .tzst .tar .zip .7z .rar .gz .bz2 .xz .zst; do
+    case "$se_lower" in
+      *"$se_ext")
+        se_i=${#se_ext}
+        while [ "$se_i" -gt 0 ]; do
+          se_name=${se_name%?}
+          se_i=$((se_i - 1))
+        done
+        break
+        ;;
+    esac
+  done
+  printf '%s\n' "$se_name"
+}
+
+# 単体圧縮ファイル(.gz 等)の解凍。$1: ファイル、$2: 解凍コマンド
+decompress_single() {
+  out=$(strip_ext "$1")
+  if [ -e "$out" ]; then
+    echo "extract: $out が既にあるので展開しません" >&2
+    return 1
+  fi
+  if ! have "$2"; then
+    echo "extract: $2 が見つかりません($1 の展開に必要)" >&2
+    return 1
+  fi
+  "$2" -dc -- "$1" >"$out" || {
+    rm -f -- "$out"
+    return 1
+  }
+  echo "extract: $1 → $out"
+}
+
+# アーカイブを $2(空のディレクトリ)へ展開する
+unpack_into() {
+  case "$lower" in
+    *.zip)
+      if have unzip; then
+        unzip -q "$1" -d "$2"
+      elif have bsdtar; then
+        bsdtar -xf "$1" -C "$2"
+      elif have python3; then
+        python3 -m zipfile -e "$1" "$2"
+      else
+        echo "extract: unzip が見つかりません(bsdtar・python3 も無し)" >&2
+        return 1
+      fi
+      ;;
+    *.7z)
+      for z in 7zz 7z 7za; do
+        if have "$z"; then
+          "$z" x -bd -o"$2" -- "$1" >/dev/null
+          return
+        fi
+      done
+      echo "extract: 7z が見つかりません(.7z の展開に必要)" >&2
+      return 1
+      ;;
+    *.rar)
+      if have unrar; then
+        unrar x -idq -- "$1" "$2/"
+      elif have bsdtar; then
+        bsdtar -xf "$1" -C "$2"
+      else
+        echo "extract: unrar が見つかりません(.rar の展開に必要)" >&2
+        return 1
+      fi
+      ;;
+    *)
+      # GNU tar・bsdtar とも圧縮形式は自動判別する(.tar.zst は GNU tar だと zstd コマンドが要る)
+      if ! tar -xf "$1" -C "$2"; then
+        case "$lower" in
+          *.zst | *.tzst)
+            have zstd || echo "extract: zstd が見つからない可能性があります(.tar.zst の展開に必要)" >&2
+            ;;
+        esac
+        return 1
+      fi
+      ;;
+  esac
+}
+
+extract_one() {
+  src=$1
+  lower=$(printf '%s' "$src" | tr '[:upper:]' '[:lower:]')
+  if [ ! -f "$src" ]; then
+    echo "extract: ファイルがありません: $src" >&2
+    return 1
+  fi
+
+  case "$lower" in
+    *.tar.gz | *.tgz | *.tar.bz2 | *.tbz | *.tbz2 | *.tar.xz | *.txz | *.tar.zst | *.tzst | \
+      *.tar.lz | *.tar.lzma | *.tar.z | *.tar | *.zip | *.7z | *.rar) : ;;
+    *.gz)
+      decompress_single "$src" gzip
+      return
+      ;;
+    *.bz2)
+      decompress_single "$src" bzip2
+      return
+      ;;
+    *.xz)
+      decompress_single "$src" xz
+      return
+      ;;
+    *.zst)
+      decompress_single "$src" zstd
+      return
+      ;;
+    *)
+      echo "extract: 対応していない形式です: $src" >&2
+      return 1
+      ;;
+  esac
+
+  # 展開ツールに渡すのは絶対パス(一時ディレクトリへ展開するため)
+  case "$src" in
+    /*) abs=$src ;;
+    *) abs=$PWD/$src ;;
+  esac
+  tmp=$(mktemp -d "./.extract.XXXXXX")
+  if ! unpack_into "$abs" "$tmp"; then
+    rm -rf -- "$tmp"
+    echo "extract: 展開に失敗しました: $src" >&2
+    return 1
+  fi
+
+  # 最上位の項目数を数える(隠しファイルも含める)
+  count=$(cd "$tmp" && find . -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+  if [ "$count" -eq 0 ]; then
+    rm -rf -- "$tmp"
+    echo "extract: 中身が空でした: $src"
+    return 0
+  fi
+  if [ "$count" -eq 1 ]; then
+    top=$(cd "$tmp" && find . -mindepth 1 -maxdepth 1)
+    dest=${top#./}
+    from=$tmp/$dest
+  else
+    dest=$(strip_ext "$src")
+    from=$tmp
+  fi
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    echo "extract: $dest が既にあるので置けません。展開結果は $tmp に残しました" >&2
+    return 1
+  fi
+  mv -- "$from" "$dest"
+  [ "$from" = "$tmp" ] || rmdir -- "$tmp"
+  echo "extract: $src → $dest"
+}
+
+rc=0
+for f in "$@"; do
+  extract_one "$f" || rc=1
+done
+exit "$rc"

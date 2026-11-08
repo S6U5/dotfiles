@@ -56,7 +56,7 @@ mkdir -p "$WORK_DIR/sub/dir"
 # 標準出力に "RESULT <名前> <値>" を並べ、呼び出し側で判定する
 CHECKS=$(
   cat <<'EOF'
-for f in mkcd cdgr tmpd cdov ov cdod cdode cdic cdgd cdwin _dotfiles_is_wsl _dotfiles_pick_line; do
+for f in mkcd cdgr tmpd cdov ov cdod cdode cdic cdgd cdwin herdrs _dotfiles_is_wsl _dotfiles_pick_line; do
   if command -v "$f" >/dev/null 2>&1; then
     echo "RESULT defined:$f yes"
   else
@@ -175,7 +175,7 @@ run_shell() {
       ng "$label: $1 = '${got:-(なし)}'(期待: $2)"
     fi
   }
-  for f in mkcd cdgr tmpd cdov ov cdod cdode cdic cdgd cdwin _dotfiles_is_wsl _dotfiles_pick_line; do
+  for f in mkcd cdgr tmpd cdov ov cdod cdode cdic cdgd cdwin herdrs _dotfiles_is_wsl _dotfiles_pick_line; do
     expect "defined:$f" yes
   done
   expect path_local_bin yes
