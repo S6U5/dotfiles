@@ -36,7 +36,7 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 - **Nix + home-manager に一本化** — パッケージ導入・dotfiles 配布(`home/` 以下のシンボリックリンク)を単一の経路にまとめています。`nixpkgs-unstable` を追跡するため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は [`docs/decisions/dotfiles-distribution.md`](docs/decisions/dotfiles-distribution.md) / [`docs/decisions/package-management.md`](docs/decisions/package-management.md) 参照)
 - **home/ を直接編集すればすぐ反映される** — `home.file` は `mkOutOfStoreSymlink` で配布しているため、Nix store へコピーする通常の方式と違い、`home/` 配下のファイルを編集すればそのまま `$HOME` 側に反映されます(`home-manager switch` の再実行は不要)
 - **機密ゼロ方針** — API キー・個人情報はリポジトリに置かず、git 管理外のローカルファイル(`*.local` / `local.sh`)へ分離。pre-commit フック + CI の二段でコミット前後に機密混入を検査します
-- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash / zsh ブートストラップ等)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
+- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash / zsh ブートストラップ等)と、シェル設定の実際の読み込み(dash / bash / zsh)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
 
 ## 前提
 
@@ -455,7 +455,7 @@ Claude Code などのコーディングエージェントと組み合わせて�
 
 ```
 home/              $HOME に同じ構造でリンクされる設定ファイル群
-├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替えるだけ)
+├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替え、Ubuntu の全体 compinit を止めるだけ)
 ├── .config/zsh/zshrc                  zsh の設定(実際の設定本体)
 ├── .config/bash/bashrc                bash の設定(実際の設定本体)
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)
@@ -487,7 +487,7 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
                    プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
                    詳細な手順は plugins/README.md)
-scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
+scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
@@ -511,10 +511,16 @@ winget upgrade wez.wezterm
 ## テスト
 
 ```sh
+./scripts/test-shell.sh
+```
+
+Nix 無しで動く軽いテストです。使い捨ての `$HOME` に `home/` のシェル設定をコピーし、dash(POSIX sh)・bash・zsh のそれぞれで実際に読み込んで、起動時にエラーが出ないこと、自作関数が定義されること、cd 系の関数が移動しなかったときに非0を返すことなどを確かめます(入っていないシェルは飛ばします。実際の `$HOME` は変更しません)。
+
+```sh
 ./scripts/test-home-manager.sh
 ```
 
-`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
+`home-manager build`(実際に適用せず結果を確認するだけ)で、`home/` 配下の全ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
 
 実際に `home-manager switch` まで検証したい場合は、次を実行してください。
 

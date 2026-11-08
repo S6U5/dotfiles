@@ -10,4 +10,4 @@
 - [ ] 既存コマンドと名前が衝突していない(`command -v` で確認済み)
 - [ ] 依存ツールが無い環境でも壊れない(存在チェック済み)
 - [ ] 対象 OS(WSL / macOS / Linux)以外で不要なものが定義されない
-- [ ] シェルスクリプトを変更した場合: `./scripts/test-home-manager.sh` で動作確認した
+- [ ] シェル設定・スクリプトを変更した場合: `./scripts/test-shell.sh` と `./scripts/test-home-manager.sh` で動作確認した
