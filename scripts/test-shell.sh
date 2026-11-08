@@ -116,18 +116,38 @@ else
   EXPECT_WSL=1
 fi
 
-# $1: シェル名(表示用) $2...: シェルの起動コマンド(検証本体を標準入力から渡す)
+# 検証本体はファイルにして各シェルから source する(対話モードの標準入力はスクリプトにできないため)
+printf '%s\n' "$CHECKS" >"$WORK_DIR/checks.sh"
+
+# $1: シェル名(表示用) $2: シェルの起動コマンド文字列(checks.sh を source する形で書く)
 # 標準エラー出力は空であること(起動時に依存ツール不在でエラーが出ない、の検証)
 run_shell() {
-  local label=$1
-  shift
+  local label=$1 cmd=$2
   local out err
   out=$(mktemp)
   err=$(mktemp)
-  if ! env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" TERM=dumb \
-    DOTFILES_TEST_WORK="$WORK_DIR" TMPDIR="${TMPDIR:-/tmp}" \
-    "$@" >"$out" 2>"$err" <<<"$CHECKS"; then
-    ng "$label: シェルが非0で終了した"
+  # 標準出力・標準エラー出力はシェル自身からファイルへ向ける(pty 経由では分離できないため)。
+  # 環境は最小限にし、fzf / eza / zoxide / starship 等が無い前提で通ることも確かめる
+  # shellcheck disable=SC2016  # $DOTFILES_TEST_OUT / ERR は起動したシェル側で展開させる
+  cmd=$cmd' >"$DOTFILES_TEST_OUT" 2>"$DOTFILES_TEST_ERR"'
+  local -a envargs=(
+    env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" TERM=dumb
+    DOTFILES_TEST_WORK="$WORK_DIR" DOTFILES_TEST_OUT="$out" DOTFILES_TEST_ERR="$err" TMPDIR="${TMPDIR:-/tmp}"
+  )
+  # 擬似端末(pty)の下で起動する。CI のように制御端末が無い環境では、zsh を -i で起動しても
+  # 端末を開けず「not interactive and can't open terminal」で compinit が中断し、bash も
+  # ジョブ制御の警告を出すため。util-linux(Linux)と BSD(macOS)で script の引数の形が違う。
+  # script が無ければそのまま実行する(手元に端末があれば問題なく通る)
+  local rc=0
+  if script --version 2>/dev/null | grep -q util-linux; then
+    "${envargs[@]}" script -qec "$cmd" /dev/null >/dev/null 2>&1 </dev/null || rc=$?
+  elif command -v script >/dev/null 2>&1; then
+    "${envargs[@]}" script -q /dev/null sh -c "$cmd" >/dev/null 2>&1 </dev/null || rc=$?
+  else
+    "${envargs[@]}" sh -c "$cmd" </dev/null || rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    ng "$label: シェルが非0で終了した(rc=$rc)"
     sed 's/^/      /' "$err" >&2
   fi
   # bash は端末(tty)無しで -i 起動すると、設定を読む前にジョブ制御の警告を2行出す。
@@ -178,23 +198,21 @@ run_shell() {
 
 echo "== 1) POSIX sh(dash)で共通設定 init.sh を読み込む"
 if command -v dash >/dev/null 2>&1; then
-  # shellcheck disable=SC2016  # $HOME は起動したシェル側で展開させる(意図的なシングルクォート)
-  run_shell dash dash -c '. "$HOME/.config/shell/init.sh"; eval "$(cat)"'
+  # shellcheck disable=SC2016  # 変数は起動したシェル側で展開させる(意図的なシングルクォート)
+  run_shell dash 'dash -c ". \"\$HOME/.config/shell/init.sh\"; . \"\$DOTFILES_TEST_WORK/checks.sh\""'
 else
   echo "  skip: dash が見つかりません"
 fi
 
-echo "== 2) bash を対話モードで起動し、ブートストラップ ~/.bashrc 経由で設定本体を読み込む"
-# 対話モード(-i)でないと bashrc が先頭で return する。検証本体はファイルにして source する
-# (-i で標準入力をスクリプトにすると端末制御のエラーが出るため)
-printf '%s\n' "$CHECKS" >"$WORK_DIR/checks.sh"
+echo "== 2) bash $(bash -c 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"') を対話モードで起動し、ブートストラップ ~/.bashrc 経由で設定本体を読み込む"
+# 対話モード(-i)でないと bashrc が先頭で return する
 # shellcheck disable=SC2016  # 変数は起動したシェル側で展開させる(意図的なシングルクォート)
-run_shell bash bash -ic '. "$DOTFILES_TEST_WORK/checks.sh"'
+run_shell bash 'bash -ic ". \"\$DOTFILES_TEST_WORK/checks.sh\""'
 
-echo "== 3) zsh を対話モードで起動し、~/.zshenv(ZDOTDIR)→ ブートストラップ .zshrc 経由で設定本体を読み込む"
+echo "== 3) zsh $(zsh -c 'echo $ZSH_VERSION' 2>/dev/null || echo '(なし)') を対話モードで起動し、~/.zshenv(ZDOTDIR)→ ブートストラップ .zshrc 経由で設定本体を読み込む"
 if command -v zsh >/dev/null 2>&1; then
   # shellcheck disable=SC2016  # 変数は起動したシェル側で展開させる(意図的なシングルクォート)
-  run_shell zsh zsh -ic '. "$DOTFILES_TEST_WORK/checks.sh"'
+  run_shell zsh 'zsh -ic ". \"\$DOTFILES_TEST_WORK/checks.sh\""'
   if [ -e "$FAKE_HOME/.zcompdump" ] || [ -e "$FAKE_HOME/.config/zsh/.zcompdump" ]; then
     ok "zsh: compinit が実行された(.zcompdump が生成された)"
   else
