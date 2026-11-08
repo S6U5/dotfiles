@@ -1,33 +1,37 @@
 #!/bin/sh
 # 何がストレージを食っているかを、全走査せずに数秒で報告する(読み取り専用。何も消さない)。
-#   diskreport                  # 既定: 空き容量 → Nix → 既知の場所(前回との差) → 掃除の案内
+#   diskreport                  # 既定: 器 → 会計(カテゴリ別と残差、前回比) → 内訳(既知の場所、増分順) → Nix → 案内
 #   diskreport --projects DIR   # 加えて DIR 配下のプロジェクト成果物(target / node_modules / .venv 等)を集計
 #                               # (マーカーで見つけて中へは降りないので数十秒で終わる)
-#   diskreport --nix-brief      # Nix の状態だけを数行で(dotfiles-switch / dotfiles-update の最後に呼ばれる)
+#   diskreport --deep           # 残差の場所を探す深掘り(macOS: Spotlight の索引で大きいファイル /
+#                               # Linux・WSL: $HOME の大きいファイルと全走査 TUI の案内)
 #   diskreport --windows        # WSL のみ: Windows の「ストレージ」設定(種類別の内訳と Storage Sense)を開く
-#
-# WSL での見方: WSL の中の df は仮想ディスクの上限(既定 1TB)を全体として見せるので当てにならない。
-# 本当の制約は vhdx を置いている Windows 側ドライブの空きで、これを「Windows 側」として別に出す。
-# 他のディストリや Docker の vhdx も同じドライブを食うので、見つかる範囲で一覧にする。
-# WSL から /mnt 越しに見るのは df とファイルサイズ(stat)だけにする。/mnt 越しの du は Windows 側の
-# ファイルを1つずつ 9P 経由で読むため WSL 内の数十倍遅く、速さでも精度でも Windows 側の道具
-# (OS の「ストレージ」設定、NTFS の MFT を直接読む WizTree 等)に勝てない。Windows の中身は
-# Windows の帳簿で見る、という分担にする。
+#   diskreport --nix-brief      # Nix の状態だけを数行で(dotfiles-switch / dotfiles-update の最後に呼ばれる)
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
-#   - 測る場所は固定し、ディスク全体の走査はしない(全走査は dua / gdu / ncdu 等の専用ツールに任せる)。
-#   - 既知の場所の値は ~/.local/state/dotfiles/diskreport.tsv に残し、次回は「前回からの増分」の
-#     大きい順に出す(絶対量より増え方の方が「気付けない圧迫」を言い当てるため)。
+#   - 会計モデル。使用量を「帰属できた分(OS・アプリ・ユーザーデータ・クラウド同期・仮想ディスク・
+#     キャッシュ・ごみ箱)」と「残差(どこにあるか知らない分)」に必ず分ける。残差は場所を当てないが、
+#     前回からの残差の増分が大きければ「知らない場所で増えた」と量で分かり、そのときだけ深掘りを薦める。
+#   - 帳簿優先。パッケージ管理の申告サイズ(dpkg)、Nix の DB、docker system df、journalctl など
+#     「既に集計されている数字」を先に引き、ファイルを1つずつ歩くのは固定の既知パスに限る。
+#   - 既知パスの一覧は ~/.config/dotfiles/diskreport.paths(home/ から配布)と、git 管理外の
+#     ~/.config/dotfiles/diskreport.local(個人の追加)から読む。
+#   - 履歴は ~/.local/state/dotfiles/diskreport.tsv に直近 30 回残し、前回・約1週間前・約1か月前と比べる。
 #   - 削除は既にある道具(cachesweep / nix-collect-garbage / home-manager expire-generations /
 #     wsl-compact)に任せ、このコマンドは末尾で案内するだけ。
+#   - WSL: 中の df は仮想ディスクの上限を全体として見せるので、vhdx を置く Windows 側ドライブの空きを
+#     別に出す。/mnt 越しの du はしない(9P 経由で桁違いに遅い)。Windows 側はレジストリの申告サイズと
+#     vhdx のファイルサイズだけを帳簿として引き、中身は Windows の道具で見る。
 set -eu
 
 MODE=full
 PROJECTS=
+DEEP=0
 WINDOWS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --nix-brief) MODE=nix-brief ;;
+    --deep) DEEP=1 ;;
     --windows) WINDOWS=1 ;;
     --projects)
       shift
@@ -49,43 +53,62 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+TAB=$(printf '\t')
+NOW=$(date +%s)
 STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles
 STATE_FILE=$STATE_DIR/diskreport.tsv
+CONF_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles
+# ディスクが満杯のときでも動くよう、作業ファイルはまず tmpfs(/dev/shm)に置く(無ければ通常の一時領域)
+WORK=$(mktemp -d /dev/shm/diskreport.XXXXXX 2>/dev/null || mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+: >"$WORK/items"   # 測った項目: キー<TAB>KiB(キーは os:… / apps:… / path:<パス> / vm:… / win:…)
+: >"$WORK/pathcat" # 既知パスのカテゴリと説明: パス<TAB>カテゴリ<TAB>説明
+hints=""
+NIX_STORE_KIB=
+NIX_CLOSURE_KIB=
 
-# KiB を人が読める単位に(du -k / df -Pk の出力用。awk だけで済ませ、外部ツールに依存しない)
+# ---------------------------------------------------------------------------
+# 小さな道具
+# ---------------------------------------------------------------------------
+# KiB を人が読める単位に(awk だけで済ませ、外部ツールに依存しない)
 human() {
   awk -v k="$1" 'BEGIN {
     split("K M G T", u, " "); i = 1
     while (k >= 1024 && i < 4) { k /= 1024; i++ }
     printf (i == 1 ? "%d%s" : "%.1f%s"), k, u[i]
   }'
+  return 0
 }
-
-# ディレクトリの KiB(無ければ空文字)。読めない部分は無視する
+# 符号付きの差分(KiB)を「+1.2G」「-300M」「±0」の形に
+signed() {
+  if [ "$1" -gt 0 ]; then printf '+%s' "$(human "$1")"; elif [ "$1" -lt 0 ]; then printf -- '-%s' "$(human $((-$1)))"; else printf '±0'; fi
+  return 0
+}
+# ディレクトリの KiB(無ければ空文字)。同一 FS 内だけ、読めない部分は無視
 dir_kib() {
   [ -e "$1" ] || return 0
   du -skx "$1" 2>/dev/null | cut -f1
+  return 0
 }
-
+# 「1.2G」「345 MB」のような表記を KiB に(2進と10進のどちらで書かれても目安として扱う)
+to_kib() {
+  awk -v s="$1" 'BEGIN {
+    n = s + 0; u = toupper(s); gsub(/[^A-Z]/, "", u)
+    if (u ~ /^K/) m = 1; else if (u ~ /^M/) m = 1024; else if (u ~ /^G/) m = 1024^2; else if (u ~ /^T/) m = 1024^3; else m = 1 / 1024
+    printf "%d", n * m
+  }'
+  return 0
+}
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
 is_macos() { [ "$(uname -s)" = Darwin ]; }
-
-# WSL: 登録されている全ディストリの「名前<TAB>BasePath(Windows パス)」を出力する(wsl-compact と同じ方法)。
-# Store 版の BasePath に付く \\?\ の接頭辞は落とす
-wsl_distros() {
-  command -v reg.exe >/dev/null 2>&1 || return 1
-  reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s 2>/dev/null | tr -d '\r' | awk '
-    /^HKEY_/ { if (name != "" && path != "") printf "%s\t%s\n", name, path; name = ""; path = "" }
-    $1 == "DistributionName" { name = $3 }
-    $1 == "BasePath" { path = $3; for (i = 4; i <= NF; i++) path = path " " $i }
-    END { if (name != "" && path != "") printf "%s\t%s\n", name, path }' | sed 's/\t\\\\?\\/\t/'
-}
-
 # 掴まれたまま応答しないマウント(切断されたネットワークドライブ等)で止まらないよう、あれば timeout を使う
 with_timeout() {
   if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi
+  return 0
 }
-
+add_item() { printf '%s\t%s\n' "$1" "$2" >>"$WORK/items"; } # $1: キー, $2: KiB
+add_hint() { hints="$hints
+  $1"; }
 # df -Pk の1行を「使用 / 全体 / 空き」の読みやすい形にする。$1: 表示名
 df_line() {
   awk -v label="$1" 'NR == 2 {
@@ -93,20 +116,384 @@ df_line() {
     for (c = 2; c <= 4; c++) { v = $c; i = 1; while (v >= 1024 && i < 4) { v /= 1024; i++ }; h[c] = sprintf((i == 1 ? "%d%s" : "%.1f%s"), v, u[i]) }
     printf "  %s: 使用 %s / 全体 %s / 空き %s(%s 使用)\n", label, h[3], h[2], h[4], $5
   }'
+  return 0
 }
 
-hints=""
-add_hint() { hints="$hints
-  $1"; }
+# ---------------------------------------------------------------------------
+# 履歴(長い形式: 時刻<TAB>キー<TAB>KiB。直近 30 回)
+# ---------------------------------------------------------------------------
+# 指定した時刻の値(無ければ空)
+hist_value() { # $1: 時刻, $2: キー
+  [ -f "$STATE_FILE" ] || return 0
+  awk -F'\t' -v t="$1" -v k="$2" '$1 == t && $2 == k { print $3; exit }' "$STATE_FILE"
+  return 0
+}
+# 基準時刻: 前回(最新)、約1週間前・約1か月前(その日数以上前で最も新しい回)
+hist_times() {
+  [ -f "$STATE_FILE" ] || return 0
+  awk -F'\t' -v now="$NOW" '
+    $1 ~ /^[0-9]+$/ { t[$1] = 1 }
+    END {
+      prev = 0; week = 0; month = 0
+      for (x in t) { x += 0
+        if (x > prev) prev = x
+        if (now - x >= 7 * 86400 && x > week) week = x
+        if (now - x >= 30 * 86400 && x > month) month = x
+      }
+      printf "%d %d %d\n", prev, week, month
+    }' "$STATE_FILE"
+  return 0
+}
+# 1項目の表示: ラベル、今回値、各基準との差
+show_with_delta() { # $1: ラベル, $2: キー, $3: KiB
+  line=$(printf '  %s: %s' "$1" "$(human "$3")")
+  if [ "$PREV" -gt 0 ]; then
+    p=$(hist_value "$PREV" "$2")
+    [ -n "$p" ] && line="$line  前回比 $(signed $(($3 - p)))"
+  fi
+  if [ "$WEEK" -gt 0 ]; then
+    p=$(hist_value "$WEEK" "$2")
+    [ -n "$p" ] && line="$line  週 $(signed $(($3 - p)))"
+  fi
+  if [ "$MONTH" -gt 0 ]; then
+    p=$(hist_value "$MONTH" "$2")
+    [ -n "$p" ] && line="$line  月 $(signed $(($3 - p)))"
+  fi
+  printf '%s\n' "$line"
+  return 0
+}
+save_history() { # $1: 追記する「キー<TAB>KiB」のファイル
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  {
+    [ -f "$STATE_FILE" ] && cat "$STATE_FILE"
+    awk -F'\t' -v t="$NOW" '{ printf "%s\t%s\t%s\n", t, $1, $2 }' "$1"
+  } >"$WORK/hist"
+  # 直近 30 回だけ残す。ディスクが満杯で書けなくても、レポート自体は出す
+  keep=$(awk -F'\t' '$1 ~ /^[0-9]+$/ { print $1 }' "$WORK/hist" | sort -un | tail -n 30 | tr '\n' ' ')
+  if ! awk -F'\t' -v keep=" $keep" 'index(keep, " " $1 " ") > 0' "$WORK/hist" >"$WORK/hist.new" || ! cp "$WORK/hist.new" "$STATE_FILE" 2>/dev/null; then
+    echo "WARN: 履歴を $STATE_FILE に書けませんでした(ディスクが満杯?)。今回の比較は次回に持ち越せません" >&2
+  fi
+  return 0
+}
 
 # ---------------------------------------------------------------------------
-# Nix(世代数・今の世代の実サイズ・自動 GC の設定有無)
+# 既知パスの一覧(配布された共通一覧 + 個人の追加)
+# ---------------------------------------------------------------------------
+paths_file() {
+  if [ -f "$CONF_DIR/diskreport.paths" ]; then
+    echo "$CONF_DIR/diskreport.paths"
+    return 0
+  fi
+  # まだ switch していない環境向け: 自身のシンボリックリンクをたどってリポジトリ内の一覧を使う
+  target=$0
+  while [ -L "$target" ]; do
+    link=$(readlink "$target")
+    case "$link" in /*) target=$link ;; *) target=$(dirname "$target")/$link ;; esac
+  done
+  repo=$(cd "$(dirname "$target")/../../.." 2>/dev/null && pwd) || return 1
+  [ -f "$repo/home/.config/dotfiles/diskreport.paths" ] && echo "$repo/home/.config/dotfiles/diskreport.paths"
+  return 0
+}
+load_paths() { # 出力: カテゴリ<TAB>展開済みパス<TAB>説明
+  for f in "$(paths_file || true)" "$CONF_DIR/diskreport.local"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    grep -v '^[[:space:]]*#' "$f" | grep -v '^[[:space:]]*$' | while IFS="$TAB" read -r cat p desc; do
+      # shellcheck disable=SC2088  # 一覧ファイルに書かれた文字どおりの ~ を自分で展開する
+      case "$p" in "~/"*) p=$HOME/${p#"~/"} ;; "~") p=$HOME ;; esac
+      printf '%s\t%s\t%s\n' "$cat" "$p" "$desc"
+    done
+  done
+  return 0
+}
+cat_label() {
+  case "$1" in
+    os) echo "OS・システム" ;;
+    apps) echo "インストール済みアプリ" ;;
+    userdata) echo "ユーザーデータ" ;;
+    cloud) echo "クラウド同期" ;;
+    vm) echo "仮想ディスク・コンテナ" ;;
+    cache) echo "アプリデータ・キャッシュ" ;;
+    projects) echo "開発成果物" ;;
+    trash) echo "ごみ箱・バックアップ" ;;
+    *) echo "$1" ;;
+  esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# 器(ファイルシステム)。残差の基準になる「使用量の合計」は、/ と $HOME、/nix、/var/lib/docker の
+# うち別マウントのものを足す(WSL は全部同じ、macOS は / と Data ボリュームが別)
+# ---------------------------------------------------------------------------
+total_used_kib() {
+  : >"$WORK/mounts"
+  for p in / "$HOME" /nix /var/lib/docker; do
+    [ -e "$p" ] || continue
+    df -Pk "$p" 2>/dev/null | awk 'NR == 2 { print $6 "\t" $3 }' >>"$WORK/mounts"
+  done
+  sort -u "$WORK/mounts" | awk -F'\t' '{ s += $2 } END { printf "%d", s }'
+  return 0
+}
+
+report_disk() {
+  echo "== 器"
+  df -Pk "$HOME" 2>/dev/null | df_line "\$HOME のファイルシステム"
+  avail_kib=$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 { print $4 }')
+  if [ -n "${avail_kib:-}" ] && [ "$avail_kib" -lt $((10 * 1024 * 1024)) ]; then
+    echo "  WARN: 空きが 10GiB を切っています"
+  fi
+  if is_macos && command -v tmutil >/dev/null 2>&1; then
+    snaps=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c 'com.apple' || true)
+    echo "  ローカルスナップショット: ${snaps:-0} 個(Finder の空き容量には含まれない。容量が要るときは OS が自動で間引く)"
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    held=$(lsof +L1 2>/dev/null | awk 'NR > 1 && $7 ~ /^[0-9]+$/ { s += $7 } END { if (s > 0) printf "%d", s / 1024 }')
+    if [ -n "${held:-}" ] && [ "$held" -gt $((100 * 1024)) ]; then
+      echo "  削除済みで使用中: $(human "$held")(プロセスを終了すると返る。lsof +L1 で一覧)"
+    fi
+  fi
+  echo ""
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# 帳簿から取る項目(走査なし)
+# ---------------------------------------------------------------------------
+collect_ledgers() {
+  # OS・システム
+  if command -v journalctl >/dev/null 2>&1; then
+    j=$(journalctl --disk-usage 2>/dev/null | grep -oE '[0-9.]+ ?[KMGT]i?B?' | head -n 1 || true)
+    [ -n "$j" ] && add_item os:journald "$(to_kib "$j")"
+  fi
+  for p in /var/cache/apt /var/log /var/lib/systemd/coredump /private/var/vm /swapfile /swap.img; do
+    k=$(dir_kib "$p")
+    [ -n "${k:-}" ] && [ "$k" -gt 0 ] && add_item "os:$p" "$k"
+  done
+
+  # インストール済みアプリ(申告サイズ。実測とはずれるが走査なしで出る)
+  if command -v dpkg-query >/dev/null 2>&1; then
+    k=$(dpkg-query -W -f='${Installed-Size}\n' 2>/dev/null | awk '{ s += $1 } END { printf "%d", s }')
+    [ -n "$k" ] && [ "$k" -gt 0 ] && add_item apps:dpkg "$k"
+  fi
+  for p in /var/lib/flatpak "$HOME/.local/share/flatpak" /var/lib/snapd/snaps; do
+    k=$(dir_kib "$p")
+    [ -n "${k:-}" ] && [ "$k" -gt 0 ] && add_item "apps:$p" "$k"
+  done
+  if is_macos; then
+    k=$(dir_kib /Applications)
+    [ -n "${k:-}" ] && add_item apps:/Applications "$k"
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    cellar=$(brew --cellar 2>/dev/null || true)
+    k=$(dir_kib "$cellar")
+    [ -n "${k:-}" ] && add_item apps:homebrew "$k"
+  fi
+  # Nix store 全体(DB を引くだけ。narSize なのでディスク上の実サイズとは少しずれる)
+  if command -v nix >/dev/null 2>&1; then
+    NIX_STORE_KIB=$(nix path-info --extra-experimental-features nix-command --all -s 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')
+    [ -n "${NIX_STORE_KIB:-}" ] && add_item apps:nix-store "$NIX_STORE_KIB"
+    if [ -e "$HOME/.nix-profile" ]; then
+      NIX_CLOSURE_KIB=$(nix path-info --extra-experimental-features nix-command -S "$HOME/.nix-profile" 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')
+    fi
+  fi
+
+  # 仮想ディスク・コンテナ(Docker Engine は docker system df の集計)
+  DOCKER_RECLAIM=0
+  if command -v docker >/dev/null 2>&1; then
+    with_timeout docker system df --format '{{.Size}}\t{{.Reclaimable}}' 2>/dev/null >"$WORK/docker" || true
+    dsum=$(cut -f1 "$WORK/docker" | while read -r sz; do to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
+    # Reclaimable は「1.2GB (80%)」の形なので先頭の数値部分だけ使う
+    DOCKER_RECLAIM=$(cut -f2 "$WORK/docker" | sed 's/ (.*//' | while read -r sz; do [ -n "$sz" ] && to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
+    [ -n "${dsum:-}" ] && [ "$dsum" -gt 0 ] && add_item vm:docker "$dsum"
+  fi
+  return 0
+}
+
+# 既知パス(固定の場所だけ du)。入れ子は内訳として表示し、合計は外側だけ数える
+collect_paths() {
+  load_paths >"$WORK/paths"
+  while IFS="$TAB" read -r cat p desc; do
+    k=$(dir_kib "$p")
+    [ -n "${k:-}" ] || continue
+    add_item "path:$p" "$k"
+    printf '%s\t%s\t%s\n' "$p" "$cat" "$desc" >>"$WORK/pathcat"
+  done <"$WORK/paths"
+  return 0
+}
+
+# プロジェクト成果物(マーカー探索層)。見つけた成果物の中へは降りない(-prune)
+collect_projects() {
+  [ -n "$PROJECTS" ] || return 0
+  if [ ! -d "$PROJECTS" ]; then
+    echo "diskreport: --projects のディレクトリが見つかりません: $PROJECTS" >&2
+    return 0
+  fi
+  : >"$WORK/projects"
+  find "$PROJECTS" -xdev \( -name .git -o -name node_modules -o -name target -o -name .venv -o -name venv \
+    -o -name build -o -name dist -o -name .next -o -name .turbo -o -name __pycache__ -o -name .gradle -o -name .tox \) -prune -print 2>/dev/null |
+    grep -v '/\.git$' |
+    while IFS= read -r d; do
+      # target は Cargo、build は Gradle 等のマーカーがある場合だけ(無関係な同名ディレクトリを避ける)
+      case "$(basename "$d")" in
+        target) [ -f "$(dirname "$d")/Cargo.toml" ] || [ -f "$d/CACHEDIR.TAG" ] || continue ;;
+        build) [ -f "$(dirname "$d")/build.gradle" ] || [ -f "$(dirname "$d")/build.gradle.kts" ] || [ -f "$(dirname "$d")/setup.py" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
+        dist) [ -f "$(dirname "$d")/package.json" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
+      esac
+      k=$(dir_kib "$d")
+      [ -n "${k:-}" ] && printf '%s\t%s\n' "$k" "$d"
+    done | sort -t"$TAB" -k1,1nr >"$WORK/projects"
+  k=$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")
+  add_item "projects:$PROJECTS" "$k"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# 会計: カテゴリ別の合計と残差
+# ---------------------------------------------------------------------------
+# items と pathcat から「カテゴリ<TAB>KiB」を出す。path: は pathcat のカテゴリに振り、
+# 一覧にある別のパスの配下にあるものは数えない(二重計上を避ける)
+category_totals() {
+  awk -F'\t' '
+    FILENAME == ARGV[1] { pc[$1] = $2; paths[++np] = $1; next }
+    {
+      key = $1; kib = $2 + 0
+      if (key ~ /^path:/) {
+        p = substr(key, 6)
+        nested = 0
+        for (i = 1; i <= np; i++) { q = paths[i]; if (q != p && index(p, q "/") == 1) { nested = 1; break } }
+        if (nested) next
+        cat = (p in pc) ? pc[p] : "cache"
+      } else {
+        cat = key; sub(/:.*/, "", cat)
+      }
+      sum[cat] += kib
+    }
+    END { for (c in sum) printf "%s\t%d\n", c, sum[c] }' "$WORK/pathcat" "$WORK/items"
+  return 0
+}
+
+report_accounting() {
+  TOTAL=$(total_used_kib)
+  category_totals >"$WORK/cats"
+  attributed=$(awk -F'\t' '{ s += $2 } END { printf "%d", s }' "$WORK/cats")
+  RESIDUAL=$((TOTAL - attributed))
+  [ "$RESIDUAL" -lt 0 ] && RESIDUAL=0
+
+  # shellcheck disable=SC2046  # 「前回 週 月」の3つの数値に分ける(意図した単語分割)
+  set -- $(hist_times || echo "0 0 0")
+  PREV=${1:-0}
+  WEEK=${2:-0}
+  MONTH=${3:-0}
+
+  echo "== 会計(使用量を振り分け、残りを残差として出す)"
+  if [ "$PREV" -gt 0 ]; then
+    echo "  前回: $(((NOW - PREV) / 86400)) 日前$([ "$WEEK" -gt 0 ] && echo "、週 = $(((NOW - WEEK) / 86400)) 日前")$([ "$MONTH" -gt 0 ] && echo "、月 = $(((NOW - MONTH) / 86400)) 日前")"
+  else
+    echo "  前回の記録が無いため差分は出ません(次回から前回比が付きます)"
+  fi
+  show_with_delta "使用量の合計" total "$TOTAL"
+  for c in os apps userdata cloud vm cache projects trash; do
+    k=$(awk -F'\t' -v c="$c" '$1 == c { print $2 }' "$WORK/cats")
+    [ -n "$k" ] || continue
+    show_with_delta "$(cat_label "$c")" "cat:$c" "$k"
+  done
+  show_with_delta "残差(知らない場所)" residual "$RESIDUAL"
+
+  # いますぐ戻せる見込み(消しても再生成できるもの + 誰も指していない Nix + Docker の未使用分)。
+  # 満杯で困っているときはここを先に見る。履歴が無くても出る
+  cache_k=$(awk -F'\t' '$1 == "cache" { print $2 }' "$WORK/cats")
+  trash_k=$(awk -F'\t' '$1 == "trash" { print $2 }' "$WORK/cats")
+  proj_k=$(awk -F'\t' '$1 == "projects" { print $2 }' "$WORK/cats")
+  nix_gap=0
+  if [ -n "${NIX_STORE_KIB:-}" ] && [ -n "${NIX_CLOSURE_KIB:-}" ] && [ "$NIX_STORE_KIB" -gt "$NIX_CLOSURE_KIB" ]; then
+    nix_gap=$((NIX_STORE_KIB - NIX_CLOSURE_KIB))
+  fi
+  reclaim=$((${cache_k:-0} + ${trash_k:-0} + ${proj_k:-0} + nix_gap + ${DOCKER_RECLAIM:-0}))
+  if [ "$reclaim" -gt 0 ]; then
+    echo ""
+    echo "  いますぐ戻せる見込み: $(human "$reclaim")(上限の目安。実際に消すのは下の「次の一手」のコマンド)"
+    [ -n "${cache_k:-}" ] && echo "    キャッシュ $(human "$cache_k")(cachesweep --clean、各ツールの掃除コマンド)"
+    [ -n "${trash_k:-}" ] && echo "    ごみ箱・バックアップ $(human "$trash_k")(ごみ箱を空にする)"
+    [ -n "${proj_k:-}" ] && echo "    開発成果物 $(human "$proj_k")(再生成できる。プロジェクトごとに削除)"
+    [ "$nix_gap" -gt 0 ] && echo "    Nix の古い世代とゴミ $(human "$nix_gap")(nix-collect-garbage -d。世代ごと消すなら expire-generations を先に)"
+    [ "${DOCKER_RECLAIM:-0}" -gt 0 ] && echo "    Docker の未使用分 $(human "$DOCKER_RECLAIM")(docker system prune)"
+  fi
+
+  # 残差の増分が閾値(2GiB か使用量の 5% の大きい方)を超えたら、知らない場所で増えている
+  RESIDUAL_SPIKE=0
+  if [ "$PREV" -gt 0 ]; then
+    rp=$(hist_value "$PREV" residual)
+    if [ -n "$rp" ]; then
+      th=$((TOTAL / 20))
+      [ "$th" -lt $((2 * 1024 * 1024)) ] && th=$((2 * 1024 * 1024))
+      if [ $((RESIDUAL - rp)) -gt "$th" ]; then
+        RESIDUAL_SPIKE=1
+        echo "  WARN: 残差が前回から $(signed $((RESIDUAL - rp))) 増えています。一覧に無い場所で何かが増えました(diskreport --deep で探す)"
+      fi
+    fi
+  fi
+  echo ""
+
+  # 履歴に保存(項目・カテゴリ・合計・残差)
+  {
+    cat "$WORK/items"
+    awk -F'\t' '{ printf "cat:%s\t%s\n", $1, $2 }' "$WORK/cats"
+    printf 'total\t%s\n' "$TOTAL"
+    printf 'residual\t%s\n' "$RESIDUAL"
+  } >"$WORK/save"
+  return 0
+}
+
+# 内訳: 既知の場所を増分の大きい順に(前回が無ければ大きい順)
+report_breakdown() {
+  echo "== 内訳(既知の場所。増えた順)"
+  : >"$WORK/rows"
+  while IFS="$TAB" read -r p cat desc; do
+    k=$(awk -F'\t' -v key="path:$p" '$1 == key { print $2; exit }' "$WORK/items")
+    [ -n "$k" ] || continue
+    prev=
+    [ "$PREV" -gt 0 ] && prev=$(hist_value "$PREV" "path:$p")
+    delta=$((k - ${prev:-k}))
+    printf '%s\t%s\t%s\t%s\t%s\n' "$delta" "$k" "$p" "$(cat_label "$cat")" "$desc" >>"$WORK/rows"
+  done <"$WORK/pathcat"
+  if [ ! -s "$WORK/rows" ]; then
+    echo "  (該当する場所がありません)"
+  else
+    sort -t"$TAB" -k1,1nr -k2,2nr "$WORK/rows" | head -n 25 | while IFS="$TAB" read -r delta k p cat desc; do
+      if [ "$PREV" -gt 0 ]; then
+        printf '  %8s  %8s  %s\n' "$(signed "$delta")" "$(human "$k")" "$p"
+      else
+        printf '  %8s  %s\n' "$(human "$k")" "$p"
+      fi
+      printf '  %8s  %s / %s\n' "" "$cat" "$desc"
+    done
+    n=$(wc -l <"$WORK/rows" | tr -d ' ')
+    [ "$n" -gt 25 ] && echo "  (ほか $((n - 25)) 件)"
+  fi
+  # 帳簿から取った項目も見せる(どこから来た数字か分かるように)
+  awk -F'\t' '$1 !~ /^path:/ && $1 !~ /^projects:/ && $1 !~ /^win:/' "$WORK/items" | while IFS="$TAB" read -r key k; do
+    printf '  %8s  %s(帳簿)\n' "$(human "$k")" "$key"
+  done
+  echo ""
+  return 0
+}
+
+report_projects() {
+  [ -n "$PROJECTS" ] && [ -f "$WORK/projects" ] || return 0
+  echo "== 開発成果物($PROJECTS 配下。消しても再生成できるもの)"
+  case "$PROJECTS" in /mnt/*) echo "  (/mnt 越しの走査は WSL 内より桁違いに遅いことがあります)" ;; esac
+  head -n 20 "$WORK/projects" | while IFS="$TAB" read -r k d; do printf '  %8s  %s\n' "$(human "$k")" "$d"; done
+  n=$(wc -l <"$WORK/projects" | tr -d ' ')
+  echo "  合計 $(human "$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")")($n 件。上位 20 件を表示)"
+  echo ""
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Nix(世代数・store 全体と今の世代・自動 GC の設定有無)
 # ---------------------------------------------------------------------------
 report_nix() {
   command -v nix-store >/dev/null 2>&1 || return 0
   echo "== Nix"
-
-  # home-manager の世代は ~/.local/state/nix/profiles(新)か /nix/var/nix/profiles/per-user(旧)
   gens=0
   for d in "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles" "/nix/var/nix/profiles/per-user/${USER:-$(id -un)}"; do
     [ -d "$d" ] || continue
@@ -117,16 +504,21 @@ report_nix() {
   if [ "$gens" -gt 10 ]; then
     add_hint "home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(戻せなくなる)"
   fi
-
-  # 今の世代が実際に抱えている容量(store の DB を引くだけなので速い)
-  profile=$HOME/.nix-profile
-  if [ -e "$profile" ]; then
-    closure=$(nix path-info --extra-experimental-features nix-command -S "$profile" 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')
-    [ -n "${closure:-}" ] && echo "  今の世代の実体: $(human "$closure")"
+  if [ -z "${NIX_STORE_KIB:-}" ] && command -v nix >/dev/null 2>&1; then
+    NIX_STORE_KIB=$(nix path-info --extra-experimental-features nix-command --all -s 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')
   fi
-
+  closure=${NIX_CLOSURE_KIB:-}
+  if [ -z "$closure" ] && [ -e "$HOME/.nix-profile" ] && command -v nix >/dev/null 2>&1; then
+    closure=$(nix path-info --extra-experimental-features nix-command -S "$HOME/.nix-profile" 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')
+  fi
+  if [ -n "${NIX_STORE_KIB:-}" ]; then
+    if [ -n "${closure:-}" ] && [ "$NIX_STORE_KIB" -gt "$closure" ]; then
+      echo "  store 全体: $(human "$NIX_STORE_KIB")(今の世代 $(human "$closure")。差の $(human $((NIX_STORE_KIB - closure))) が GC と世代削除で戻る上限)"
+    else
+      echo "  store 全体: $(human "$NIX_STORE_KIB")"
+    fi
+  fi
   # 自動 GC(min-free)が効く設定か。daemon 構成では /etc/nix/nix.conf 側だけが効く
-  conf=
   if [ -S /nix/var/nix/daemon-socket/socket ] || [ -f /etc/nix/nix.conf ]; then
     conf=/etc/nix/nix.conf
   else
@@ -140,111 +532,116 @@ report_nix() {
   fi
   add_hint "nix-collect-garbage -d                      # 誰も指していない store パスと古い世代を削除"
   echo ""
+  return 0
 }
 
 # ---------------------------------------------------------------------------
-# 空き容量と、ファイル一覧に映らないもの(A 層)
+# WSL: Windows 側(帳簿だけ。/mnt 越しの du はしない)
 # ---------------------------------------------------------------------------
-report_disk() {
-  echo "== 空き容量"
-  df -Pk "$HOME" 2>/dev/null | df_line "\$HOME のファイルシステム"
-  avail_kib=$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 { print $4 }')
-  if [ -n "${avail_kib:-}" ] && [ "$avail_kib" -lt $((10 * 1024 * 1024)) ]; then
-    echo "  WARN: 空きが 10GiB を切っています"
-  fi
+# 登録されている全ディストリの「名前<TAB>BasePath」(wsl-compact と同じ方法。Store 版の \\?\ 接頭辞は落とす)
+wsl_distros() {
+  command -v reg.exe >/dev/null 2>&1 || return 1
+  reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s 2>/dev/null | tr -d '\r' | awk '
+    /^HKEY_/ { if (name != "" && path != "") printf "%s\t%s\n", name, path; name = ""; path = "" }
+    $1 == "DistributionName" { name = $3 }
+    $1 == "BasePath" { path = $3; for (i = 4; i <= NF; i++) path = path " " $i }
+    END { if (name != "" && path != "") printf "%s\t%s\n", name, path }' | sed 's/\t\\\\?\\/\t/'
+  return 0
+}
+# Windows の環境変数を WSL 側のパスで返す(functions.sh の _dotfiles_win_profile と同じ手順)
+win_env_path() {
+  command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1 || return 1
+  _w=$(
+    cd /mnt/c 2>/dev/null || cd /
+    cmd.exe /c "echo %$1%" 2>/dev/null | tr -d '\r'
+  )
+  [ -n "$_w" ] && [ "$_w" != "%$1%" ] || return 1
+  wslpath -u "$_w" 2>/dev/null
+  return 0
+}
+# インストール済みアプリの申告サイズの合計(レジストリの EstimatedSize。KB の DWORD。書かないインストーラもある)
+win_apps_kib() {
+  command -v reg.exe >/dev/null 2>&1 || return 1
+  for hive in 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' \
+    'HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' \
+    'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'; do
+    reg.exe query "$hive" /s /v EstimatedSize 2>/dev/null | tr -d '\r'
+  done | awk '$1 == "EstimatedSize" && $2 == "REG_DWORD" { s += strtonum_hex($3) }
+    function strtonum_hex(h,   i, c, v) { v = 0; h = tolower(h); sub(/^0x/, "", h)
+      for (i = 1; i <= length(h); i++) { c = index("0123456789abcdef", substr(h, i, 1)) - 1; if (c < 0) return 0; v = v * 16 + c }
+      return v }
+    END { printf "%d", s }'
+  return 0
+}
 
-  if is_wsl; then
-    echo "  (WSL の中の df は仮想ディスクの上限を全体として見せるため、本当の制約は下の Windows 側の空きです)"
-    distros=$(wsl_distros || true)
-    # 現在のディストリの vhdx。中で消しても縮まないので、中の使用量との差が「wsl-compact で返せる量」
-    base=$(printf '%s\n' "$distros" | awk -F'\t' -v d="${WSL_DISTRO_NAME:-}" '$1 == d { print $2; exit }')
-    host_mnt=
-    if [ -n "$base" ] && command -v wslpath >/dev/null 2>&1; then
-      vhdx=$(wslpath -u "$base\\ext4.vhdx" 2>/dev/null || true)
-      if [ -n "$vhdx" ] && [ -e "$vhdx" ]; then
-        vk=$(du -sk "$vhdx" 2>/dev/null | cut -f1)
+report_windows_ledger() {
+  is_wsl || return 0
+  echo "== Windows 側(帳簿だけ。中身は Windows の道具で見る。diskreport --windows で「ストレージ」設定を開く)"
+  echo "  (WSL の中の df は仮想ディスクの上限を全体として見せるため、本当の制約はここの空きです)"
+  distros=$(wsl_distros || true)
+  base=$(printf '%s\n' "$distros" | awk -F'\t' -v d="${WSL_DISTRO_NAME:-}" '$1 == d { print $2; exit }')
+  host_mnt=
+  vhdx_total=0
+  if command -v wslpath >/dev/null 2>&1 && [ -n "$distros" ]; then
+    printf '%s\n' "$distros" | while IFS="$TAB" read -r dname dpath; do
+      dv=$(wslpath -u "$dpath\\ext4.vhdx" 2>/dev/null || true)
+      [ -n "$dv" ] && [ -e "$dv" ] || continue
+      vk=$(du -sk "$dv" 2>/dev/null | cut -f1)
+      if [ "$dname" = "${WSL_DISTRO_NAME:-}" ]; then
         used_kib=$(df -Pk / 2>/dev/null | awk 'NR == 2 { print $3 }')
         echo "  この WSL の vhdx: $(human "$vk")(中の使用量 $(human "${used_kib:-0}"))"
         if [ -n "${used_kib:-}" ] && [ "$vk" -gt $((used_kib + 2 * 1024 * 1024)) ]; then
-          add_hint "wsl-compact                                 # 中で空いた分を Windows に返す"
+          echo "    → 中で空いた分は wsl-compact で Windows に返せます"
         fi
+      else
+        echo "  他の WSL($dname)の vhdx: $(human "$vk")"
       fi
-      # vhdx を置いているドライブ(C:\... → /mnt/c)。ここの空きが本当の上限
-      drive=$(printf '%s' "$base" | cut -c1 | tr '[:upper:]' '[:lower:]')
-      [ -d "/mnt/$drive" ] && host_mnt=/mnt/$drive
-    fi
-    if [ -z "$host_mnt" ] && [ -d /mnt/c ]; then host_mnt=/mnt/c; fi
-    if [ -n "$host_mnt" ]; then
-      with_timeout df -Pk "$host_mnt" 2>/dev/null | df_line "Windows 側 $(printf '%s' "$host_mnt" | cut -c6 | tr '[:lower:]' '[:upper:]'):(vhdx の置き場)"
-      host_avail=$(with_timeout df -Pk "$host_mnt" 2>/dev/null | awk 'NR == 2 { print $4 }')
-      if [ -n "${host_avail:-}" ] && [ "$host_avail" -lt $((10 * 1024 * 1024)) ]; then
-        echo "  WARN: Windows 側の空きが 10GiB を切っています(vhdx はこれ以上大きくなれません)"
-      fi
-    fi
-    # 他のディストリの vhdx(同じドライブを食う)
-    if [ -n "$distros" ] && command -v wslpath >/dev/null 2>&1; then
-      printf '%s\n' "$distros" | while IFS='	' read -r dname dpath; do
-        [ "$dname" = "${WSL_DISTRO_NAME:-}" ] && continue
-        dv=$(wslpath -u "$dpath\\ext4.vhdx" 2>/dev/null || true)
-        [ -n "$dv" ] && [ -e "$dv" ] || continue
-        echo "  他の WSL($dname)の vhdx: $(human "$(du -sk "$dv" 2>/dev/null | cut -f1)")"
-      done
-    fi
-    # Windows 側の他のドライブ(D: 等)。drvfs / 9p のマウントだけを対象にし、応答しない場合は timeout で諦める
-    for m in /mnt/[a-z]; do
-      [ -d "$m" ] || continue
-      [ "$m" = "$host_mnt" ] && continue
-      grep -qE "^[^ ]+ $m (drvfs|9p) " /proc/mounts 2>/dev/null || continue
-      with_timeout df -Pk "$m" 2>/dev/null | df_line "Windows 側 $(printf '%s' "$m" | cut -c6 | tr '[:lower:]' '[:upper:]'):"
+      printf '%s\n' "$vk" >>"$WORK/vhdx"
     done
+    # Docker Desktop の vhdx
+    la=$(win_env_path LOCALAPPDATA || true)
+    if [ -n "$la" ] && [ -d "$la/Docker/wsl" ]; then
+      dk=$(du -sk "$la/Docker/wsl" 2>/dev/null | cut -f1)
+      [ -n "${dk:-}" ] && echo "  Docker Desktop の vhdx: $(human "$dk")" && printf '%s\n' "$dk" >>"$WORK/vhdx"
+    fi
+    [ -f "$WORK/vhdx" ] && vhdx_total=$(awk '{ s += $1 } END { printf "%d", s }' "$WORK/vhdx")
+    drive=$(printf '%s' "$base" | cut -c1 | tr '[:upper:]' '[:lower:]')
+    [ -n "$drive" ] && [ -d "/mnt/$drive" ] && host_mnt=/mnt/$drive
   fi
-
-  if is_macos && command -v tmutil >/dev/null 2>&1; then
-    snaps=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c 'com.apple' || true)
-    echo "  ローカルスナップショット: ${snaps:-0} 個(Finder の空き容量には含まれない。容量が要るときは OS が自動で間引く)"
-  fi
-
-  if command -v lsof >/dev/null 2>&1; then
-    # 削除済みなのに開かれたままで容量を返していないファイル(自分のプロセス分)
-    held=$(lsof +L1 2>/dev/null | awk 'NR > 1 && $7 ~ /^[0-9]+$/ { s += $7 } END { if (s > 0) printf "%d", s / 1024 }')
-    if [ -n "${held:-}" ] && [ "$held" -gt $((100 * 1024)) ]; then
-      echo "  削除済みで使用中: $(human "$held")(プロセスを終了すると返る。lsof +L1 で一覧)"
+  if [ -z "$host_mnt" ] && [ -d /mnt/c ]; then host_mnt=/mnt/c; fi
+  if [ -n "$host_mnt" ]; then
+    letter=$(printf '%s' "$host_mnt" | cut -c6 | tr '[:lower:]' '[:upper:]')
+    with_timeout df -Pk "$host_mnt" 2>/dev/null | df_line "Windows 側 $letter:(vhdx の置き場)"
+    host_used=$(with_timeout df -Pk "$host_mnt" 2>/dev/null | awk 'NR == 2 { print $3 }')
+    host_avail=$(with_timeout df -Pk "$host_mnt" 2>/dev/null | awk 'NR == 2 { print $4 }')
+    if [ -n "${host_avail:-}" ] && [ "$host_avail" -lt $((10 * 1024 * 1024)) ]; then
+      echo "  WARN: Windows 側の空きが 10GiB を切っています(vhdx はこれ以上大きくなれません)"
+    fi
+    apps=$(win_apps_kib || true)
+    if [ -n "${host_used:-}" ]; then
+      echo "  Windows 側の会計(帳簿で分かる分だけ):"
+      add_item win:used "$host_used"
+      show_with_delta "  使用量" win:used "$host_used"
+      [ -n "${apps:-}" ] && [ "$apps" -gt 0 ] && add_item win:apps "$apps" && show_with_delta "  インストール済みアプリ(申告値)" win:apps "$apps"
+      [ "$vhdx_total" -gt 0 ] && add_item win:vhdx "$vhdx_total" && show_with_delta "  WSL / Docker の vhdx" win:vhdx "$vhdx_total"
+      wres=$((host_used - ${apps:-0} - vhdx_total))
+      [ "$wres" -lt 0 ] && wres=0
+      add_item win:residual "$wres"
+      show_with_delta "  残り(OS・ユーザーデータ等)" win:residual "$wres"
     fi
   fi
+  # 他のドライブ(D: 等)。drvfs / 9p のマウントだけ、応答しなければ timeout で諦める
+  for m in /mnt/[a-z]; do
+    [ -d "$m" ] || continue
+    [ "$m" = "$host_mnt" ] && continue
+    grep -qE "^[^ ]+ $m (drvfs|9p) " /proc/mounts 2>/dev/null || continue
+    with_timeout df -Pk "$m" 2>/dev/null | df_line "Windows 側 $(printf '%s' "$m" | cut -c6 | tr '[:lower:]' '[:upper:]'):"
+  done
   echo ""
+  return 0
 }
 
-# ---------------------------------------------------------------------------
-# 既知の場所(B 層)。場所が固定なので数秒で終わる。前回値と比べて増えた順に出す
-# ---------------------------------------------------------------------------
-known_paths() {
-  cat <<EOF
-$HOME/.cache	アプリのキャッシュ全般(XDG)
-$HOME/.cargo	Rust のクレート・レジストリ(1.88 以降は自動で古いものが消える)
-$HOME/.rustup	Rust のツールチェーン
-$HOME/go/pkg/mod	Go のモジュールキャッシュ(go clean -modcache)
-$HOME/.npm	npm のキャッシュ
-$HOME/.local/share/pnpm	pnpm のストア
-$HOME/.gradle	Gradle のキャッシュ
-$HOME/.m2	Maven のリポジトリ
-$HOME/.local/share/nvim	Neovim のプラグイン・データ
-$HOME/.local/share/Trash	ごみ箱(Linux)
-$HOME/.Trash	ごみ箱(macOS)
-$HOME/.claude/projects	Claude Code の会話ログ(cleanupPeriodDays で自動削除)
-$HOME/.codex	Codex CLI のデータ
-$HOME/.ollama	ローカル LLM のモデル
-$HOME/.cache/huggingface	Hugging Face のモデル・データセット
-$HOME/.docker	Docker CLI の設定・キャッシュ(イメージ本体は docker system df)
-$HOME/Library/Caches	アプリのキャッシュ(macOS)
-$HOME/Library/Application Support	アプリのデータ(macOS。キャッシュと大事なデータが混在)
-$HOME/Library/Containers	サンドボックス化されたアプリのデータ(macOS)
-$HOME/Library/Developer	Xcode の DerivedData・シミュレータ(macOS)
-$HOME/Library/Logs	アプリのログ(macOS)
-EOF
-}
-
-# WSL: Windows 側の中身は Windows の道具で見る(--windows)。/mnt 越しの du はしない
-report_windows() {
+report_windows_open() {
   [ "$WINDOWS" -eq 1 ] || return 0
   if ! is_wsl; then
     echo "diskreport: --windows は WSL でだけ意味があります(この環境では何もしません)" >&2
@@ -254,109 +651,59 @@ report_windows() {
     echo "diskreport: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
     return 0
   fi
-  echo "== Windows 側"
-  echo "  Windows の「ストレージ」設定を開きます(種類別の内訳。Storage Sense で一時ファイル・ごみ箱の自動掃除を設定できます)"
+  echo "== Windows の「ストレージ」設定を開きます(種類別の内訳。Storage Sense で一時ファイル・ごみ箱の自動掃除を設定できます)"
   (
     cd /mnt/c 2>/dev/null || cd /
     cmd.exe /c start "" ms-settings:storagesense >/dev/null 2>&1
   ) || echo "  (開けませんでした。Windows の 設定 → システム → ストレージ を手で開いてください)"
-  # どのフォルダが大きいかを掘るなら、NTFS の MFT を直接読む WizTree 等が /mnt 越しの du より速くて正確
   for wt in "/mnt/c/Program Files/WizTree/WizTree64.exe" "/mnt/c/Program Files/WizTree/WizTree.exe"; do
     if [ -x "$wt" ]; then
-      echo "  フォルダ単位で掘るなら WizTree が入っています: $wt"
+      echo "  フォルダ単位で掘るなら WizTree が入っています(NTFS の MFT を直接読むので速い): $wt"
       break
     fi
   done
   echo ""
+  return 0
 }
 
-report_known() {
-  echo "== 既知の場所(前回との差が大きい順)"
-  now=$(date +%s)
-  tmp=$(mktemp)
-  prev_time=
-  if [ -f "$STATE_FILE" ]; then
-    prev_time=$(awk -F'\t' 'NR == 1 && $1 == "#time" { print $2 }' "$STATE_FILE")
-  fi
-
-  known_paths | while IFS='	' read -r p desc; do
-    k=$(dir_kib "$p")
-    [ -n "${k:-}" ] || continue
-    prev=
-    if [ -f "$STATE_FILE" ]; then
-      prev=$(awk -F'\t' -v p="$p" '$1 == p { print $2 }' "$STATE_FILE")
-    fi
-    delta=$((k - ${prev:-k}))
-    printf '%s\t%s\t%s\t%s\n' "$delta" "$k" "$p" "$desc"
-  done | sort -t'	' -k1,1nr -k2,2nr >"$tmp"
-
-  if [ ! -s "$tmp" ]; then
-    echo "  (該当する場所がありません)"
+# ---------------------------------------------------------------------------
+# 深掘り(--deep、または残差が跳ねたとき): 残差の場所を探す
+# ---------------------------------------------------------------------------
+report_deep() {
+  [ "$DEEP" -eq 1 ] || return 0
+  echo "== 深掘り(残差の場所を探す)"
+  if is_macos && command -v mdfind >/dev/null 2>&1; then
+    echo "  Spotlight の索引から 1GiB 超のファイル(走査なし):"
+    mdfind -onlyin "$HOME" 'kMDItemFSSize > 1073741824' 2>/dev/null | head -n 200 | while IFS= read -r f; do
+      s=$(stat -f %z "$f" 2>/dev/null || echo 0)
+      printf '%s\t%s\n' "$((s / 1024))" "$f"
+    done | sort -t"$TAB" -k1,1nr | head -n 20 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
   else
-    if [ -n "$prev_time" ]; then
-      days=$(((now - prev_time) / 86400))
-      echo "  前回: ${days} 日前"
-    else
-      echo "  前回の記録が無いため、今回は大きい順に表示します(次回から増えた順になります)"
-    fi
-    while IFS='	' read -r delta k p desc; do
-      if [ -n "$prev_time" ]; then
-        if [ "$delta" -gt 0 ]; then d="+$(human "$delta")"; elif [ "$delta" -lt 0 ]; then d="-$(human $((-delta)))"; else d="±0"; fi
-        printf '  %8s  %8s  %s\n' "$d" "$(human "$k")" "$p"
-      else
-        printf '  %8s  %s\n' "$(human "$k")" "$p"
-      fi
-      printf '  %8s  %s\n' "" "$desc"
-    done <"$tmp"
+    echo "  \$HOME 配下の 512MiB 超のファイル(ファイル一覧の走査。数十秒かかることがあります):"
+    find "$HOME" -xdev -type f -size +512M 2>/dev/null | head -n 200 | while IFS= read -r f; do
+      s=$(stat -c %s "$f" 2>/dev/null || echo 0)
+      printf '%s\t%s\n' "$((s / 1024))" "$f"
+    done | sort -t"$TAB" -k1,1nr | head -n 20 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
   fi
-
-  # 今回の値を保存(次回の「前回」になる)
-  mkdir -p "$STATE_DIR"
-  {
-    printf '#time\t%s\n' "$now"
-    awk -F'\t' '{ printf "%s\t%s\n", $3, $2 }' "$tmp"
-  } >"$STATE_FILE"
-  rm -f "$tmp"
-  echo ""
-}
-
-# ---------------------------------------------------------------------------
-# プロジェクト成果物(マーカー探索層)。見つけた成果物の中へは降りない(-prune)
-# ---------------------------------------------------------------------------
-report_projects() {
-  [ -n "$PROJECTS" ] || return 0
-  if [ ! -d "$PROJECTS" ]; then
-    echo "diskreport: --projects のディレクトリが見つかりません: $PROJECTS" >&2
-    return 0
-  fi
-  echo "== プロジェクト成果物($PROJECTS 配下。消しても再生成できるもの)"
-  case "$PROJECTS" in /mnt/*) echo "  (/mnt 越しの走査は WSL 内より桁違いに遅いことがあります)" ;; esac
-  # 名前で判定する成果物ディレクトリ。.git の中は見ない
-  find "$PROJECTS" -xdev \( -name .git -o -name node_modules -o -name target -o -name .venv -o -name venv \
-    -o -name build -o -name dist -o -name .next -o -name .turbo -o -name __pycache__ -o -name .gradle -o -name .tox \) -prune -print 2>/dev/null |
-    grep -v '/\.git$' |
-    while IFS= read -r d; do
-      # target は Cargo、build は Gradle 等のマーカーがある場合だけ(無関係な同名ディレクトリを避ける)
-      case "$(basename "$d")" in
-        target) [ -f "$(dirname "$d")/Cargo.toml" ] || [ -f "$d/CACHEDIR.TAG" ] || continue ;;
-        build) [ -f "$(dirname "$d")/build.gradle" ] || [ -f "$(dirname "$d")/build.gradle.kts" ] || [ -f "$(dirname "$d")/setup.py" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
-        dist) [ -f "$(dirname "$d")/package.json" ] || [ -f "$(dirname "$d")/pyproject.toml" ] || continue ;;
+  echo "  ディレクトリ単位で掘るには全走査の TUI を使ってください(WSL 内なら 1 分前後):"
+  found=0
+  for t in dua gdu ncdu dust; do
+    if command -v "$t" >/dev/null 2>&1; then
+      case "$t" in
+        dua) echo "    dua i $HOME" ;;
+        gdu) echo "    gdu $HOME" ;;
+        ncdu) echo "    ncdu -x $HOME" ;;
+        dust) echo "    dust -d 3 $HOME" ;;
       esac
-      k=$(dir_kib "$d")
-      [ -n "${k:-}" ] && printf '%s\t%s\n' "$k" "$d"
-    done | sort -t'	' -k1,1nr | awk -F'\t' -v OFS='\t' '
-      { total += $1; if (NR <= 20) rows[NR] = $0; n = NR }
-      END {
-        split("K M G T", u, " ")
-        for (i = 1; i <= (n < 20 ? n : 20); i++) {
-          split(rows[i], f, "\t"); v = f[1]; j = 1
-          while (v >= 1024 && j < 4) { v /= 1024; j++ }
-          printf "  %8s  %s\n", sprintf((j == 1 ? "%d%s" : "%.1f%s"), v, u[j]), f[2]
-        }
-        v = total; j = 1; while (v >= 1024 && j < 4) { v /= 1024; j++ }
-        printf "  合計 %s(%d 件。上位 20 件を表示)\n", sprintf((j == 1 ? "%d%s" : "%.1f%s"), v, u[j]), n
-      }'
+      found=1
+    fi
+  done
+  [ "$found" -eq 0 ] && echo "    (dua / gdu / ncdu のいずれも入っていません。nix run nixpkgs#dua -- i \$HOME などで使えます)"
+  if is_wsl; then
+    echo "  Windows 側は Windows の道具で: diskreport --windows(ストレージ設定)、Everything(es.exe)や WizTree があればそちら"
+  fi
   echo ""
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -369,10 +716,20 @@ if [ "$MODE" = nix-brief ]; then
 fi
 
 report_disk
-report_nix
-report_known
-report_windows
+collect_ledgers
+collect_paths
+collect_projects
+report_accounting
+report_breakdown
 report_projects
+report_nix
+report_windows_ledger
+report_windows_open
+if [ "${RESIDUAL_SPIKE:-0}" -eq 1 ] && [ "$DEEP" -eq 0 ]; then
+  add_hint "diskreport --deep                           # 残差が増えた場所を探す(大きいファイルと全走査 TUI の案内)"
+fi
+report_deep
+save_history "$WORK/save"
 
 echo "== 次の一手(このコマンドは何も消しません)"
 echo "  cachesweep                                  # 開発キャッシュのサイズ。--clean で削除"
@@ -380,7 +737,8 @@ printf '%s\n' "$hints" | sed '/^$/d'
 if [ -z "$PROJECTS" ]; then
   echo "  diskreport --projects <DIR>                 # プロジェクト成果物(node_modules / target 等)も集計"
 fi
+[ "$DEEP" -eq 0 ] && echo "  diskreport --deep                           # 大きいファイルと全走査 TUI の案内"
 if is_wsl && [ "$WINDOWS" -eq 0 ]; then
   echo "  diskreport --windows                        # Windows の「ストレージ」設定を開く(Windows 側の中身は Windows の道具で)"
 fi
-echo "  ディスク全体を対話的に掘るには dua / gdu / ncdu などの専用ツールを使ってください。"
+echo "  自分の環境の場所を一覧に足すには: ${CONF_DIR}/diskreport.local(形式は diskreport.paths と同じ)"

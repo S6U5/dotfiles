@@ -106,8 +106,9 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 
 ## 実装状況(2026-11)
 
-- 実装済み: 器(`df`、WSL の Windows 側ドライブ・各 vhdx・他ドライブ)、Nix の世代数と今の世代、既知パスの `du` と前回差分、`--projects` のマーカー探索、`--windows`(Windows の「ストレージ」設定を開く)、`switch.sh` 末尾の通知、`nix-gc-setup`。
-- 未実装(この設計で足すもの): カテゴリ別の会計と**残差**、履歴(直近 30 回)と残差の増分による判定、帳簿ソース(dpkg / flatpak / journald / `docker system df` / Nix store 全体 / Windows レジストリの `EstimatedSize`)、Everything(`es.exe`)と WizTree(`/export`)の連携、既知パス一覧の外部ファイル化と `diskreport.local`、macOS の `/Applications` と `mdfind`、クラウド同期とごみ箱・バックアップのカテゴリ。
+- 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`--windows`(Windows の「ストレージ」設定を開く)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
+- 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、WizTree の `/export` の取り込み、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
+- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` の偽物)で通しただけ。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 

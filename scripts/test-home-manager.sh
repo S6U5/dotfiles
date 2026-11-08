@@ -105,6 +105,13 @@ else
   ng "home/ に配布対象のファイルが見つからない"
 fi
 
+echo "== 3b) diskreport の既知パス一覧が配布されるか"
+if [ -f "$RESULT/home-files/.config/dotfiles/diskreport.paths" ]; then
+  ok "配布: .config/dotfiles/diskreport.paths"
+else
+  ng "未配布: .config/dotfiles/diskreport.paths"
+fi
+
 echo "== 4) 実行可能属性が維持されているか"
 for f in .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch .local/bin/diskreport .local/bin/nix-gc-setup .local/bin/dotfiles-help; do
   if [ -x "$RESULT/home-files/$f" ]; then
