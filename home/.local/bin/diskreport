@@ -520,6 +520,7 @@ report_nix() {
   fi
   if [ -z "$rule" ] && [ "$gens" -gt 10 ]; then
     add_hint "home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(戻せなくなる)"
+    add_hint "export DOTFILES_HM_KEEP_GENERATIONS=3        # ~/.config/shell/local.sh に書くと以後は自動で切り詰める(日数なら DOTFILES_HM_KEEP_DAYS=14)"
   fi
   if [ -z "${NIX_STORE_KIB:-}" ] && command -v nix >/dev/null 2>&1; then
     NIX_STORE_KIB=$(nix path-info --extra-experimental-features nix-command --all -s 2>/dev/null | awk '{ s += $2 } END { if (s > 0) printf "%d", s / 1024 }')

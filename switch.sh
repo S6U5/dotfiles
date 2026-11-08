@@ -176,6 +176,14 @@ keep_generations() {
   return 0
 }
 
+# 宣言のしかたを短く出す(世代が溜まっていて、まだ宣言していないマシンでだけ呼ぶ)
+explain_keep_setting() {
+  log "毎回聞かれずに切り詰めたいなら、このマシンの ~/.config/shell/local.sh に書いてください:"
+  log "  export DOTFILES_HM_KEEP_GENERATIONS=3   # 直近 3 世代は残す(1 なら今の世代だけ)"
+  log "  export DOTFILES_HM_KEEP_DAYS=14         # 14 日以内の世代は残す(両方書くと、どちらかで残るものは残す)"
+  return 0
+}
+
 offer_expire_generations() {
   keep_generations && return 0
   [ -t 0 ] && [ -t 1 ] || return 0
@@ -194,7 +202,7 @@ offer_expire_generations() {
     y | Y | yes) ;;
     *)
       log "スキップしました。あとで消すなら: home-manager expire-generations \"-30 days\" && nix-collect-garbage"
-      log "(このマシンでは聞かずに切り詰めたいなら、local.sh に export DOTFILES_HM_KEEP_GENERATIONS=N や DOTFILES_HM_KEEP_DAYS=D)"
+      explain_keep_setting
       return 0
       ;;
   esac
@@ -205,6 +213,7 @@ offer_expire_generations() {
   if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
     log "空いた分を Windows に返すには: wsl-compact"
   fi
+  explain_keep_setting
   return 0
 }
 
