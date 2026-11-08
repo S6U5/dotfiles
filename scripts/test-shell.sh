@@ -228,6 +228,58 @@ else
   echo "  skip: zsh が見つかりません"
 fi
 
+echo "== 4) diskreport の集計を、偽の docker と使い捨ての \$HOME で確かめる"
+# 実際の $HOME と履歴には触れない(既知パスの一覧は repo のものを読む)
+DISK_TEST=$WORK_DIR/diskreport
+DISK_STATE=$DISK_TEST/home/.local/state/dotfiles
+mkdir -p "$DISK_TEST/bin" "$DISK_STATE" "$DISK_TEST/home/Library/Containers/com.docker.docker" "$DISK_TEST/home/Library/Containers/other.app"
+head -c 3145728 /dev/urandom >"$DISK_TEST/home/Library/Containers/com.docker.docker/disk"
+head -c 1048576 /dev/urandom >"$DISK_TEST/home/Library/Containers/other.app/data"
+# docker system df の実際の形式(最後の行だけ割合が付かない)
+cat >"$DISK_TEST/bin/docker" <<'EOF'
+#!/bin/sh
+case "$1" in
+  info) printf '%s\n' "$FAKE_DOCKER_OS" ;;
+  system) printf '1.5GB\t1GB (66%%)\n100MB\t0B (0%%)\n2GB\t1GB (50%%)\n500MB\t500MB\n' ;;
+esac
+EOF
+chmod +x "$DISK_TEST/bin/docker"
+run_diskreport() { # $1: docker info が返す OS 名、残りは diskreport の引数
+  local docker_os=$1
+  shift
+  env -i HOME="$DISK_TEST/home" PATH="$DISK_TEST/bin:/usr/bin:/bin" FAKE_DOCKER_OS="$docker_os" \
+    "$DOTFILES_DIR/home/.local/bin/diskreport" "$@" </dev/null 2>&1
+}
+expect_in() { # $1: 出力, $2: 探す文字列, $3: 説明
+  if grep -qF -- "$2" <<<"$1"; then ok "$3"; else ng "$3(「$2」が出力に無い)"; fi
+}
+expect_not_in() { # $1: 出力, $2: 探す文字列, $3: 説明
+  if grep -qF -- "$2" <<<"$1"; then ng "$3(「$2」が出力にある)"; else ok "$3"; fi
+}
+
+out=$(run_diskreport "Ubuntu 24.04") || ng "diskreport が非0で終了(Docker Engine)"
+expect_in "$out" "4.1G  vm:docker" "Docker Engine: 全行のサイズが足される"
+expect_in "$out" "Docker の未使用分 2.5G" "Docker Engine: 未使用分も全行が足される"
+expect_not_in "$out" "8589934592" "Docker Engine: 桁あふれしない"
+
+# 桁あふれしていた頃の履歴が残っていても、前回比に出さない
+printf '%s\tcat:vm\t9223372036854775807\n' "$(($(date +%s) - 100))" >"$DISK_STATE/diskreport.tsv"
+out=$(run_diskreport "Docker Desktop") || ng "diskreport が非0で終了(Docker Desktop)"
+expect_not_in "$out" "vm:docker" "Docker Desktop: docker system df を会計に足さない"
+expect_in "$out" "Docker の未使用分 2.5G" "Docker Desktop: 未使用分は表示する"
+expect_in "$out" "仮想ディスク・コンテナ: 3.0M" "入れ子: カテゴリが違えば内側のカテゴリで数える"
+expect_in "$out" "アプリデータ・キャッシュ: 1.0M" "入れ子: 外側のカテゴリからは引く"
+expect_not_in "$out" "8589934592" "履歴の異常値を前回比に使わない"
+
+# 見かけだけ大きい疎ファイルは、大きいファイルの索引に載せない
+dd if=/dev/null of="$DISK_TEST/home/sparse.img" bs=1 seek=1073741824 count=0 2>/dev/null
+run_diskreport "Ubuntu 24.04" scan >/dev/null || ng "diskreport scan が非0で終了"
+if [ -f "$DISK_STATE/diskindex-bigfiles.tsv" ] && ! grep -qF "sparse.img" "$DISK_STATE/diskindex-bigfiles.tsv"; then
+  ok "大きいファイル: 疎ファイルを実使用量で除外する"
+else
+  ng "大きいファイル: 疎ファイルが索引に載っている(または索引が無い)"
+fi
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

@@ -85,13 +85,21 @@ dir_kib() {
   du -skx "$1" 2>/dev/null | cut -f1
   return 0
 }
-# 「1.2G」「345 MB」のような表記を KiB に(2進と10進のどちらで書かれても目安として扱う)
+# 「1.2G」「345 MB」のような表記を KiB に(2進と10進のどちらで書かれても目安として扱う)。
+# 呼び出し側が while で複数行を足し合わせるので、1行に1つ出す
 to_kib() {
   awk -v s="$1" 'BEGIN {
     n = s + 0; u = toupper(s); gsub(/[^A-Z]/, "", u)
     if (u ~ /^K/) m = 1; else if (u ~ /^M/) m = 1024; else if (u ~ /^G/) m = 1024^2; else if (u ~ /^T/) m = 1024^3; else m = 1 / 1024
-    printf "%d", n * m
+    printf "%d\n", n * m
   }'
+  return 0
+}
+# ファイルが実際に使っているディスク量(KiB)。見かけのサイズだと、疎ファイルの仮想ディスクや
+# ローカルに実体の無いクラウドのファイルが大きく見える。ブロック数は GNU / BSD とも 512 バイト単位
+alloc_kib() {
+  blocks=$(stat -c %b "$1" 2>/dev/null || stat -f %b "$1" 2>/dev/null || echo 0)
+  echo "$((blocks / 2))"
   return 0
 }
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
@@ -120,7 +128,8 @@ df_line() {
 # 指定した時刻の値(無ければ空)
 hist_value() { # $1: 時刻, $2: キー
   [ -f "$STATE_FILE" ] || return 0
-  awk -F'\t' -v t="$1" -v k="$2" '$1 == t && $2 == k { print $3; exit }' "$STATE_FILE"
+  # 1EiB 以上は、桁あふれしていた頃の記録なので比較に使わない
+  awk -F'\t' -v t="$1" -v k="$2" '$1 == t && $2 == k && $3 + 0 < 1024^5 { print $3; exit }' "$STATE_FILE"
   return 0
 }
 # 基準時刻: 前回(最新)、約1週間前・約1か月前(その日数以上前で最も新しい回)
@@ -298,12 +307,16 @@ collect_ledgers() {
     dsum=$(cut -f1 "$WORK/docker" | while read -r sz; do to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
     # Reclaimable は「1.2GB (80%)」の形なので先頭の数値部分だけ使う
     DOCKER_RECLAIM=$(cut -f2 "$WORK/docker" | sed 's/ (.*//' | while read -r sz; do [ -n "$sz" ] && to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
-    [ -n "${dsum:-}" ] && [ "$dsum" -gt 0 ] && add_item vm:docker "$dsum"
+    # Docker Desktop のイメージは仮想ディスクのファイルの中にあり、そのファイルは別に数えている
+    # (macOS / Linux は既知パス、WSL は vhdx)。足すと二重計上になるので、未使用分の表示だけに使う
+    if [ -n "${dsum:-}" ] && [ "$dsum" -gt 0 ] && [ "$(with_timeout docker info --format '{{.OperatingSystem}}' 2>/dev/null)" != "Docker Desktop" ]; then
+      add_item vm:docker "$dsum"
+    fi
   fi
   return 0
 }
 
-# 既知パス(固定の場所だけ du)。入れ子は内訳として表示し、合計は外側だけ数える
+# 既知パス(固定の場所だけ du)。入れ子も内訳として表示する。合計での扱いは category_totals
 collect_paths() {
   load_paths >"$WORK/paths"
   while IFS="$TAB" read -r cat p desc; do
@@ -356,8 +369,10 @@ collect_projects() {
 # ---------------------------------------------------------------------------
 # 会計: カテゴリ別の合計と残差
 # ---------------------------------------------------------------------------
-# items と pathcat から「カテゴリ<TAB>KiB」を出す。path: は pathcat のカテゴリに振り、
-# 一覧にある別のパスの配下にあるものは数えない(二重計上を避ける)
+# items と pathcat から「カテゴリ<TAB>KiB」を出す。path: は pathcat のカテゴリに振る。
+# 入れ子は一番内側の親と比べ、同じカテゴリなら親の合計に任せて数えない(二重計上を避ける)。
+# 違うカテゴリなら自分のカテゴリへ足して親のカテゴリから引く(キャッシュ扱いの入れ物の中にある
+# 仮想ディスクやバックアップを、それぞれのカテゴリで数えるため)
 category_totals() {
   awk -F'\t' '
     FILENAME == ARGV[1] { pc[$1] = $2; paths[++np] = $1; next }
@@ -365,10 +380,13 @@ category_totals() {
       key = $1; kib = $2 + 0
       if (key ~ /^path:/) {
         p = substr(key, 6)
-        nested = 0
-        for (i = 1; i <= np; i++) { q = paths[i]; if (q != p && index(p, q "/") == 1) { nested = 1; break } }
-        if (nested) next
         cat = (p in pc) ? pc[p] : "cache"
+        parent = ""
+        for (i = 1; i <= np; i++) { q = paths[i]; if (q != p && index(p, q "/") == 1 && length(q) > length(parent)) parent = q }
+        if (parent != "") {
+          if (pc[parent] == cat) next
+          sum[pc[parent]] -= kib
+        }
       } else {
         cat = key; sub(/:.*/, "", cat)
       }
@@ -739,8 +757,9 @@ scan_home() {
   {
     printf '#time\t%s\n' "$NOW"
     scan_cmd find "$HOME" -xdev -type f -size +512M 2>/dev/null | head -n 500 | while IFS= read -r f; do
-      sz=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null || echo 0)
-      printf '%s\t%s\n' "$((sz / 1024))" "$f"
+      k=$(alloc_kib "$f")
+      [ "$k" -gt $((512 * 1024)) ] || continue
+      printf '%s\t%s\n' "$k" "$f"
     done | sort -t"$TAB" -k1,1nr
   } >"$WORK/idx-big" || true
   rotate_index "$INDEX_HOME"
@@ -1109,14 +1128,15 @@ report_apps_windows() {
 # ---------------------------------------------------------------------------
 report_bigfiles() {
   if is_macos && command -v mdfind >/dev/null 2>&1; then
-    echo "== 大きいファイル(1GiB 超。Spotlight の索引から、走査なし)"
+    echo "== 大きいファイル(実使用 1GiB 超。Spotlight の索引から、走査なし)"
     mdfind -onlyin "$HOME" 'kMDItemFSSize > 1073741824' 2>/dev/null | head -n 200 | while IFS= read -r f; do
-      sz=$(stat -f %z "$f" 2>/dev/null || echo 0)
-      printf '%s\t%s\n' "$((sz / 1024))" "$f"
+      k=$(alloc_kib "$f")
+      [ "$k" -gt $((1024 * 1024)) ] || continue
+      printf '%s\t%s\n' "$k" "$f"
     done | sort -t"$TAB" -k1,1nr | head -n 15 | while IFS="$TAB" read -r k f; do printf '  %8s  %s\n' "$(human "$k")" "$f"; done
     echo ""
   elif [ -f "$INDEX_BIG" ]; then
-    echo "== 大きいファイル(512MiB 超。索引から。数えたのは $(index_age_label "$INDEX_BIG"))"
+    echo "== 大きいファイル(実使用 512MiB 超。索引から。数えたのは $(index_age_label "$INDEX_BIG"))"
     n=$(($(wc -l <"$INDEX_BIG") - 1))
     if [ "$n" -le 0 ]; then
       echo "  (該当なし)"
