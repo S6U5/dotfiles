@@ -59,6 +59,24 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 判定は残差そのものではなく**残差の増分**で行う。前回から残差が閾値(目安: 2GiB か全体の 5% の大きい方)を超えて増えたときだけ「一覧の外で増えている」と告げ、OS に応じた深掘り(WSL 内は全走査 TUI を 1 分、macOS は `mdfind`、Windows は Everything / WizTree か「ストレージ」設定)を薦める。
 - Nix は「store 全体 − 今の世代」をそのまま「GC と世代削除で戻る上限」として出す(世代数より説得力がある)。
 
+### 索引: 「数える」と「見せる」を分ける
+
+- 細かさは数える手間に比例し、速さは見せる側の話なので、両立するには**数えるのを別のタイミングで1回だけ行い、結果(索引)を保存して、見せるときは索引を読む**。duc や ncdu のエクスポート、WizTree の MFT 読み、Spotlight と同じ発想。
+- `diskreport --scan` が索引を作る。`$HOME` 配下は `du -xkd 6`(深さ 6 までの全ディレクトリの累計サイズ)を1回。WSL では Windows 側ドライブを WizTree に数えさせ(`/export` で CSV、`/admin=1` で MFT 読み。管理者権限の確認が出る)、フォルダ行だけを取り込む。CSV の列は見出し行から探し(`Allocated` があればそれ、無ければ `Size`)、書式のゆれに耐える。
+- 普段のレポートは索引を読むだけで、「大きい順」「前回の索引から増えた順」「残差の候補(既知パスにも帳簿にも入っていない大きな場所)」「アプリ別」を一瞬で出す。索引には鮮度(何日前に数えたか)を必ず添える。「いま何があるか」ではなく「最後に数えたときに何があったか」を見せているため。
+- 索引はディレクトリ単位(深さ 6 まで)に限り、ファイル単位は持たない。大きいファイル上位は `--deep` の仕事のまま。
+- **「終わらない検査」にしない**: 重い処理は `--scan` の中だけで、既定 15 分(`DOTFILES_DISKREPORT_SCAN_TIMEOUT`)の `timeout` を付け、超えたら索引を保存せずに諦める。普段のレポートは木を歩かないので、ディスクの大きさに関係なく数秒で終わる。
+- 常駐して索引を更新し続ける方式(fanotify のデーモン)なら鮮度の問題は消えるが、「常駐やタイマーを持たない」方針と衝突するので採らない。
+
+### アプリ別の見方(どのパスを見ればよいかを固定する)
+
+- OS ごとに「アプリがデータを置く決まった入れ物」があり、その直下のフォルダ名がアプリ名になる。この対応をコマンドに固定し、毎回調べない(AI に聞くたびに違うパスを教えられる、という問題への答え)。
+  - Linux(XDG): `~/.config/<app>` 設定、`~/.cache/<app>` キャッシュ、`~/.local/share/<app>` データ、`~/.local/state/<app>` 状態。XDG に従わない古いアプリは `~/.<app>`。
+  - macOS: `~/Library/Application Support/<app>` データ、`~/Library/Caches/<app>` キャッシュ、`~/Library/Containers/<bundle id>` サンドボックス、`~/Library/Group Containers`、`~/Library/Logs`。
+  - Windows: `AppData\Local\<app>` このマシン限りのデータ・キャッシュ、`AppData\Roaming\<app>` 設定(移動する)、`AppData\LocalLow\<app>`、`AppData\Local\Packages\<store app>` ストアアプリ、`Program Files\<app>` 本体、`ProgramData\<app>` 全ユーザー共通。
+- 索引からこれらの直下の行を拾い、フォルダ名(小文字化)で入れ物をまたいで合計し、入れ物ごとの内訳(設定 / キャッシュ / データ…)を添える。Windows はさらにレジストリの Uninstall キー(`DisplayName` と `EstimatedSize`)でインストーラの申告サイズの上位も出す。
+- 限界: フォルダ名はアプリ名と一致しないことがある(macOS の Containers はバンドル ID、ベンダー名のフォルダの下にアプリが入る Windows の例)。「使っているか」は見ていない(最終利用日は別の帳簿: macOS の Spotlight `kMDItemLastUsedDate`、Windows の UserAssist。未実装)。
+
 ### 既知パス一覧の持ち方
 
 - 共通の一覧はリポジトリのデータファイル(`home/.config/dotfiles/diskreport.paths`。タブ区切りで「カテゴリ、パス、何のデータか・消してよいか」)に出し、home-manager で配る。
@@ -106,12 +124,14 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 
 ## 実装状況(2026-11)
 
+- 実装済み(索引・アプリ別): `--scan`(`$HOME` の `du -xkd 6`、WSL では WizTree の CSV 取り込み、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`--windows`(Windows の「ストレージ」設定を開く)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
-- 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、WizTree の `/export` の取り込み、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
-- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` の偽物)で通しただけ。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
+- 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
+- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に WizTree のコマンドライン引数(`/export` `/admin=1` `/exportfolders=1` `/exportfiles=0` `/exportdrivecapacity=0`)と CSV の見出し行は公式ガイドをこの環境から読めず、記憶に基づく。実機で `diskreport --scan` を1回走らせて CSV が取り込めるかを確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)
 - (2026-11: `diskreport --windows` は `/mnt` 越しの `du` をやめ、Windows の「ストレージ」設定を開くだけに変更。理由は本文「帳簿優先の原則」)
+- (2026-11: 「細かく、しかし速く」のために索引方式(`--scan`)とアプリ別の見方を追加。重い処理に上限時間を付けた)
 - (2026-11: 「固定パス + 前回差分」の3つの穴(一覧の外が見えない、`$HOME` しか見ていない、比較が一覧の中で閉じている)を受け、会計モデル(帰属 + 残差、帳簿優先)に設計を改めた。対象も開発キャッシュからマシンのストレージ全般へ広げた。本 ADR の本文を書き直し)
