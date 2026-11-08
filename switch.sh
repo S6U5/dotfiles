@@ -70,4 +70,11 @@ cmd+=(switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
 
 log "dotfiles switch: 対象 $DOTFILES_DIR($system)"
 log "  \$ ${cmd[*]}"
-exec "${cmd[@]}"
+"${cmd[@]}"
+
+# 反映のあとに Nix の容量の状態(世代数・自動 GC の有無)を数行で出す。世代は switch のたびに
+# 増え、GC では消えないため、人が打ったこのタイミングで知らせる(タイマーでは走らせない。
+# 判断根拠は docs/decisions/storage-hygiene.md)。表示だけで何も消さない。PATH にまだ無い初回
+# でも動くよう、リポジトリ内の実体を直接呼ぶ。失敗しても switch の成否には影響させない。
+log ""
+"$DOTFILES_DIR/home/.local/bin/diskreport" --nix-brief || true

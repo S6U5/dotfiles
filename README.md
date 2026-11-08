@@ -183,12 +183,18 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 <details>
 <summary><b>世代・パッケージのガベージコレクション</b></summary>
 
-古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください:
+Nix は宣言的ですが、`/nix/store` は「足すだけで勝手には引かない」置き場です。`switch` のたびに新しい世代ができ、前の世代は戻せるように残り、ビルドに使ったコンパイラ等もそのまま残ります。放置すると静かに太るので、この dotfiles では次の形で扱います(判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md)):
+
+- **知らせる**: `dotfiles-switch` / `dotfiles-update` の最後に、世代の数と自動 GC の有無を数行で表示します(表示だけ。何も消しません)。詳しくは `diskreport`。
+- **上限を決める**: `nix-gc-setup --apply` で Nix 本体の `min-free` / `max-free` を設定すると、ビルド中に空きが下限を切ったときだけ、その場で GC が走ります。人が打った `switch` の中でしか動かないので、「反映は明示実行のみ」の方針と両立します。複数ユーザー方式(nix-installer の既定)では daemon が読む `/etc/nix/nix.conf` に書く必要があるため、このコマンドが構成を見て書き先を選びます。
+- **消す**: 自動 GC で消えるのは「誰からも指されていない」store パスだけで、古い世代が指している分は残ります。世代ごと減らすときは手で実行してください:
 
 ```sh
-home-manager expire-generations   # 古い世代を削除
-nix-collect-garbage -d            # 到達不能な store パスを回収
+home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(その世代へは戻せなくなる)
+nix-collect-garbage -d                       # 到達不能な store パスと古い世代を回収
 ```
+
+WSL では、中で消しても仮想ディスクは縮まないため、続けて `wsl-compact` で Windows に返してください。
 
 </details>
 
@@ -339,8 +345,10 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | コマンド | 動作 |
 |---|---|
 | `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ) |
-| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ) |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
+| `diskreport [--projects DIR] [--nix-brief]` | 何がストレージを食っているかを全走査せずに数秒で報告(読み取り専用)。空き容量、Nix の世代数と自動 GC の有無、既知のキャッシュ・アプリデータの場所を**前回からの増分順**に表示し、末尾で掃除コマンドを案内する。`--projects DIR` で `node_modules` / `target` / `.venv` 等のプロジェクト成果物も集計(マーカーで見つけて中へは降りない)。WSL では vhdx の実サイズと中の使用量の差も出す(判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md)) |
+| `nix-gc-setup [--apply] [下限 上限]` | Nix の自動 GC の上限(`min-free` / `max-free`。既定 1G / 8G)を設定。既定は表示のみで、`--apply` で書き込む。daemon 構成なら `/etc/nix/nix.conf` に sudo で書いて daemon を再起動、単一ユーザー方式なら `~/.config/nix/nix.conf` に書く |
 | `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
 | `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
