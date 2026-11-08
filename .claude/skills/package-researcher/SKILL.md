@@ -76,8 +76,8 @@ nixpkgs側で `broken` フラグが付いている、更新が長期間止まっ
 
 ## 注意点
 
-- `nix/home.nix` の変更は `dotfiles-switch` / `./switch.sh`(`home-manager switch` のラッパー)を
-  **明示的に実行したときだけ**反映される(CLAUDE.md の「明示的に実行したときだけ動く」方針。
-  update.sh からは呼ばれない)。
+- `nix/home.nix` の変更は `dotfiles-switch` / `./switch.sh`(`home-manager switch` のラッパー)か、
+  `git pull` に続けて同じ反映を行う `dotfiles-update` を **明示的に実行したときだけ**反映される
+  (CLAUDE.md の「明示的に実行したときだけ動く」方針。シェル起動時などに勝手には走らない)。
 - 機密情報・個人情報を一切コメントに含めない(CLAUDE.md 最重要ルール)。
 - 迷ったら `references/repo-conventions.md` にこのリポジトリの関連方針をまとめてあるので参照する。

@@ -271,8 +271,36 @@ else
   ng "dotfiles-switch: カレントディレクトリのクローンを対象にできない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
 fi
 
+echo "== 12) update.sh が pull のあとに switch.sh を呼ぶか(--no-switch では呼ばないか)"
+# 合成した origin / clone で検証する(実リポジトリの remote には触れない)。clone 側の update.sh が
+# 偽の home-manager(上の FAKE_BIN)を呼ぶので、組み立てたコマンドで確認できる
+UPD_ROOT=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_CLONE" "$UPD_ROOT"' EXIT
+GIT_T=(git -c user.name=test -c user.email=test@example.com -c init.defaultBranch=main -c commit.gpgsign=false)
+mkdir -p "$UPD_ROOT/origin/nix"
+cp "$DOTFILES_DIR/update.sh" "$DOTFILES_DIR/switch.sh" "$UPD_ROOT/origin/"
+cp "$DOTFILES_DIR/nix/home.nix" "$UPD_ROOT/origin/nix/"
+("${GIT_T[@]}" -C "$UPD_ROOT/origin" init -q && "${GIT_T[@]}" -C "$UPD_ROOT/origin" add -A &&
+  "${GIT_T[@]}" -C "$UPD_ROOT/origin" commit -q -m init) >/dev/null 2>&1
+"${GIT_T[@]}" clone -q "$UPD_ROOT/origin" "$UPD_ROOT/clone" >/dev/null 2>&1
+rm -f "$FAKE_BIN/args"
+if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$UPD_ROOT/clone/update.sh" >/dev/null 2>&1) &&
+  [ "$(cat "$FAKE_BIN/args")" = "switch --flake $UPD_ROOT/clone/nix#$SYSTEM --impure" ]; then
+  ok "update.sh: pull のあと switch.sh を呼ぶ"
+else
+  ng "update.sh: pull のあとに switch.sh が呼ばれない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+fi
+rm -f "$FAKE_BIN/args"
+if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+  "$UPD_ROOT/clone/update.sh" --no-switch >/dev/null 2>&1) && [ ! -e "$FAKE_BIN/args" ]; then
+  ok "update.sh --no-switch: switch.sh を呼ばない"
+else
+  ng "update.sh --no-switch: switch.sh が呼ばれた、または失敗した"
+fi
+
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
-  echo "== 12) home-manager switch(実 HOME に適用。使い捨て環境専用)"
+  echo "== 13) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
     ok "switch 成功"
   else

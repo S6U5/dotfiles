@@ -63,7 +63,7 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 
 ## 運用方針
 
-- **「設定の配置」と「パッケージ導入」は同じ経路(Nix + home-manager)に一本化する**(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。導入・反映は明示実行のみ(`./switch.sh` / `dotfiles-switch`。中身は `home-manager switch --flake ./nix#<system> --impure` で、`DOTFILES_DIR` / `<system>` / `--impure` の手動指定をラッパーに吸収している。判断根拠は `docs/decisions/home-manager-switch-invocation.md`。自動実行はしない)。
+- **「設定の配置」と「パッケージ導入」は同じ経路(Nix + home-manager)に一本化する**(判断根拠は `docs/decisions/dotfiles-distribution.md` 参照)。導入・反映は明示実行のみ(`./switch.sh` / `dotfiles-switch`。中身は `home-manager switch --flake ./nix#<system> --impure` で、`DOTFILES_DIR` / `<system>` / `--impure` の手動指定をラッパーに吸収している。判断根拠は `docs/decisions/home-manager-switch-invocation.md`。`dotfiles-update` は `git pull` に続けて同じ反映まで行う。シェル起動時やタイマーで勝手に走る自動実行はしない)。
 - リポジトリは単一で「共通レイヤー + OS別レイヤー」構造とする。OS別の管理が辛くなったら、リポジトリ分割も選択肢として残す(TODO.md 参照)。
 - **既存ファイルとの衝突は home-manager 本体が検知する**。home.file が管理しようとするパスに既存ファイルがあると `home-manager switch` はエラーで停止する(黙って上書きしない)。`-b <拡張子>` オプションで既存ファイルを退避してから上書きできる(判断根拠・詳細は README「既存の設定ファイルとぶつかったとき」参照)。
 - パッケージ管理は **Nix + home-manager に一本化する**(nix-darwin は対象外。判断の詳細は `docs/decisions/package-management.md`)。OS別のパッケージマネージャ(Homebrew / apt)を直接使う軽量な代替経路は廃止した。dotfiles 本体(`home/`)も Nix(home-manager の `home.file`)で配布する(zsh の設定内容も含む。判断根拠は `docs/decisions/dotfiles-distribution.md`、`docs/decisions/zshrc-pollution.md` の履歴参照)。**Nix が使えない環境ではこの dotfiles は機能しない**(意図的にフォールバックは作らない)。
