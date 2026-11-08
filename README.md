@@ -455,7 +455,7 @@ Claude Code などのコーディングエージェントと組み合わせて�
 
 ```
 home/              $HOME に同じ構造でリンクされる設定ファイル群
-├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替えるだけ)
+├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替え、Ubuntu の全体 compinit を止めるだけ)
 ├── .config/zsh/zshrc                  zsh の設定(実際の設定本体)
 ├── .config/bash/bashrc                bash の設定(実際の設定本体)
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)

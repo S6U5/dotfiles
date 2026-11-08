@@ -17,7 +17,9 @@ setopt INTERACTIVE_COMMENTS
 # 共通設定(bash と共有)を読み込む
 [ -r "$HOME/.config/shell/init.sh" ] && . "$HOME/.config/shell/init.sh"
 
-# 補完(自作コマンドの補完定義は ~/.config/zsh/completions/ に置く)
+# 補完(自作コマンドの補完定義は ~/.config/zsh/completions/ に置く)。
+# Ubuntu の /etc/zsh/zshrc が先に全体設定として compinit を呼ぶのは ~/.zshenv の
+# skip_global_compinit=1 で止めてあるため、compinit はここで1回だけ走る
 fpath=("$HOME/.config/zsh/completions" $fpath)
 autoload -Uz compinit
 # キャッシュ(.zcompdump)が24時間以内なら検査を省略(-C)して高速起動。

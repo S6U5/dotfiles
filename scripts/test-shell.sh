@@ -156,6 +156,12 @@ run_shell() {
   if [ -s "$err" ]; then
     ng "$label: 読み込み中に標準エラー出力があった:"
     sed 's/^/      /' "$err" >&2
+    # compinit の中断は、fpath 上に他ユーザー所有・グループ書き込み可のディレクトリがあると
+    # 安全性監査が端末に問い合わせて止まるのが典型(CI のランナーで起きる)。該当があれば示す
+    if grep -q compinit "$err" && command -v zsh >/dev/null 2>&1; then
+      echo "      ヒント: compaudit が安全でないと判定したディレクトリ:" >&2
+      "${envargs[@]}" zsh -fc 'autoload -Uz compaudit; compaudit' 2>&1 | sed 's/^/        /' >&2 || true
+    fi
   else
     ok "$label: 標準エラー出力なし"
   fi
