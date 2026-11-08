@@ -74,6 +74,20 @@ cmd=("${hm[@]}" switch --flake "$DOTFILES_DIR/nix#$system" --impure "$@")
 # 世代が 10 を超え、かつ 30 日より前のものがあるときに限って、人に y/N を聞く。
 # 端末でなければ(CI や他スクリプトからの呼び出し)何も聞かず、diskreport の案内に任せる。
 # 判断根拠は docs/decisions/storage-hygiene.md。
+
+# 端末の入力バッファに溜まっているキー入力を捨てる。長いビルドの最中に押したキー(矢印や Enter)が
+# 残っていると、直後の read がそれを答えとして読んでしまい、質問が待たずに終わるため。
+# stty で一時的に「待たずに読む」モードにして読み捨て、元の設定に戻す(macOS の bash 3.2 でも動く書き方)
+drain_tty_input() {
+  local saved
+  saved=$(stty -g </dev/tty 2>/dev/null) || return 0
+  if stty -icanon -echo min 0 time 0 </dev/tty 2>/dev/null; then
+    dd if=/dev/tty of=/dev/null bs=4096 count=64 2>/dev/null || true
+  fi
+  stty "$saved" </dev/tty 2>/dev/null || true
+  return 0
+}
+
 offer_expire_generations() {
   [ -t 0 ] && [ -t 1 ] || return 0
   local dir gens=0 old=0 ans
@@ -83,11 +97,16 @@ offer_expire_generations() {
     old=$((old + $(find "$dir" -maxdepth 1 -name 'home-manager-*-link' -mtime +30 2>/dev/null | wc -l)))
   done
   [ "$gens" -gt 10 ] && [ "$old" -gt 0 ] || return 0
+  drain_tty_input
   printf '世代が %d あります(30 日より前が %d)。30 日より前の世代を消して GC しますか?(戻せなくなります)[y/N] ' "$gens" "$old"
-  read -r ans || ans=
+  # 答えは端末から直接読む(標準入力がどこかで読まれていても質問が飛ばされないように)
+  read -r ans </dev/tty || ans=
   case "$ans" in
     y | Y | yes) ;;
-    *) return 0 ;;
+    *)
+      log "スキップしました。あとで消すなら: home-manager expire-generations \"-30 days\" && nix-collect-garbage"
+      return 0
+      ;;
   esac
   "${hm[@]}" expire-generations "-30 days"
   # 消した世代が指していた store パスは誰からも指されなくなったので回収する。
