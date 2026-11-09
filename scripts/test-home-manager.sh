@@ -417,6 +417,57 @@ else
   ng "update.sh --no-switch: switch.sh が呼ばれた、または失敗した"
 fi
 
+echo "== 12b) Node.js の公式バイナリ(nix/nodejs-bin.nix)への切り替え"
+# 実リポジトリの nix/nodejs-bin.local.json(マシン固有の値)には触れず、DOTFILES_DIR を
+# 一時ディレクトリに向けて、そこに置いた固定値(scripts/fixtures/nodejs-bin.json)で評価する
+NODE_ROOT=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT" "$NODE_ROOT"' EXIT
+mkdir -p "$NODE_ROOT/nix" "$NODE_ROOT/home"
+cp "$DOTFILES_DIR/scripts/fixtures/nodejs-bin.json" "$NODE_ROOT/nix/nodejs-bin.local.json"
+node_pkg_name() {
+  env DOTFILES_DIR="$NODE_ROOT" "$@" nix eval --impure --raw "$DOTFILES_DIR/nix#homeConfigurations.$SYSTEM.config.home.packages" \
+    --apply 'ps: builtins.concatStringsSep "\n" (map (p: p.name) ps)' 2>/dev/null | grep -E '^nodejs(-bin)?-[0-9]'
+}
+fixture_version=$(nix eval --raw --impure --expr "(builtins.fromJSON (builtins.readFile \"$DOTFILES_DIR/scripts/fixtures/nodejs-bin.json\")).version")
+nixpkgs_node=$(nix eval --raw --inputs-from "$DOTFILES_DIR/nix" nixpkgs#nodejs.version)
+if [ "$(nix eval --raw --expr "toString (builtins.compareVersions \"$nixpkgs_node\" \"$fixture_version\")")" = "-1" ]; then
+  want_node="nodejs-bin-$fixture_version"
+else
+  want_node="nodejs-$nixpkgs_node"
+fi
+got_node=$(node_pkg_name || true)
+if [ "$got_node" = "$want_node" ]; then
+  ok "固定値があるとき: $want_node が入る(nixpkgs は $nixpkgs_node)"
+else
+  ng "固定値があるときの Node が想定外 (got: ${got_node:-なし}, want: $want_node)"
+fi
+got_node=$(node_pkg_name DOTFILES_NODEJS=nixpkgs || true)
+if [ "$got_node" = "nodejs-$nixpkgs_node" ]; then
+  ok "DOTFILES_NODEJS=nixpkgs: 固定値があっても nixpkgs 版"
+else
+  ng "DOTFILES_NODEJS=nixpkgs で nixpkgs 版にならない (got: ${got_node:-なし})"
+fi
+if ! node_pkg_name DOTFILES_NODEJS=official >/dev/null; then
+  ok "DOTFILES_NODEJS に想定外の値: 評価エラーで止まる"
+else
+  ng "DOTFILES_NODEJS に想定外の値を渡しても評価が通ってしまう"
+fi
+# nixpkgs が追いついていても、つなぎの公式バイナリ自体が壊れていないことを確かめる
+if node_bin=$(nix build --no-link --print-out-paths --impure --expr "
+  let
+    f = builtins.getFlake \"$DOTFILES_DIR/nix\";
+    pkgs = f.inputs.nixpkgs.legacyPackages.$SYSTEM;
+  in pkgs.callPackage $DOTFILES_DIR/nix/nodejs-bin.nix {
+    pin = pkgs.lib.importJSON $DOTFILES_DIR/scripts/fixtures/nodejs-bin.json;
+  }" 2>"$BUILD_DIR/nodejs-bin.log") &&
+  [ "$("$node_bin/bin/node" --version 2>/dev/null)" = "v$fixture_version" ] &&
+  PATH=/usr/bin:/bin "$node_bin/bin/npm" --version >/dev/null 2>&1; then
+  ok "公式バイナリ $fixture_version がビルドでき、node / npm が動く"
+else
+  ng "公式バイナリのビルドまたは実行に失敗"
+  show_log_tail "$BUILD_DIR/nodejs-bin.log"
+fi
+
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
   echo "== 13) home-manager switch(実 HOME に適用。使い捨て環境専用)"
   if "${HOME_MANAGER[@]}" switch --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure -b hmbak >/dev/null 2>&1; then
