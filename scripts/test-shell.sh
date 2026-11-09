@@ -280,6 +280,21 @@ else
   ng "大きいファイル: 疎ファイルが索引に載っている(または索引が無い)"
 fi
 
+# ディレクトリ名の改行とタブで偽造できる索引の行を、算術式として評価しない。
+# /bin/sh が dash の環境でも確かめられるよう bash で動かす(式の中身は使い捨ての $HOME に空ファイルを作るだけ)
+# shellcheck disable=SC2016  # $(...) と $HOME は偽の行の文字列そのもの(ここでは展開しない)
+forged='1+HOME[$(: >"$HOME/injected")]'
+printf '#time\t%s\n%s\ty\n4096\t%s\n' "$(date +%s)" "$forged" "$DISK_TEST/home/real" >"$DISK_STATE/diskindex-home.tsv"
+printf '#time\t%s\n%s\ty\n1024\t%s\n' "$(date +%s)" "$forged" "$DISK_TEST/home/real" >"$DISK_STATE/diskindex-home.tsv.prev"
+out=$(env -i HOME="$DISK_TEST/home" PATH="$DISK_TEST/bin:/usr/bin:/bin" FAKE_DOCKER_OS="Ubuntu 24.04" \
+  bash "$DOTFILES_DIR/home/.local/bin/diskreport" </dev/null 2>&1) || ng "diskreport が非0で終了(偽造した索引)"
+if [ -e "$DISK_TEST/home/injected" ]; then
+  ng "索引: 偽造した行の第1列がコマンドとして実行された"
+else
+  ok "索引: 偽造した行の第1列を評価しない"
+fi
+expect_in "$out" "+3.0M      4.0M  $DISK_TEST/home/real" "索引: 偽造した行があっても、普通の行の前回比は出る"
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

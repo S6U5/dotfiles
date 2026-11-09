@@ -354,7 +354,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 |---|---|
 | `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧(説明は各スクリプトの先頭コメントから生成。名前を付けるとそのコマンドのヘッダ全文) |
 | `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
-| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。配布済みと違うクローンでは端末で y/N を聞き、端末が無ければ実行しない(そのクローンの `./switch.sh` を直接実行する)。別のユーザーのクローンは使わず、配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `extract <ファイル...>` | アーカイブを形式を気にせず展開(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。中身がばらまかれないよう、最上位が複数ならアーカイブ名のフォルダにまとめる。既存のファイルは上書きしない。zip は unzip が無ければ bsdtar → python3 で代用、7z / rar は各ツールがあるときだけ |
 | `git-branch-sweep [--delete] [--no-fetch]` | マージ済み(merged)・リモートで削除済み(gone。スカッシュマージした PR もこちらで拾う)のローカルブランチを一覧表示。`--delete` で確認してから削除し、マージの形跡が無い gone のブランチは1本ずつ聞いてから強制削除する。現在・既定・他の worktree で使用中のブランチは対象外。`git branch-sweep` でも呼べる |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |

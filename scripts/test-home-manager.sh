@@ -263,26 +263,137 @@ if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/e
 else
   ng "dotfiles-switch: リンク越しの解決に失敗 (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
 fi
-# カレントディレクトリが別のクローンの中なら、配布済みのクローンではなくそのクローンを対象にする
-OTHER_CLONE=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_CLONE"' EXIT
+# カレントディレクトリが配布済みと違うクローンの中なら、端末で確かめてからそのクローンを対象にする。
+# 権限を緩めるテストがあるので、本人だけが入れる親フォルダ(mktemp -d は 0700)の下に作る
+OTHER_ROOT=$(mktemp -d)
+OTHER_CLONE=$(cd "$OTHER_ROOT" && pwd -P)/clone
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT"' EXIT
 mkdir -p "$OTHER_CLONE/nix" "$OTHER_CLONE/home/.config"
 cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
 cp "$DOTFILES_DIR/nix/home.nix" "$OTHER_CLONE/nix/home.nix"
-rm -f "$FAKE_BIN/args"
-if (cd "$OTHER_CLONE/home/.config" && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
-  "$FAKE_HOME/.local/bin/dotfiles-switch" >/dev/null 2>&1) &&
-  [ "$(cat "$FAKE_BIN/args")" = "switch --flake $OTHER_CLONE/nix#$SYSTEM --impure" ]; then
-  ok "dotfiles-switch: カレントディレクトリが別クローン内ならそのクローンを対象にする"
+if command -v python3 >/dev/null 2>&1; then
+  # 端末がある状況と無い状況を作る。使い方: tty-run.py <答え|none> <コマンド...>(none は端末なし)
+  cat >"$OTHER_ROOT/tty-run.py" <<'PY'
+import os, pty, select, signal, sys, time
+
+answer, cmd = sys.argv[1], sys.argv[2:]
+if answer == "none":
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()  # 制御端末を手放す
+        os.execvp(cmd[0], cmd)
+else:
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execvp(cmd[0], cmd)
+    seen, sent, deadline = b"", False, time.time() + 30
+    while True:
+        if time.time() > deadline:
+            os.kill(pid, signal.SIGKILL)
+            break
+        if select.select([fd], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            seen += chunk
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+            if not sent and b"[y/N]" in seen:
+                os.write(fd, answer.encode() + b"\n")
+                sent = True
+sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))
+PY
+  other_switch() { # $1: 答え(none は端末なし)。残りは dotfiles-switch の引数。標準入力の y は効かないはず
+    local answer=$1
+    shift
+    rm -f "$FAKE_BIN/args"
+    (cd "$OTHER_CLONE/home/.config" && printf 'y\n' | env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" \
+      PATH="${OTHER_PATH_PREFIX:-}$FAKE_BIN:$PATH" python3 -I "$OTHER_ROOT/tty-run.py" "$answer" "$FAKE_HOME/.local/bin/dotfiles-switch" "$@" 2>&1)
+  }
+  want_other="switch --flake $OTHER_CLONE/nix#$SYSTEM --impure"
+  want_deployed="switch --flake $DOTFILES_DIR/nix#$SYSTEM --impure"
+
+  rc=0
+  output=$(other_switch none) || rc=$?
+  if [ "$rc" -ne 0 ] && [ ! -e "$FAKE_BIN/args" ]; then
+    ok "dotfiles-switch: 端末が無ければ別のクローンを実行しない(標準入力の y も効かない)"
+  else
+    ng "dotfiles-switch: 端末なしで別のクローンを実行した (rc=$rc, got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
+  rc=0
+  output=$(other_switch n) || rc=$?
+  if [ "$rc" -ne 0 ] && [ ! -e "$FAKE_BIN/args" ]; then
+    ok "dotfiles-switch: n と答えたら別のクローンを実行しない"
+  else
+    ng "dotfiles-switch: n でも別のクローンを実行した (rc=$rc, got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
+  rc=0
+  output=$(other_switch y) || rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_BIN/args" 2>/dev/null)" = "$want_other" ]; then
+    ok "dotfiles-switch: y と答えたらカレントディレクトリのクローンを対象にする"
+  else
+    ng "dotfiles-switch: y でそのクローンを対象にできない (rc=$rc, got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
+
+  chmod o+w "$OTHER_CLONE/nix/home.nix"
+  rc=0
+  output=$(other_switch y) || rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_BIN/args" 2>/dev/null)" = "$want_other" ] && printf '%s' "$output" | grep -q '書き換えられるもの'; then
+    ok "dotfiles-switch: 他の人が書けるものがあれば、警告してから y/N を聞く"
+  else
+    ng "dotfiles-switch: 権限の緩いクローンの扱いが想定外 (rc=$rc, got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
+  chmod o-w "$OTHER_CLONE/nix/home.nix"
+
+  # 別のユーザーのものは、偽の id で自分の uid をずらして再現する
+  mkdir -p "$OTHER_ROOT/fake-id"
+  cat >"$OTHER_ROOT/fake-id/id" <<'FAKE'
+#!/bin/sh
+if [ "$1" = "-u" ]; then
+  echo $(($(/usr/bin/id -u) + 1))
+  exit 0
+fi
+exec /usr/bin/id "$@"
+FAKE
+  chmod +x "$OTHER_ROOT/fake-id/id"
+  rc=0
+  output=$(OTHER_PATH_PREFIX="$OTHER_ROOT/fake-id:" other_switch none) || rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_BIN/args" 2>/dev/null)" = "$want_deployed" ]; then
+    ok "dotfiles-switch: 別のユーザーのクローンは使わず、配布済みのクローンを対象にする"
+  else
+    ng "dotfiles-switch: 別のユーザーのクローンの扱いが想定外 (rc=$rc, got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
+
+  printf '#!/bin/sh\necho CLONE-RAN\n' >"$OTHER_CLONE/switch.sh"
+  rc=0
+  output=$(other_switch none --help) || rc=$?
+  if [ "$rc" -eq 0 ] && ! printf '%s' "$output" | grep -q CLONE-RAN; then
+    ok "dotfiles-switch: --help は別のクローンのコードを動かさず、配布済みのクローンで答える"
+  else
+    ng "dotfiles-switch: --help の扱いが想定外 (rc=$rc)"
+  fi
+  cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
+
+  rm -f "$FAKE_BIN/args"
+  if (cd "$DOTFILES_DIR/home/.config" && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/env" PATH="$FAKE_BIN:$PATH" \
+    python3 -I "$OTHER_ROOT/tty-run.py" none "$FAKE_HOME/.local/bin/dotfiles-switch" -b bak >/dev/null 2>&1) &&
+    [ "$(cat "$FAKE_BIN/args")" = "$want_args" ]; then
+    ok "dotfiles-switch: 配布済みのクローンの中では確認なしで実行する"
+  else
+    ng "dotfiles-switch: 配布済みのクローンの中で実行できない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  fi
 else
-  ng "dotfiles-switch: カレントディレクトリのクローンを対象にできない (got: $(cat "$FAKE_BIN/args" 2>/dev/null))"
+  echo "  (python3 が無いので、別のクローンの確認のテストを飛ばします)"
 fi
 
 echo "== 12) update.sh が pull のあとに switch.sh を呼ぶか(--no-switch では呼ばないか)"
 # 合成した origin / clone で検証する(実リポジトリの remote には触れない)。clone 側の update.sh が
 # 偽の home-manager(上の FAKE_BIN)を呼ぶので、組み立てたコマンドで確認できる
 UPD_ROOT=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_CLONE" "$UPD_ROOT"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT"' EXIT
 GIT_T=(git -c user.name=test -c user.email=test@example.com -c init.defaultBranch=main -c commit.gpgsign=false)
 mkdir -p "$UPD_ROOT/origin/nix"
 cp "$DOTFILES_DIR/update.sh" "$DOTFILES_DIR/switch.sh" "$UPD_ROOT/origin/"

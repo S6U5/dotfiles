@@ -41,17 +41,27 @@ case "$(uname -s)" in
             ;;
         esac
       fi
-      # Windows 側の Arduino IDE 2.x を探す。まず現在ユーザーのプロファイル配下、
-      # 次に全ユーザー用、最後に他ユーザー走査(共有 PC での誤検出を避ける順序)
+      # Windows 側の Arduino IDE 2.x を探す。まず現在ユーザーのプロファイル配下、次に全ユーザー用。
+      # 他ユーザーの配下は探さない(別アカウントが置いた exe を自分の権限で起動してしまうため)。
+      # cmd.exe の echo は日本語名のプロファイルを CP932 で返して解決できないので、UTF-8 で受け取る。
+      # cmd.exe に戻すのは PowerShell が使えないときだけ
       profile=$(
         cd /mnt/c 2>/dev/null || cd /
-        cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r'
+        {
+          # shellcheck disable=SC2016  # $env:... は sh ではなく PowerShell 側で展開させる意図
+          powershell.exe -NoProfile -NonInteractive -Command \
+            '[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write($env:USERPROFILE)' 2>/dev/null ||
+            cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null
+        } | tr -d '\r'
       )
-      profile_u=$(wslpath -u "$profile" 2>/dev/null) || profile_u=""
+      # ドライブから始まる値だけを使う(空や未展開の値で、カレント配下を探さないように)
+      case "$profile" in
+        [A-Za-z]:\\*) profile_u=$(wslpath -u "$profile" 2>/dev/null) || profile_u="" ;;
+        *) profile_u="" ;;
+      esac
       exe=$(
         find ${profile_u:+"$profile_u/AppData/Local/Programs/Arduino IDE"} \
           "/mnt/c/Program Files/Arduino IDE" \
-          /mnt/c/Users/*/AppData/Local/Programs/"Arduino IDE" \
           -maxdepth 1 -name 'Arduino IDE.exe' 2>/dev/null | head -n 1
       )
       if [ -z "$exe" ]; then

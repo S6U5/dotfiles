@@ -2,7 +2,9 @@
 # home-manager switch を実行して dotfiles を反映する(switch.sh をどこからでも呼べるようにするラッパー)。
 # 対象のクローンは次の順で決める(どちらになったかは switch.sh が実行前に表示する):
 #   1. カレントディレクトリが dotfiles のクローン内(上位に switch.sh と nix/home.nix がある)なら、そのクローン
-#      (別の場所に clone した作業用のクローンや、移動直後のリポジトリの中で打てばそれが対象になる)
+#      (別の場所に clone した作業用のクローンや、移動直後のリポジトリの中で打てばそれが対象になる)。
+#      配布済みのクローンと違う場所なら中のコードが動くので、端末で y/N を聞く(端末が無ければ実行しない)。
+#      別のユーザーのものなら使わず、配布済みのクローンを対象にする
 #   2. そうでなければ、インストール後の実体はリポジトリへのシンボリックリンクなので、
 #      自身のリンクをたどって配布済みのクローンを割り出す(パスのハードコードを避ける)
 # 引数はそのまま switch.sh(→ home-manager switch)に渡す(例: dotfiles-switch -b bak)。
@@ -30,6 +32,58 @@ while [ -L "$target" ]; do
   esac
 done
 link_repo=$(cd "$(dirname "$target")/../../.." 2>/dev/null && pwd) || link_repo=
+
+# 確認文に出すパスから制御文字を除く(パスに仕込んだエスケープシーケンスで確認文を偽装させない)
+printable() {
+  printf '%s' "$1" | tr -d '\000-\037\177'
+}
+
+# 配布済みのクローンと違うクローンは、置かれただけのコードかもしれないので黙って実行しない
+if [ -n "$cwd_repo" ]; then
+  cwd_real=$(cd "$cwd_repo" 2>/dev/null && pwd -P) || cwd_real=
+  link_real=$(cd "${link_repo:-/nonexistent}" 2>/dev/null && pwd -P) || link_real=
+  if [ -z "$cwd_real" ] || [ "$cwd_real" != "$link_real" ]; then
+    uid=$(id -u)
+    wants_help=
+    for arg in "$@"; do
+      case "$arg" in -h | --help) wants_help=1 ;; esac
+    done
+    if [ -n "$wants_help" ] && [ -x "$link_repo/switch.sh" ]; then
+      # 説明を見るだけで、別のクローンのコードを動かさない
+      cwd_repo=
+    elif [ -n "$(find "$cwd_real" "$cwd_real/switch.sh" -prune ! -user "$uid" -print 2>&1)" ]; then
+      # 共有の場所に別のユーザーが置いたものは使わない(調べられないときも同じ扱い)
+      if [ ! -x "$link_repo/switch.sh" ]; then
+        echo "dotfiles-switch: $(printable "$cwd_repo") は別のユーザーのものなので実行しません" >&2
+        exit 1
+      fi
+      echo "dotfiles-switch: $(printable "$cwd_repo") は別のユーザーのものなので使わず、配布済みのクローン $link_repo を対象にします" >&2
+      cwd_repo=
+    else
+      if ! (: </dev/tty) 2>/dev/null; then
+        echo "dotfiles-switch: 配布済みと違うクローンの中ですが、端末が無いので確かめられず、実行しません: $(printable "$cwd_real")" >&2
+        echo "dotfiles-switch: このクローンを反映するには、中身を確かめてから ./switch.sh を直接実行してください" >&2
+        exit 1
+      fi
+      loose=$(find "$cwd_real" ! -type l \( ! -user "$uid" -o -perm -020 -o -perm -002 \) -print 2>/dev/null | head -n 1)
+      {
+        if [ -n "$loose" ]; then
+          echo "dotfiles-switch: 注意: このクローンには、別のユーザーのものや他の人が書き換えられるものがあります(例: $(printable "$loose"))"
+        fi
+        printf 'dotfiles-switch: 配布済みと違うクローンです: %s\n' "$(printable "$cwd_real")"
+        printf 'このクローンのコードを実行して反映しますか?[y/N] '
+      } >/dev/tty
+      IFS= read -r answer </dev/tty || answer=
+      case "$answer" in
+        y | Y | yes) cwd_repo=$cwd_real ;;
+        *)
+          echo "dotfiles-switch: 実行しません" >&2
+          exit 1
+          ;;
+      esac
+    fi
+  fi
+fi
 
 if [ -n "$cwd_repo" ]; then
   repo=$cwd_repo

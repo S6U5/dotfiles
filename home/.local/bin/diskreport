@@ -919,6 +919,15 @@ collapse_nested() {
     }'
 }
 
+# 索引の第1列が KiB として正しい形(数字だけで、余分な先頭の 0 が無い)なら真。索引はディレクトリ名を
+# そのまま含むので、名前に改行とタブを入れると行を偽造できる。bash の算術式は変数の中身を式として評価し、
+# 添字の中のコマンド置換まで実行するので、ここを通らない値を $(( )) に渡さない。
+# 先頭の 0 は 8 進扱いで算術エラーになる。[0-9] の範囲はロケールで変わりうるので数字を列挙する
+is_kib() {
+  case "$1" in '' | *[!0123456789]* | 0?*) return 1 ;; esac
+  return 0
+}
+
 # 索引の1行に前回索引との差を付けて表示。$1: 索引, $2: 上位件数, $3: 深さの上限(区切りの数), $4: 見出し
 # 標準入力に「KiB<TAB>パス」を渡す
 show_index_rows() { # $1: prev 索引(無ければ空), $2: 件数
@@ -926,7 +935,7 @@ show_index_rows() { # $1: prev 索引(無ければ空), $2: 件数
   head -n "$2" | while IFS="$TAB" read -r k p; do
     if [ -n "$prev" ] && [ -f "$prev" ]; then
       pk=$(awk -F'\t' -v p="$p" '$2 == p { print $1; exit }' "$prev")
-      if [ -n "$pk" ]; then
+      if is_kib "$k" && is_kib "$pk"; then
         printf '  %8s  %8s  %s\n' "$(signed $((k - pk)))" "$(human "$k")" "$p"
       else
         printf '  %8s  %8s  %s\n' "新規" "$(human "$k")" "$p"
