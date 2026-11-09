@@ -196,6 +196,59 @@ in
     fi
   '');
 
+  # Nix で入れたコマンドが、別の場所にある同じ名前のコマンドに隠れていないかを switch のたびに調べ、
+  # 隠れていれば消し方を案内する(例: 公式インストーラで入れた uv が ~/.local/bin に残っている)。
+  # env.sh は ~/.local/bin と Homebrew の bin を PATH の先頭に足すため、そこに同名のコマンドが
+  # あると Nix 版は使われない。消すのは本人に任せる(検出して報告するだけ。nix-duplicate-check と
+  # 同じ方針)。~/.local/bin のうち home-manager が配る自作コマンド(ストアや home/ を指すリンク)は
+  # 対象外。Homebrew の場所は env.sh と同じ順で、brew がある最初の 1 か所だけを見る
+  # (_dotfiles_brew_prefixes は scripts/test-home-manager.sh が偽の Homebrew を指すためのもの)。
+  home.activation.dotfilesPathShadow = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    _dotfiles_local=""
+    _dotfiles_formulas=""
+    _dotfiles_brew_other=""
+    _dotfiles_brew_bin=""
+    for _dotfiles_prefix in ''${_dotfiles_brew_prefixes:-/opt/homebrew /usr/local}; do
+      if [ -x "$_dotfiles_prefix/bin/brew" ]; then
+        _dotfiles_brew_bin="$_dotfiles_prefix/bin"
+        break
+      fi
+    done
+    for _dotfiles_bin in "$newGenPath"/home-path/bin/*; do
+      _dotfiles_name=''${_dotfiles_bin##*/}
+      _dotfiles_cand="$HOME/.local/bin/$_dotfiles_name"
+      if [ -e "$_dotfiles_cand" ] || [ -L "$_dotfiles_cand" ]; then
+        case "$(readlink -f "$_dotfiles_cand" 2>/dev/null || true)" in
+          /nix/store/* | "${homeSrcDir}"/*) ;;
+          *) _dotfiles_local="$_dotfiles_local ~/.local/bin/$_dotfiles_name" ;;
+        esac
+      fi
+      if [ -n "$_dotfiles_brew_bin" ] && [ -e "$_dotfiles_brew_bin/$_dotfiles_name" ]; then
+        # bin のリンク先(../Cellar/<パッケージ名>/...)から、消すときのパッケージ名を取る
+        _dotfiles_formula=$(readlink -f "$_dotfiles_brew_bin/$_dotfiles_name" | sed -n 's|.*/Cellar/\([^/]*\)/.*|\1|p')
+        if [ -z "$_dotfiles_formula" ]; then
+          _dotfiles_brew_other="$_dotfiles_brew_other $_dotfiles_brew_bin/$_dotfiles_name"
+        else
+          case " $_dotfiles_formulas " in
+            *" $_dotfiles_formula "*) ;;
+            *) _dotfiles_formulas="$_dotfiles_formulas $_dotfiles_formula" ;;
+          esac
+        fi
+      fi
+    done
+    if [ -n "$_dotfiles_local" ]; then
+      echo "dotfiles: 警告: 次のファイルが PATH で先に見つかり、Nix で入れた同名のコマンドが使われません:$_dotfiles_local" >&2
+      echo "dotfiles:   不要なら消してください: rm$_dotfiles_local" >&2
+    fi
+    if [ -n "$_dotfiles_formulas" ]; then
+      echo "dotfiles: 警告: Homebrew の次のパッケージが PATH で先に見つかり、Nix で入れた同名のコマンドが使われません:$_dotfiles_formulas" >&2
+      echo "dotfiles:   不要なら消してください: brew uninstall$_dotfiles_formulas" >&2
+    fi
+    if [ -n "$_dotfiles_brew_other" ]; then
+      echo "dotfiles: 警告: Homebrew の bin にある次のコマンドが PATH で先に見つかり、Nix で入れた同名のコマンドが使われません:$_dotfiles_brew_other" >&2
+    fi
+  '';
+
   # WSL: xdg-open で開く URL・HTML を、WSL 内のブラウザではなく Windows 側の既定ブラウザ
   # (home/.local/bin/wsl-browser)へ回す。xdg-open は BROWSER より x-scheme-handler の既定アプリを
   # 優先するため、BROWSER(os/wsl.sh)だけでは WSL 内の Chrome 等が開いてしまう。
