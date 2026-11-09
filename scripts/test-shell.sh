@@ -321,6 +321,41 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
   expect_not_in "$out" "Windows 側" "cachesweep: WSL 以外では Windows 側を数えない"
 fi
 
+echo "== 6) diskreport windows が PowerShell の集計結果を索引にして表示するか"
+# 偽の powershell.exe が返す行の扱いだけを確かめる(PowerShell の中身は動かない)
+WIN_TEST=$WORK_DIR/diskreport-windows
+mkdir -p "$WIN_TEST/bin" "$WIN_TEST/home"
+cat >"$WIN_TEST/bin/powershell.exe" <<'EOF'
+#!/bin/sh
+if [ -n "${FAKE_PS_CUT:-}" ]; then
+  printf '#cut\r\n#denied\t0\r\n'
+  exit 0
+fi
+printf '2097152\tC:\\Users\\me\\Videos\r\n'
+printf '3145728\tC:\\Users\\me\\AppData\\Local\\Docker\r\n'
+printf '3145728\tC:\\Users\\me\\AppData\\Local\r\n'
+printf '3145728\tC:\\Users\\me\\AppData\r\n'
+printf '5242880\tC:\\Users\\me\r\n'
+printf '5242880\tC:\\Users\r\n'
+printf '5242880\tC:\r\n'
+printf 'not a size line\r\n'
+printf '#denied\t3\r\n'
+EOF
+chmod +x "$WIN_TEST/bin/powershell.exe"
+run_diskreport_windows() { # 引数は env に渡す追加の環境変数
+  env -i HOME="$WIN_TEST/home" PATH="$WIN_TEST/bin:/usr/bin:/bin" WSL_DISTRO_NAME=test "$@" \
+    "$DOTFILES_DIR/home/.local/bin/diskreport" windows </dev/null 2>&1
+}
+WIN_INDEX=$WIN_TEST/home/.local/state/dotfiles/diskindex-windows.tsv
+out=$(run_diskreport_windows FAKE_PS_CUT=1) || ng "diskreport windows が非0で終了(打ち切り)"
+expect_in "$out" "数え終わりませんでした" "diskreport windows: 打ち切ったことを出す"
+if [ -e "$WIN_INDEX" ]; then ng "diskreport windows: 打ち切ったのに索引を保存した"; else ok "diskreport windows: 打ち切ったら索引を保存しない"; fi
+out=$(run_diskreport_windows) || ng "diskreport windows が非0で終了"
+expect_in "$out" 'C:\Users\me\Videos' "diskreport windows: 大きい順に出す"
+expect_in "$out" "読めなかったフォルダ: 3 個" "diskreport windows: 読めなかったフォルダの数を出す"
+expect_in "$out" "docker" "diskreport windows: アプリ別に出す"
+expect_not_in "$out" "not a size line" "diskreport windows: 数字で始まらない行は索引に入れない"
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

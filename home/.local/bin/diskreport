@@ -4,7 +4,7 @@
 #                         # → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 案内
 #                         # 索引が無い/古い(30 日超)ときは、端末なら「今作りますか?」と聞く
 #   diskreport scan       # 索引を作り直す(時間がかかる作業をここに隔離。既定 15 分で打ち切り)
-#   diskreport windows    # WSL のみ: Windows の「ストレージ」設定(種類別の内訳と Storage Sense)を開く
+#   diskreport windows    # WSL のみ: Windows 側を PowerShell で数えて、大きい順とアプリ別を出す(数分かかることがある)
 #   diskreport --nix-brief  # (人向けではない)dotfiles-switch / dotfiles-update の最後が呼ぶ Nix の数行
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
@@ -21,8 +21,8 @@
 #   - 削除は既にある道具(cachesweep / nix-collect-garbage / home-manager expire-generations /
 #     wsl-compact)に任せ、このコマンドは末尾で案内するだけ。
 #   - WSL: 中の df は仮想ディスクの上限を全体として見せるので、vhdx を置く Windows 側ドライブの空きを
-#     別に出す。/mnt 越しの du はしない(9P 経由で桁違いに遅い)。Windows 側はレジストリの申告サイズと
-#     vhdx のファイルサイズだけを帳簿として引き、中身は Windows の道具で見る。
+#     別に出す。/mnt 越しの du はしない(9P 経由で桁違いに遅い)。Windows 側は普段はレジストリの申告サイズと
+#     vhdx のファイルサイズだけを帳簿として引き、中身は scan / windows のときに Windows 側の PowerShell で数える。
 set -eu
 
 MODE=full
@@ -31,7 +31,7 @@ WINDOWS=0
 for arg in "$@"; do
   case "$arg" in
     scan) SCAN=1 ;;
-    windows) WINDOWS=1 ;;
+    windows | --windows) WINDOWS=1 ;;
     --nix-brief) MODE=nix-brief ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
@@ -50,7 +50,7 @@ NOW=$(date +%s)
 STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles
 STATE_FILE=$STATE_DIR/diskreport.tsv
 INDEX_HOME=$STATE_DIR/diskindex-home.tsv    # $HOME 配下の索引: KiB<TAB>パス(先頭行は #time)
-INDEX_WIN=$STATE_DIR/diskindex-windows.tsv  # Windows 側ドライブの索引: KiB<TAB>パス(WizTree の CSV から)
+INDEX_WIN=$STATE_DIR/diskindex-windows.tsv  # Windows 側ドライブの索引: KiB<TAB>パス(Windows 側の PowerShell で数える)
 INDEX_BIG=$STATE_DIR/diskindex-bigfiles.tsv # $HOME 配下の 512MiB 超のファイル: KiB<TAB>パス(scan のついでに拾う)
 CONF_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles
 # ディスクが満杯のときでも動くよう、作業ファイルはまず tmpfs(/dev/shm)に置く(無ければ通常の一時領域)
@@ -686,28 +686,15 @@ report_windows_ledger() {
   return 0
 }
 
-report_windows_open() {
-  [ "$WINDOWS" -eq 1 ] || return 0
+report_windows_detail() {
   if ! is_wsl; then
     echo "diskreport: windows は WSL でだけ意味があります(この環境では何もしません)" >&2
     return 0
   fi
-  if ! command -v cmd.exe >/dev/null 2>&1; then
-    echo "diskreport: cmd.exe が見つかりません(Windows 連携が無効?)" >&2
-    return 0
-  fi
-  echo "== Windows の「ストレージ」設定を開きます(種類別の内訳。Storage Sense で一時ファイル・ごみ箱の自動掃除を設定できます)"
-  (
-    cd /mnt/c 2>/dev/null || cd /
-    cmd.exe /c start "" ms-settings:storagesense >/dev/null 2>&1
-  ) || echo "  (開けませんでした。Windows の 設定 → システム → ストレージ を手で開いてください)"
-  for wt in "/mnt/c/Program Files/WizTree/WizTree64.exe" "/mnt/c/Program Files/WizTree/WizTree.exe"; do
-    if [ -x "$wt" ]; then
-      echo "  フォルダ単位で掘るなら WizTree が入っています(NTFS の MFT を直接読むので速い): $wt"
-      break
-    fi
-  done
-  echo ""
+  scan_windows
+  report_index_windows
+  report_apps_windows
+  echo "種類別の内訳(システム・一時ファイルなど)は、Windows の 設定 → システム → ストレージ で見られます"
   return 0
 }
 
@@ -773,66 +760,46 @@ scan_home() {
   echo ""
 }
 
-# WizTree の CSV(見出し行で列を探す。フォルダ行は末尾が \ で、サイズは配下の合計)を
-# 「KiB<TAB>パス」に直す。深さ 6 まで。Allocated(ディスク上のサイズ)があればそれを、無ければ Size を使う
-wiztree_csv_to_index() { # $1: CSV(UTF-8、BOM 付きのことがある)
-  tr -d '\r' <"$1" | sed '1s/^\xEF\xBB\xBF//' | awk '
-    function unquote_first(line,   i, c, out, inq) {
-      # 先頭フィールドを取り出し(引用符内の , と "" に対応)、残りを REST に入れる
-      out = ""; REST = ""
-      if (substr(line, 1, 1) != "\"") { i = index(line, ","); if (i == 0) { REST = ""; return line }; REST = substr(line, i + 1); return substr(line, 1, i - 1) }
-      inq = 1
-      for (i = 2; i <= length(line); i++) {
-        c = substr(line, i, 1)
-        if (c == "\"") { if (substr(line, i + 1, 1) == "\"") { out = out "\""; i++ } else { inq = 0; REST = substr(line, i + 2); return out } }
-        else out = out c
-      }
-      return out
-    }
-    BEGIN { FS = ","; ncol = 0; sizecol = 0 }
-    !found {
-      low = tolower($0)
-      if (index(low, "file name") > 0) {
-        found = 1
-        n = split($0, h, ",")
-        for (i = 1; i <= n; i++) { hh = tolower(h[i]); gsub(/^[ "]+|[ "]+$/, "", hh); if (hh == "allocated") alloc = i; if (hh == "size") size = i }
-        sizecol = alloc ? alloc : size
-      }
-      next
-    }
-    sizecol == 0 { next }
-    {
-      name = unquote_first($0)
-      if (substr(name, length(name), 1) != "\\") next           # フォルダ行だけ
-      m = split(REST, f, ",")
-      v = f[sizecol - 1] + 0                                  # 1列目(名前)を除いた位置
-      depth = gsub(/\\/, "\\", name)                          # 区切りの数 = 深さ(ルートは 1)
-      if (depth > 7) next
-      sub(/\\$/, "", name)
-      printf "%d\t%s\n", v / 1024, name
-    }'
+# Windows 側で動かす PowerShell(改行を除いて1行にして渡すので、文の区切りは ; で書き、引用符は ' だけを使う)。
+# ドライブを1つ歩いて、深さ 6 までのフォルダを「KiB<TAB>パス」で出す。
+#   - C:\Windows は数えない(触らない場所で、ハードリンクの多重計上も大きい)
+#   - ジャンクションとシンボリックリンクはたどらない(二重に数えないため)。OneDrive のフォルダはリンクではないのでたどる
+#   - ローカルに実体の無いクラウドのファイルは 0 と数える(4460544 はオフラインと、読むと取得する属性)
+#   - 読めないフォルダは数えず、最後に #denied の行で個数を出す。上限時間を超えたら #cut を出す
+windows_index_script() {
+  tr -d '\n' <<'PS'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8;
+$root = '__ROOT__';
+$limit = __LIMIT__;
+$clock = [Diagnostics.Stopwatch]::StartNew();
+$script:denied = 0;
+function Walk([string]$path, [int]$depth) {
+if ($clock.Elapsed.TotalSeconds -gt $limit) { throw 'limit' };
+$sum = [long]0;
+try { $entries = ([IO.DirectoryInfo]$path).GetFileSystemInfos() } catch { $script:denied++; return [long]0 };
+foreach ($e in $entries) {
+$a = [int]$e.Attributes;
+if ($a -band 16) {
+if (($depth -eq 0) -and ($e.Name -eq 'Windows')) { continue };
+if (($a -band 1024) -and $e.LinkType) { continue };
+$sum += Walk $e.FullName ($depth + 1);
+} elseif (-not ($a -band 4460544)) {
+$sum += $e.Length;
+};
+};
+if ($depth -le 6) { [Console]::Out.WriteLine([string][long]($sum / 1024) + [char]9 + $path.TrimEnd('\')) };
+return $sum;
+};
+try { [void](Walk $root 0) } catch { [Console]::Out.WriteLine('#cut') };
+[Console]::Out.WriteLine('#denied' + [char]9 + $script:denied);
+PS
 }
 
 scan_windows() {
   is_wsl || return 0
-  echo "== 索引の作成: Windows 側ドライブ(WizTree に MFT を読ませる。管理者権限の確認が出ます)"
-  wt=
-  la=$(win_env_path LOCALAPPDATA || true)
-  for c in "/mnt/c/Program Files/WizTree/WizTree64.exe" "/mnt/c/Program Files/WizTree/WizTree.exe" \
-    "/mnt/c/Program Files (x86)/WizTree/WizTree.exe" "${la:+$la/Programs/WizTree/WizTree64.exe}"; do
-    [ -n "$c" ] && [ -x "$c" ] && {
-      wt=$c
-      break
-    }
-  done
-  if [ -z "$wt" ]; then
-    echo "  WizTree が見つかりません。入れると Windows 側を数秒で数えられます(個人利用は無償。インストーラ版または portable 版)"
-    echo "  代わりに Windows の「ストレージ」設定を使うには: diskreport windows"
-    echo ""
-    return 0
-  fi
-  if ! command -v powershell.exe >/dev/null 2>&1 || ! command -v wslpath >/dev/null 2>&1 || ! command -v cmd.exe >/dev/null 2>&1; then
-    echo "  powershell.exe / wslpath / cmd.exe が見つかりません(Windows 連携が無効?)"
+  echo "== 索引の作成: Windows 側ドライブ(PowerShell で数えます。数分かかることがあります。上限 $((SCAN_TIMEOUT / 60)) 分)"
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    echo "  powershell.exe が見つかりません(Windows 連携が無効?)"
     echo ""
     return 0
   fi
@@ -840,63 +807,36 @@ scan_windows() {
   distros=$(wsl_distros || true)
   base=$(printf '%s\n' "$distros" | awk -F'\t' -v d="${WSL_DISTRO_NAME:-}" '$1 == d { print $2; exit }')
   drive=$(printf '%s' "$base" | cut -c1 | tr '[:lower:]' '[:upper:]')
-  [ -n "$drive" ] || drive=C
-  wintemp=$(
-    cd /mnt/c 2>/dev/null || cd /
-    cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r'
-  )
-  [ -n "$wintemp" ] || {
-    echo "  Windows の一時フォルダを解決できませんでした"
-    echo ""
-    return 0
-  }
-  # ファイル名は毎回ランダムにする(wsl-compact と同じ理由: 固定名だと差し替えの隙ができる)
-  rand=$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n') || rand=""
-  [ -n "$rand" ] || rand=$$
-  csv_win="$wintemp\\dotfiles-diskreport-$rand.csv"
-  ps_win="$wintemp\\dotfiles-diskreport-$rand.ps1"
-  wt_win=$(wslpath -w "$wt" 2>/dev/null || true)
-  [ -n "$wt_win" ] || {
-    echo "  WizTree のパスを Windows 形式に変換できませんでした"
-    echo ""
-    return 0
-  }
-  # PowerShell のシングルクォート文字列に埋めるので ' は '' に
-  q() { printf '%s' "$1" | sed "s/'/''/g"; }
-  ps_unix=$(wslpath -u "$ps_win")
-  printf '\357\273\277' >"$ps_unix" # BOM(Windows PowerShell 5.1 に UTF-8 と判定させる。wsl-compact と同じ)
-  cat >>"$ps_unix" <<EOF
-\$ErrorActionPreference = 'Stop'
-\$args = '${drive}: /export="$(q "$csv_win")" /admin=1 /exportfolders=1 /exportfiles=0 /exportdrivecapacity=0'
-Start-Process -FilePath '$(q "$wt_win")' -ArgumentList \$args -Verb RunAs -Wait
-EOF
+  case "$drive" in [A-Z]) ;; *) drive=C ;; esac
   start=$(date +%s)
+  # 上限は PowerShell 側を先に効かせる(外側の timeout では Windows 側のプロセスまで止まるとは限らないため)
+  script=$(windows_index_script | sed "s/__ROOT__/${drive}:\\\\/; s/__LIMIT__/$((SCAN_TIMEOUT > 60 ? SCAN_TIMEOUT - 30 : SCAN_TIMEOUT))/")
   (
     cd /mnt/c 2>/dev/null || cd /
-    scan_cmd powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_win" >/dev/null 2>&1
-  ) || echo "  WARN: WizTree の起動に失敗したか、管理者権限の確認が取り消されたか、$((SCAN_TIMEOUT / 60)) 分を超えました" >&2
-  rm -f "$ps_unix"
-  csv_unix=$(wslpath -u "$csv_win" 2>/dev/null || true)
-  if [ -z "$csv_unix" ] || [ ! -s "$csv_unix" ]; then
-    echo "  CSV が出力されませんでした(WizTree の版によって書式が違う可能性。手で確かめるには WizTree で ${drive}: をスキャンして CSV に書き出し)"
+    scan_cmd powershell.exe -NoProfile -NonInteractive -Command "$script" 2>/dev/null
+  ) | tr -d '\r' >"$WORK/win-raw" || true
+  denied=$(awk -F'\t' '$1 == "#denied" { print $2 }' "$WORK/win-raw")
+  if grep -q '^#cut' "$WORK/win-raw" || [ -z "$denied" ]; then
+    echo "  WARN: 数え終わりませんでした($((SCAN_TIMEOUT / 60)) 分を超えたか、PowerShell の実行に失敗)。索引は保存しません(DOTFILES_DISKREPORT_SCAN_TIMEOUT で上限を変えられます)" >&2
     echo ""
     return 0
   fi
   {
     printf '#time\t%s\n' "$NOW"
-    wiztree_csv_to_index "$csv_unix"
+    # 数字で始まる行だけを索引に入れる(ほかの出力が混ざっても壊れないように)
+    awk -F'\t' 'NF >= 2 && $1 ~ /^[0-9]+$/' "$WORK/win-raw"
   } >"$WORK/idx-win"
-  rm -f "$csv_unix"
   n=$(($(wc -l <"$WORK/idx-win") - 1))
   if [ "$n" -le 0 ]; then
-    echo "  WARN: CSV からフォルダ行を読めませんでした(見出し行に File Name / Size / Allocated が無い?)" >&2
+    echo "  WARN: フォルダを1つも数えられませんでした" >&2
     echo ""
     return 0
   fi
   rotate_index "$INDEX_WIN"
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   if cp "$WORK/idx-win" "$INDEX_WIN" 2>/dev/null; then
-    echo "  完了: $n フォルダ、$(($(date +%s) - start)) 秒"
+    echo "  完了: $n フォルダ、$(($(date +%s) - start)) 秒(${drive}:\\Windows は数えていません)"
+    [ "$denied" -eq 0 ] 2>/dev/null || echo "  読めなかったフォルダ: $denied 個(管理者権限が要る場所など。その中身は数えていません)"
   else
     echo "  WARN: 索引を $INDEX_WIN に書けませんでした(ディスクが満杯?)" >&2
   fi
@@ -995,7 +935,7 @@ win_category() {
 report_index_windows() {
   is_wsl || return 0
   [ -f "$INDEX_WIN" ] || return 0
-  echo "== 詳細: Windows 側(索引から。数えたのは $(index_age_label "$INDEX_WIN")。更新は diskreport scan)"
+  echo "== 詳細: Windows 側(索引から。数えたのは $(index_age_label "$INDEX_WIN")。更新は diskreport windows)"
   prev=
   [ -f "$INDEX_WIN.prev" ] && prev=$INDEX_WIN.prev
   # カテゴリ別: 深さ 1(ドライブ直下)と、Users\<名前>\ 直下(深さ 3)の行で振り分ける
@@ -1209,7 +1149,7 @@ if [ "$MODE" = nix-brief ]; then
 fi
 
 if [ "$WINDOWS" -eq 1 ]; then
-  report_windows_open
+  report_windows_detail
   exit 0
 fi
 if [ "$SCAN" -eq 1 ]; then
@@ -1246,6 +1186,6 @@ elif [ "$SCAN" -eq 0 ]; then
   echo "  diskreport scan                             # 索引を作り直す(いまの索引は $(index_age_label "$INDEX_HOME"))"
 fi
 if is_wsl; then
-  echo "  diskreport windows                          # Windows の「ストレージ」設定を開く(Windows 側の中身は Windows の道具で)"
+  echo "  diskreport windows                          # Windows 側を PowerShell で数えて、大きい順とアプリ別を出す(数分かかることがあります)"
 fi
 echo "  自分の環境の場所を一覧に足すには: ${CONF_DIR}/diskreport.local(形式は diskreport.paths と同じ)"
