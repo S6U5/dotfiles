@@ -55,6 +55,30 @@ let
       mainProgram = "mdgrid";
     };
   };
+
+  # Node.js ランタイム。nixpkgs の nodejs が Node.js のセキュリティリリースに遅れているあいだだけ、
+  # nodejs.org の公式バイナリ(nix/nodejs-bin.nix)で補う(判断根拠は
+  # docs/decisions/nodejs-security-releases.md)。バージョンとハッシュは git 管理外の
+  # nix/nodejs-bin.local.json にあり、dotfiles-update(scripts/nodejs-security.sh update)が
+  # 署名を検証して書き込む。flake の評価は git 管理下のファイルしか見えないため、`./` ではなく
+  # dotfilesDir(--impure で読む実体のパス)から読む。nixpkgs が追いつけば自動で nixpkgs 版に
+  # 戻るので、ファイルは古いまま残っていてよい。
+  # DOTFILES_NODEJS=nixpkgs を付けて switch すると、ファイルがあっても nixpkgs 版に固定する
+  # (公式バイナリが合わないマシン向けの逃げ道。local.sh に書けばそのマシンだけ固定できる)。
+  nodejsPinFile = dotfilesDir + "/nix/nodejs-bin.local.json";
+  nodejsMode =
+    let e = builtins.getEnv "DOTFILES_NODEJS";
+    in if e == "" then "auto" else e;
+  nodejsPin = if builtins.pathExists nodejsPinFile then lib.importJSON nodejsPinFile else null;
+  nodejsRuntime =
+    if nodejsMode == "nixpkgs" then
+      pkgs.nodejs
+    else if nodejsMode != "auto" then
+      throw "DOTFILES_NODEJS は auto か nixpkgs を指定してください(指定値: ${nodejsMode})"
+    else if nodejsPin == null || lib.versionAtLeast pkgs.nodejs.version nodejsPin.version then
+      pkgs.nodejs
+    else
+      pkgs.callPackage ./nodejs-bin.nix { pin = nodejsPin; };
 in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
@@ -273,7 +297,8 @@ in
   # eza は ls の代替(アイコン・色付き表示)。ls/ll/la/lt エイリアスとして使う
   # (home/.config/shell/aliases.sh 側。無い環境では色付き ls にフォールバック)。
   # nodejs は JavaScript/TypeScript ランタイム(npm 同梱)。バージョンを固定せず nixpkgs の
-  # `nodejs` エイリアス(= 現行 LTS)に追従する。プロジェクトごとのバージョン切り替えツール
+  # `nodejs` エイリアス(= 現行 LTS)に追従する(セキュリティリリースで nixpkgs が遅れている
+  # あいだだけ、上の let の nodejsRuntime が公式バイナリに差し替える)。プロジェクトごとのバージョン切り替えツール
   # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
   # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
@@ -300,7 +325,7 @@ in
     zsh-autosuggestions
     zsh-syntax-highlighting
     wezterm
-    nodejs
+    nodejsRuntime
     mdgrid
     uv
   ];
