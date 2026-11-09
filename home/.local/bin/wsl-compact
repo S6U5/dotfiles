@@ -9,7 +9,11 @@
 #       ウィンドウが引き継ぐ。全 WSL セッションが一旦終了する点に注意)
 # 使い方:
 #   wsl-compact           # 仮想ディスクを圧縮
+#   wsl-compact --log     # 過去の圧縮結果(前後のサイズ)を表示する
 #   wsl-compact --sparse  # 代わりに Sparse VHD(自動回収)を有効化する(WSL 2.0+)
+# 圧縮の前後のサイズは Windows 側の %LOCALAPPDATA%\dotfiles\wsl-compact.log に
+# 1 回 1 行で追記される(diskpart 自体は結果を記録しないため。圧縮中は WSL が
+# 停止しているので WSL 側には書けない)。
 set -eu
 
 if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
@@ -19,6 +23,26 @@ fi
 
 if ! command -v reg.exe >/dev/null 2>&1 || ! command -v powershell.exe >/dev/null 2>&1; then
   echo "wsl-compact: reg.exe / powershell.exe が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+# Windows 側の環境変数を取得する(%TEMP% / %LOCALAPPDATA% の解決に使う)
+_win_env() {
+  (
+    cd /mnt/c 2>/dev/null || cd /
+    cmd.exe /c "echo %$1%" 2>/dev/null | tr -d '\r'
+  )
+}
+
+log_win="$(_win_env LOCALAPPDATA)\\dotfiles\\wsl-compact.log"
+
+if [ "${1:-}" = --log ]; then
+  log_unix=$(wslpath -u "$log_win" 2>/dev/null) || log_unix=""
+  if [ -n "$log_unix" ] && [ -s "$log_unix" ]; then
+    tr -d '\r' <"$log_unix"
+  else
+    echo "wsl-compact: まだ圧縮の実行履歴がありません"
+  fi
   exit 0
 fi
 
@@ -52,10 +76,7 @@ if [ ! -e "$(wslpath -u "$vhdx" 2>/dev/null)" ]; then
 fi
 
 # Windows の一時フォルダに diskpart スクリプトと PowerShell スクリプトを生成
-wintemp=$(
-  cd /mnt/c 2>/dev/null || cd /
-  cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r'
-)
+wintemp=$(_win_env TEMP)
 # ファイル名は毎回ランダムにする(固定名だと生成〜管理者実行の隙に
 # 別プロセスが差し替える攻撃が成立しうるため)
 rand=$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n') || rand=""
@@ -70,19 +91,54 @@ printf 'select vdisk file="%s"\r\nattach vdisk readonly\r\ncompact vdisk\r\ndeta
 # エスケープする(%TEMP% がクォートや特殊文字を含むパスでも壊れないように)
 dp_win_q=$(printf '%s' "$dp_win" | sed "s/'/''/g")
 ps_win_q=$(printf '%s' "$ps_win" | sed "s/'/''/g")
+vhdx_q=$(printf '%s' "$vhdx" | sed "s/'/''/g")
+log_win_q=$(printf '%s' "$log_win" | sed "s/'/''/g")
+distro_q=$(printf '%s' "${WSL_DISTRO_NAME:-?}" | sed "s/'/''/g")
 
-cat >"$(wslpath -u "$ps_win")" <<EOF
+# Windows PowerShell 5.1 は BOM なしのファイルをシステムのコードページ(日本語環境
+# なら CP932)で読むため、UTF-8 の日本語が化けて「文字列に終端記号 " がありません」
+# という構文エラーになり、管理者ウィンドウが何もせず即閉じる。UTF-8 と判定させる
+# ために先頭に BOM(EF BB BF)を付ける。
+ps_unix=$(wslpath -u "$ps_win")
+printf '\357\273\277' >"$ps_unix"
+# 前半(sh 側の値の受け渡し)だけ変数展開し、PowerShell 本体は展開なし(<<'EOF')で
+# 書く。本体側の $ を sh にさらわれないようにするため。
+cat >>"$ps_unix" <<EOF
+\$vhdx = '$vhdx_q'
+\$log = '$log_win_q'
+\$distro = '$distro_q'
+\$diskpartScript = '$dp_win_q'
+EOF
+cat >>"$ps_unix" <<'EOF'
+$before = (Get-Item -LiteralPath $vhdx).Length
+Write-Host ("現在のサイズ: {0:0.0} GB" -f ($before / 1GB))
 Write-Host "WSL を終了します..."
 wsl --shutdown
 Start-Sleep -Seconds 3
 Write-Host "仮想ディスクを圧縮しています(数分かかることがあります)..."
-diskpart /s '$dp_win_q'
+diskpart /s $diskpartScript
+$rc = $LASTEXITCODE
+$after = (Get-Item -LiteralPath $vhdx).Length
+$result = "{0:0.0} GB -> {1:0.0} GB ({2:+0.0;-0.0;0.0} GB)" -f ($before / 1GB), ($after / 1GB), (($after - $before) / 1GB)
+if ($rc -ne 0) { $result += "  [失敗: diskpart exit $rc]" }
+Write-Host ""
+Write-Host $result
+# diskpart は結果を記録しないので、前後のサイズを 1 行ずつ追記して履歴にする
+# (wsl-compact --log で表示)。BOM なし UTF-8 で書く(WSL 側で cat しやすいように)
+try {
+  $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log)
+  $line = "{0}  {1}  {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm'), $distro, $result
+  [System.IO.File]::AppendAllText($log, $line + "`r`n", (New-Object System.Text.UTF8Encoding $false))
+} catch {
+  Write-Host "履歴の記録に失敗しました: $_"
+}
 Write-Host ""
 Write-Host "完了しました。Enter キーで閉じます"
 Read-Host
 EOF
 
-echo "対象: $vhdx"
+size_now=$(stat -c %s "$(wslpath -u "$vhdx")" 2>/dev/null | awk '{ printf "%.1f GB", $1 / 1073741824 }')
+printf '対象: %s(現在 %s)\n' "$vhdx" "${size_now:-不明}"
 echo "管理者権限の PowerShell を起動します(UAC の確認が出ます)。"
 echo "この WSL セッションはまもなく終了し、続きは Windows 側のウィンドウで実行されます。"
 (

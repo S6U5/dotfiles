@@ -8,6 +8,21 @@
 - ただし現状の `.github/workflows/secrets-scan.yml` は Action ではなく CLI 本体をバージョン・チェックサム固定で直接実行する方式のため、gitleaks-action の Node 20 廃止問題(2026年9月)の影響は受けず、動作継続に支障はない。
 - Betterleaks は 2026-02 作成、2026-03 に v1.1.1 とまだ非常に新しく、実績が薄い。移行を検討する際は `package-researcher` スキルの基準(upstream のメンテ状況・ライセンス確認)に沿って再調査してから判断する。急ぎではない。
 
+## lint の対象をシェル以外(Lua / Nix)にも広げる(2026-11時点、未着手)
+
+- 現状 `scripts/lint.sh` が見るのはシェルスクリプトだけ。`home/.config/nvim/stylua.toml` があるのに CI は stylua を回しておらず、`nix/*.nix` のフォーマット(nixfmt)・未使用束縛(statix / deadnix)も検査していない。
+- 入れるなら、ツールは `nix/home.nix` の `home.packages` に足して(`package-researcher` の手順で調査してから)、`lint.sh` は既存の方針どおり「ツールが無ければ警告してスキップ」にする。CI 側は lint ジョブに Nix を入れるか、apt で入るものに限るかを決める必要がある。
+- nixfmt を通すと `nix/home.nix` の整形が大きく変わる可能性があるため、導入時は整形だけのコミットを分ける。
+
+## CI の Nix ストアをキャッシュする(2026-11時点、未着手)
+
+- `home-manager-test` は mdgrid を Rust のソースからビルドするため、Ubuntu / macOS の両方で毎回フルビルドになっている可能性がある。まず実行時間を確認し、長いようなら `nix-community/cache-nix-action` 等でストアをキャッシュする(Action は方針どおりコミットハッシュで固定し、Dependabot の追跡対象に入れる)。
+
+## mdgrid を nixpkgs に登録する(2026-11時点、未着手。mdgrid 側の作業)
+
+- 現状は nixpkgs に無いため flake の入力からソースビルドしている(`docs/decisions/mdgrid.md`)。nixpkgs-unstable の更新で Rust ツールチェーンが変わるたびに各マシンと CI でビルドし直しになるが、ビルド時間は許容し、バイナリキャッシュ(Cachix 等)は作らないと決めた(ストレージへの影響は GC で消える一時的なもの)。
+- 登録が通ったら、この repo 側は `nix/flake.nix` の入力 `mdgrid` と `nix/home.nix` の derivation を消して `pkgs.mdgrid` に置き換え、`docs/decisions/mdgrid.md` の履歴に追記する。
+
 ## 個人的なこと・特定の文脈が分かることは一切含めない(最重要ルール)
 
 プロンプトは特に、書いた人物の状況が特定できる文脈が混ざりやすい。このファイルも含め、コミット前に必ず全文精査し、少しでも疑わしければ入れない。

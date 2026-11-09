@@ -4,6 +4,7 @@
 #                          例: cdwin Downloads / cdwin Desktop
 # WSL 以外では親切メッセージを出して何もしない(CLAUDE.md「OS 固有コマンド」参照)。
 
+# Windows のユーザーフォルダ(C:\Users\<名前>)へ移動する(WSL 用、例: cdwin Downloads)
 cdwin() {
   if ! _dotfiles_is_wsl; then
     echo "cdwin: WSL 専用のコマンドです(この環境では何もしません)" >&2

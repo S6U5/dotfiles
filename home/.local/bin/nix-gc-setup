@@ -1,0 +1,136 @@
+#!/bin/sh
+# Nix の自動 GC の上限(min-free / max-free)を設定する。既定は「何を書くか表示するだけ」で、--apply で書き込む。
+#   nix-gc-setup                    # 現在の設定と、書き込む予定の内容を表示(何も変えない)
+#   nix-gc-setup --apply            # 書き込む(daemon 構成では sudo を使う)
+#   nix-gc-setup --apply 2G 16G     # 下限・上限を指定(既定は 1G / 8G。単位は K / M / G / T)
+#
+# 何が起きるか:
+#   ビルド中に /nix/store の空きが min-free を切ると、Nix がその場で GC を走らせ、空きが max-free に
+#   戻るか消せるものが無くなるまで続ける(Nix 本体の機能。既定値 0 は無効の意味)。人が打った
+#   dotfiles-switch の中でだけ動き、タイマーで勝手に走ることはない(「反映は明示実行のみ」の方針と両立)。
+#   ただし消えるのは「誰からも指されていない」store パスだけで、古い世代が指す分は残る。世代は
+#   home-manager expire-generations で別に減らす(状況は diskreport で確認できる)。
+#
+# どこに書くか:
+#   Nix を複数ユーザー方式(nix-installer の既定。macOS は常にこれ)で入れていると、ビルドは daemon が
+#   行い、daemon は /etc/nix/nix.conf しか読まない。ユーザーの ~/.config/nix/nix.conf に書いても
+#   この設定は無視されるため、daemon 構成を検出したらシステム側に書く。単一ユーザー方式なら
+#   ~/.config/nix/nix.conf に書く。判断根拠は docs/decisions/storage-hygiene.md。
+set -eu
+
+APPLY=0
+MIN=1G
+MAX=8G
+pos=0
+for arg in "$@"; do
+  case "$arg" in
+    --apply) APPLY=1 ;;
+    -h | --help)
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+      exit 0
+      ;;
+    -*)
+      echo "nix-gc-setup: 不明なオプション: $arg" >&2
+      exit 1
+      ;;
+    *)
+      pos=$((pos + 1))
+      case "$pos" in
+        1) MIN=$arg ;;
+        2) MAX=$arg ;;
+        *)
+          echo "nix-gc-setup: 引数が多すぎます" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+  esac
+done
+
+# K / M / G / T 付きの値をバイトに直す(Nix の nix.conf は単位付きを受け付けるが、
+# ここで数値に直しておくと nix.conf の版差や表記ゆれの影響を受けない)
+to_bytes() {
+  case "$1" in
+    *[!0-9KMGTkmgt]* | "")
+      echo "nix-gc-setup: サイズの形式が不正です: $1(例: 1G、512M)" >&2
+      exit 1
+      ;;
+  esac
+  awk -v s="$1" 'BEGIN {
+    n = s + 0; u = substr(s, length(s), 1)
+    if (u ~ /[Kk]/) n *= 1024; else if (u ~ /[Mm]/) n *= 1024^2; else if (u ~ /[Gg]/) n *= 1024^3; else if (u ~ /[Tt]/) n *= 1024^4
+    printf "%d", n
+  }'
+}
+min_b=$(to_bytes "$MIN")
+max_b=$(to_bytes "$MAX")
+if [ "$min_b" -ge "$max_b" ]; then
+  echo "nix-gc-setup: min-free($MIN)は max-free($MAX)より小さくしてください" >&2
+  exit 1
+fi
+
+if ! command -v nix >/dev/null 2>&1; then
+  echo "nix-gc-setup: nix が見つかりません(この環境では何もしません)" >&2
+  exit 0
+fi
+
+# daemon 構成か(socket があるか、システムの nix.conf があれば daemon 側が読む)
+if [ -S /nix/var/nix/daemon-socket/socket ] || [ -f /etc/nix/nix.conf ]; then
+  conf=/etc/nix/nix.conf
+  system=1
+else
+  conf=${XDG_CONFIG_HOME:-$HOME/.config}/nix/nix.conf
+  system=0
+fi
+
+current() { # $1: キー。設定ファイル中の現在値(無ければ "未設定")
+  v=$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$conf" 2>/dev/null | tail -n 1 | sed 's/^[^=]*=[[:space:]]*//')
+  printf '%s' "${v:-未設定}"
+}
+
+echo "設定ファイル: $conf$([ "$system" -eq 1 ] && echo '(daemon 構成。書き込みに sudo を使います)')"
+echo "  min-free: $(current min-free) → $min_b($MIN)"
+echo "  max-free: $(current max-free) → $max_b($MAX)"
+
+if [ "$APPLY" -eq 0 ]; then
+  echo ""
+  if [ "$pos" -gt 0 ]; then
+    echo "書き込むには: nix-gc-setup --apply $MIN $MAX"
+  else
+    echo "書き込むには: nix-gc-setup --apply"
+  fi
+  exit 0
+fi
+
+# 既存の min-free / max-free 行を置き換え、無ければ末尾に追加する(他の行は変えない)
+new=$(mktemp)
+if [ -f "$conf" ]; then
+  grep -vE '^[[:space:]]*(min-free|max-free)[[:space:]]*=' "$conf" >"$new" || true
+fi
+{
+  echo "# dotfiles(nix-gc-setup): ビルド中に空きが min-free を切ったら GC し、max-free まで戻ったら止める"
+  echo "min-free = $min_b"
+  echo "max-free = $max_b"
+} >>"$new"
+
+if [ "$system" -eq 1 ]; then
+  sudo install -m 0644 "$new" "$conf"
+  rm -f "$new"
+  echo "書き込みました: $conf"
+  # daemon は起動時にしか設定を読まないので再起動する
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files nix-daemon.service >/dev/null 2>&1; then
+    sudo systemctl restart nix-daemon.service && echo "nix-daemon を再起動しました"
+  elif command -v launchctl >/dev/null 2>&1 && [ "$(uname -s)" = Darwin ]; then
+    sudo launchctl kickstart -k system/org.nixos.nix-daemon && echo "nix-daemon を再起動しました"
+  else
+    echo "nix-daemon を再起動すると設定が有効になります(方法は環境により異なります)"
+  fi
+else
+  mkdir -p "$(dirname "$conf")"
+  install -m 0644 "$new" "$conf"
+  rm -f "$new"
+  echo "書き込みました: $conf"
+fi
+
+echo ""
+echo "確認: nix config show min-free   # ($min_b と表示されれば有効)"

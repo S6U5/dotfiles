@@ -36,14 +36,14 @@ WSL / macOS / Linux で同じシェル環境・ツール・キーバインドを
 - **Nix + home-manager に一本化** — パッケージ導入・dotfiles 配布(`home/` 以下のシンボリックリンク)を単一の経路にまとめています。`nixpkgs-unstable` を追跡するため WSL / Linux でも apt のように古いバージョンで止まりません(判断根拠は [`docs/decisions/dotfiles-distribution.md`](docs/decisions/dotfiles-distribution.md) / [`docs/decisions/package-management.md`](docs/decisions/package-management.md) 参照)
 - **home/ を直接編集すればすぐ反映される** — `home.file` は `mkOutOfStoreSymlink` で配布しているため、Nix store へコピーする通常の方式と違い、`home/` 配下のファイルを編集すればそのまま `$HOME` 側に反映されます(`home-manager switch` の再実行は不要)
 - **機密ゼロ方針** — API キー・個人情報はリポジトリに置かず、git 管理外のローカルファイル(`*.local` / `local.sh`)へ分離。pre-commit フック + CI の二段でコミット前後に機密混入を検査します
-- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash / zsh ブートストラップ等)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
+- **テスト済み** — home-manager 経由の配布(リンク先・実行可能属性・bash / zsh ブートストラップ等)と、シェル設定の実際の読み込み(dash / bash / zsh)を自動テストで検証し、CI で Ubuntu / macOS 両方に対して毎回実行しています
 
 ## 前提
 
 > [!IMPORTANT]
 > **Nix 本体のインストールが必須です**。パッケージ一式(tmux / fzf / shellcheck / shfmt / zoxide / neovim / ripgrep / fd / eza / starship / wezterm 等)も `home/` 配下の設定ファイル配布も、すべて Nix + home-manager 経由で行うため、**Nix が使えない環境ではこの dotfiles は機能しません**(意図的にフォールバックは作っていません)。
 
-対応システムと、`home-manager switch` に渡す flake ターゲット(後述の `<system>`):
+対応システム(`<system>` は `home-manager switch` に渡す flake ターゲット。後述の `switch.sh` が `uname` から自動判定するため、手動で実行するとき以外は意識しなくてよい):
 
 | システム | `<system>` | 備考 |
 |---|---|---|
@@ -72,19 +72,29 @@ curl -sSfL https://artifacts.nixos.org/nix-installer | sh -s -- install --enable
 
 **3. 配布を適用**
 
-リポジトリのルートで `DOTFILES_DIR` を設定し(`nix/home.nix` が `home/` の実体パスを解決するために必要)、初回だけ `nix run` 経由で `home-manager` を呼びます(初回は `home-manager` コマンドがまだ PATH に無いため)。`<system>` は[対応システム表](#前提)の値に置き換えてください。
-
 ```sh
-export DOTFILES_DIR=$(pwd)
-nix run home-manager -- switch --flake ./nix#<system> --impure
+./switch.sh
 ```
 
-初回の `switch` が完了すると home-manager 自体も導入され、以降は短い形で実行できます。`DOTFILES_DIR` は永続化していないため、2回目以降もリポジトリのルートで毎回設定してから実行します(未設定のまま実行するとエラーで止まります):
+`switch.sh` は `home-manager switch` のラッパーで、毎回必要な `DOTFILES_DIR`(`nix/home.nix` が `home/` の実体パスを解決するために必要)・`<system>`・`--impure` を自動で揃え、実行するコマンドを表示してから走らせます。初回は `home-manager` コマンドがまだ PATH に無いため、この flake が `flake.lock` で固定する home-manager を `nix run` 経由で呼びます(2回目以降は導入済みの `home-manager` を使います。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。
+
+初回の `switch` が完了すると `dotfiles-switch` コマンドが PATH に入り、以降はどこからでも同じことを実行できます:
+
+```sh
+dotfiles-switch
+```
+
+<details>
+<summary><b>手動で <code>home-manager switch</code> を実行する場合</b></summary>
+
+`switch.sh` が内部で実行しているのは次のコマンドです(`<system>` は[対応システム表](#前提)の値に置き換えてください)。`DOTFILES_DIR` は永続化していないため、リポジトリのルートで毎回設定してから実行します(未設定のまま実行するとエラーで止まります):
 
 ```sh
 export DOTFILES_DIR=$(pwd)
 home-manager switch --flake ./nix#<system> --impure
 ```
+
+</details>
 
 **4. ターミナルのフォントを設定**
 
@@ -148,7 +158,7 @@ agent-plugins-setup
 <details>
 <summary><b><code>--impure</code> が必要な理由</b></summary>
 
-実際のユーザー名やリポジトリパスをコミットにハードコードしないため、`nix/home.nix` は `builtins.getEnv` で実行時に解決しています。flake の pure 評価では環境変数を読めないため、`--impure` が必要です。
+実際のユーザー名やリポジトリパスをコミットにハードコードしないため、`nix/home.nix` は `builtins.getEnv` で実行時に解決しています。flake の pure 評価では環境変数を読めないため、`--impure` が必要です。`switch.sh` / `dotfiles-switch` 経由なら自動で付きます。
 
 </details>
 
@@ -173,12 +183,25 @@ zsh バイナリ(shell 実行ファイル)自体はここには含めていま�
 <details>
 <summary><b>世代・パッケージのガベージコレクション</b></summary>
 
-古い世代やパッケージのガベージコレクションは home-manager / Nix 本体任せです。日常のビルドでは直近の世代が GC root として保護されるため、ディスクを空けたくなったときに手動で実行してください:
+Nix は宣言的ですが、`/nix/store` は「足すだけで勝手には引かない」置き場です。`switch` のたびに新しい世代ができ、前の世代は戻せるように残り、ビルドに使ったコンパイラ等もそのまま残ります。放置すると静かに太るので、この dotfiles では次の形で扱います(判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md)):
+
+- **知らせる**: `dotfiles-switch` / `dotfiles-update` の最後に、世代の数・store 全体と今の世代の差・自動 GC の有無を数行で表示します(表示だけ。何も消しません)。詳しくは `diskreport`。
+- **聞く**: 世代が 10 を超え、かつ 30 日より前のものがあるときは、端末で打っていれば「30 日より前の世代を消して GC しますか?[y/N]」と聞きます。`y` なら `home-manager expire-generations "-30 days"` と `nix-collect-garbage` をその場で実行します(戻せなくなる削除なので黙っては行わず、端末でなければ聞きません)。
+- **残す範囲を決める**: 容量を切り詰めたいマシンでは、`~/.config/shell/local.sh` に次のどちらか、または両方を書くと、`switch` のたびに聞かずに範囲の外の世代を消して GC します(書いたこと自体をそのマシンでの同意とみなします)。両方書いたときは「どちらかの条件で残るものは残す」で、消えるのは「D 日より古く、かつ直近 N 世代にも入らないもの」だけです。今の世代はどの場合も消えません。
+
+  ```sh
+  export DOTFILES_HM_KEEP_GENERATIONS=1   # 直近 1 世代(= 今の世代)は残す
+  export DOTFILES_HM_KEEP_DAYS=14         # 14 日以内の世代は残す
+  ```
+- **上限を決める**: `nix-gc-setup --apply` で Nix 本体の `min-free` / `max-free` を設定すると、ビルド中に空きが下限を切ったときだけ、その場で GC が走ります。人が打った `switch` の中でしか動かないので、「反映は明示実行のみ」の方針と両立します。複数ユーザー方式(nix-installer の既定)では daemon が読む `/etc/nix/nix.conf` に書く必要があるため、このコマンドが構成を見て書き先を選びます。
+- **消す**: 自動 GC で消えるのは「誰からも指されていない」store パスだけで、古い世代が指している分は残ります。世代ごと減らすときは手で実行してください:
 
 ```sh
-home-manager expire-generations   # 古い世代を削除
-nix-collect-garbage -d            # 到達不能な store パスを回収
+home-manager expire-generations '-30 days'   # 30 日より前の世代を削除(その世代へは戻せなくなる)
+nix-collect-garbage -d                       # 到達不能な store パスと古い世代を回収
 ```
+
+WSL では、中で消しても仮想ディスクは縮まないため、続けて `wsl-compact` で Windows に返してください。
 
 </details>
 
@@ -247,8 +270,7 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 1. 中身が不要、またはこのリポジトリに取り込み済み → 既存ファイルを `<ファイル名>.bak` に退避してから上書き:
 
    ```sh
-   export DOTFILES_DIR=$(pwd)
-   home-manager switch --flake ./nix#<system> --impure -b bak
+   dotfiles-switch -b bak   # 初回セットアップ中(dotfiles-switch がまだ無い)なら ./switch.sh -b bak
    ```
 2. マシン固有の値(名前・メール・キー等)が入っている → ローカル側ファイル(`~/.config/shell/local.sh` / `~/.tmux.conf.local`)へ移してから `-b bak` を付けて再実行
 3. 判断に迷う → 事前に手動で退避してから進めてください:
@@ -264,12 +286,24 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 <details>
 <summary><b>リポジトリを別の場所へ移動したとき</b></summary>
 
-`DOTFILES_DIR` を設定し直してから `home-manager switch` を再実行してください:
+移動先のリポジトリで `./switch.sh` を実行してください(対象はスクリプト自身の場所で決まるため、`DOTFILES_DIR` の設定し直しは不要です)。`~/.local/bin/dotfiles-switch` を含む `$HOME` 側のシンボリックリンクは移動前のパスを指したまま壊れていて、コマンド自体が実行できないので、この1回だけはリポジトリ内のスクリプトを直接呼びます:
 
 ```sh
-export DOTFILES_DIR=$(pwd)
-home-manager switch --flake ./nix#<system> --impure
+./switch.sh
 ```
+
+</details>
+
+<details>
+<summary><b>公式インストーラで入れた uv が残っているとき</b></summary>
+
+uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。`command -v uv` が `~/.local/bin/uv` を指していたら、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
+
+```sh
+rm ~/.local/bin/uv ~/.local/bin/uvx
+```
+
+Nix 版の uv は `uv self update` が使えません。更新は他のツールと同じく flake.lock の更新(Dependabot の PR)で入ります。
 
 </details>
 
@@ -324,22 +358,31 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | `arduino [ファイル]` | Arduino IDE で開く(Linux に本物の arduino コマンドがあればそちらを優先) |
 | `ov [名前]` | Obsidian を vault 指定で起動 |
 | `explorer [パス]` | ファイルマネージャで開く(WSL: エクスプローラー / macOS: Finder / Linux: xdg-open) |
+| `herdrs [名前]` | herdr のセッションを選んで入る(fzf で一覧から選択。一覧に無い名前を打てば新規作成。`herdrs 名前` で直接。herdr の中からは入れ子になるので実行しない) |
 | `wsl-browser <URL\|ファイル>` | Windows 側の既定ブラウザで開く(WSL 用)。WSL では `BROWSER` と xdg-open の URL・HTML の既定アプリがこれに向くため、ツールが開くページも WSL 内のブラウザではなく Windows 側で開く(判断根拠は [`docs/decisions/wsl-browser.md`](docs/decisions/wsl-browser.md)) |
 
 ### ユーティリティ
 
 | コマンド | 動作 |
 |---|---|
-| `dotfiles-update` | どこからでもこのリポジトリを更新(`git pull`。更新があれば `home-manager switch` の実行を促すメッセージを表示。実行はしない) |
+| `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧(説明は各スクリプトの先頭コメントから生成。名前を付けるとそのコマンドのヘッダ全文) |
+| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
+| `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。配布済みと違うクローンでは端末で y/N を聞き、端末が無ければ実行しない(そのクローンの `./switch.sh` を直接実行する)。別のユーザーのクローンは使わず、配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
+| `extract <ファイル...>` | アーカイブを形式を気にせず展開(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。中身がばらまかれないよう、最上位が複数ならアーカイブ名のフォルダにまとめる。既存のファイルは上書きしない。zip は unzip が無ければ bsdtar → python3 で代用、7z / rar は各ツールがあるときだけ |
+| `git-branch-sweep [--delete] [--no-fetch]` | マージ済み(merged)・リモートで削除済み(gone。スカッシュマージした PR もこちらで拾う)のローカルブランチを一覧表示。`--delete` で確認してから削除し、マージの形跡が無い gone のブランチは1本ずつ聞いてから強制削除する。現在・既定・他の worktree で使用中のブランチは対象外。`git branch-sweep` でも呼べる |
 | `notify <タイトル> [本文]` | デスクトップ通知(macOS / WSL / Linux 対応) |
-| `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除 |
-| `wsl-compact [--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す |
+| `clipcopy [ファイル...]` / `clippaste` | クリップボードへコピー(標準入力かファイル)/ クリップボードの中身を標準出力へ(macOS: pbcopy・pbpaste / WSL: Windows のクリップボード。日本語が化けないよう変換し、貼り付け時は CRLF を LF に / Linux: wl-copy・xclip・xsel)。手段が無ければ非0で終わる |
+| `diskreport [scan\|windows]` | 何がストレージを食っているかを報告(読み取り専用)。**覚えるのは `diskreport` だけ**で、普段はこれ一発: 器 → 会計 → いますぐ戻せる見込み → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 次の一手。**会計モデル**: 使用量を OS・インストール済みアプリ・ユーザーデータ・クラウド同期・仮想ディスク・キャッシュ・ごみ箱に振り分け、残りを**残差(知らない場所)**として出す。数えるときは帳簿(dpkg の申告サイズ、Nix の DB、`docker system df`、`journalctl`、Windows のレジストリ)を先に引き、普段はファイルを歩かないので数秒で終わる。**細かさは索引で出す**: 索引が無い・30 日より古いときは端末なら「今作りますか?」と聞き、`diskreport scan` でも作り直せる(`$HOME` を1回 `du`、WSL では Windows 側ドライブを WizTree に数えさせて CSV を取り込む。既定 15 分で打ち切り、`DOTFILES_DISKREPORT_SCAN_TIMEOUT`)。索引からは「大きい順」「前回の索引から増えた順」「残差の候補(一覧に無い大きな場所)」「**アプリ別**(XDG / macOS の Library / Windows の AppData・Program Files という決まった入れ物の直下をアプリ名として合計)」「開発成果物(`node_modules` / `target` / `.venv` 等。マーカーで確認)」「大きいファイル(macOS は Spotlight)」を鮮度付きで一瞬で出す。既知パスは `~/.config/dotfiles/diskreport.paths`(個人の追加は git 管理外の `diskreport.local`)。履歴を直近 30 回残して前回・週・月との差を付け、残差が跳ねたら警告。満杯で困っているときは「いますぐ戻せる見込み」を先に見る。WSL では中の `df` が当てにならないため Windows 側ドライブの空き・各 vhdx・レジストリの申告値も出し、`diskreport windows` で Windows の「ストレージ」設定を開く(`/mnt` 越しの `du` はしない)。判断根拠は [`docs/decisions/storage-hygiene.md`](docs/decisions/storage-hygiene.md) |
+| `nix-gc-setup [--apply] [下限 上限]` | Nix の自動 GC の上限(`min-free` / `max-free`。既定 1G / 8G)を設定。既定は表示のみで、`--apply` で書き込む。daemon 構成なら `/etc/nix/nix.conf` に sudo で書いて daemon を再起動、単一ユーザー方式なら `~/.config/nix/nix.conf` に書く |
+| `cachesweep [--clean] [--docker]` | 開発ツールのキャッシュをサイズ表示・削除。yarn・bun・cargo・go なども、入っていれば検出して表示する(表示のみ)。WSL では Windows 側の開発キャッシュと `%TEMP%` のサイズも PowerShell で数えて表示する(表示のみ。Windows 側は消さない) |
+| `wsl-compact [--log\|--sparse]` | WSL の仮想ディスクを圧縮して空き領域を Windows に返す。圧縮前後のサイズは Windows 側の `%LOCALAPPDATA%\dotfiles\wsl-compact.log` に 1 回 1 行で残り、`--log` で表示できる(diskpart 自体は結果を記録しないため) |
 | `wsl-wezterm-setup` | Windows 側の環境変数 `WEZTERM_CONFIG_FILE` を WSL 側の `wezterm.lua` に向けて設定 |
 | `wsl-font-setup` | WSL 内の JetBrainsMono Nerd Font を Windows 側にユーザーフォントとしてインストール |
 | `wsl-supplychain-setup` | サプライチェーン対策設定(npm / pnpm / uv)を Windows 側の標準パスへコピー(WSL 用。詳細は[セットアップの詳細](#セットアップの詳細)参照) |
 | `agent-plugins-setup [プラグイン名...]` | 同梱プラグインを Claude Code / Codex / Copilot CLI / Antigravity / Cursor のうち入っているものへ登録・導入し、取り残しを点検(明示実行。詳細は[同梱プラグイン](#同梱プラグイン)参照) |
 | `wincred <get\|set\|delete\|list> [名前]` | Windows 資格情報マネージャーの汎用資格情報を読み書き(WSL 用)。API キー等を平文ファイルに置かずに済む(判断根拠は [`docs/decisions/secrets-storage.md`](docs/decisions/secrets-storage.md)) |
 | `fbr` | fzf で git ブランチを選んで切替(fzf のある環境のみ) |
+| `fzkill [-シグナル] [絞り込み語]` | 自分のプロセスを fzf で選んで kill(Tab で複数選択。既定は TERM、止まらなければ `-9`。fzf のある環境のみ) |
 
 このほか、fzf があれば Ctrl-R(履歴検索)/ Ctrl-T(ファイル)/ Alt-C(ディレクトリ移動)、zoxide があれば `z` での高速ジャンプが有効になります。`ls` / `ll` / `la` / `lt`(ツリー表示)は eza があればアイコン・色付き表示になります(無い環境では色付き ls にフォールバック。判断根拠は [`docs/decisions/ls-replacement.md`](docs/decisions/ls-replacement.md) 参照)。
 
@@ -446,7 +489,7 @@ Claude Code などのコーディングエージェントと組み合わせて�
 
 ```
 home/              $HOME に同じ構造でリンクされる設定ファイル群
-├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替えるだけ)
+├── .zshenv                            zsh のエントリ(ZDOTDIR を .config/zsh に切り替え、Ubuntu の全体 compinit を止めるだけ)
 ├── .config/zsh/zshrc                  zsh の設定(実際の設定本体)
 ├── .config/bash/bashrc                bash の設定(実際の設定本体)
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)
@@ -478,7 +521,7 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
                    プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
                    詳細な手順は plugins/README.md)
-scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テスト・push ロック
+scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
@@ -487,12 +530,10 @@ scripts/           lint(shellcheck / shfmt)・home-manager 経由の配布テス
 ## 更新
 
 ```sh
-git pull --ff-only
-export DOTFILES_DIR=$(pwd)
-home-manager switch --flake ./nix#<system> --impure
+dotfiles-update
 ```
 
-どこからでも `dotfiles-update` コマンドで `git pull` 相当を実行できます。未コミットのローカル変更がある場合は安全のため中断します。更新があれば `home-manager switch` の実行を促すメッセージが表示されます(自動実行はしません。パッケージ導入・dotfiles 反映は明示実行のみという方針のため)。
+`dotfiles-update` はどこからでも `git pull --ff-only` を実行し、続けて `dotfiles-switch` 相当の反映(`home-manager switch`)まで行います。未コミットのローカル変更がある場合は安全のため pull の前に中断します。pull だけで止めたいときは `--no-switch`、反映だけをやり直したいときは `dotfiles-switch` を使います(pull の時点で `home/` 配下の既存ファイルの変更はシンボリックリンク越しに反映済みになるため、新規ファイル・パッケージ・activation だけが取り残されないよう既定で続けて反映します。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。反映はこのコマンドを自分で実行したときだけ走り、シェル起動時などに勝手に走ることはありません。
 
 WezTerm はプライバシー上の理由で組み込みの自動更新チェックを無効化しています(判断根拠は [`docs/decisions/terminal-emulator.md`](docs/decisions/terminal-emulator.md) 参照)。macOS / Linux(WSL 内)は `home-manager switch` で他のツールと同様に更新されますが、**Windows ネイティブ側だけは手動での更新が必要**です:
 
@@ -503,10 +544,16 @@ winget upgrade wez.wezterm
 ## テスト
 
 ```sh
+./scripts/test-shell.sh
+```
+
+Nix 無しで動く軽いテストです。使い捨ての `$HOME` に `home/` のシェル設定をコピーし、dash(POSIX sh)・bash・zsh のそれぞれで実際に読み込んで、起動時にエラーが出ないこと、自作関数が定義されること、cd 系の関数が移動しなかったときに非0を返すことなどを確かめます(入っていないシェルは飛ばします。実際の `$HOME` は変更しません)。
+
+```sh
 ./scripts/test-home-manager.sh
 ```
 
-`home-manager build`(実際に適用せず結果を確認するだけ)で、代表ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
+`home-manager build`(実際に適用せず結果を確認するだけ)で、`home/` 配下の全ファイルのリンク先・実行可能属性・bash / zsh ブートストラップの新規生成/冪等性/既存ファイル保護などを検証します(実際の `$HOME` は変更しません)。
 
 実際に `home-manager switch` まで検証したい場合は、次を実行してください。
 

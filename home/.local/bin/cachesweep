@@ -6,6 +6,8 @@
 #   cachesweep --apt-autoremove # --clean に加えて apt の不要パッケージも削除(キャッシュではなく
 #                               # パッケージ本体の削除のため、明示したときだけ)
 # OS 自体のキャッシュ(~/Library/Caches 等)には触れない(壊すリスクに見合わないため)。
+# サイズ表示では、yarn・bun・cargo・go などが入っていれば検出して出す(表示のみ。--clean の対象外)。
+# WSL では Windows 側の開発キャッシュと %TEMP% のサイズも出す(表示のみ。Windows 側は消さない)。
 set -eu
 
 MODE=report
@@ -35,8 +37,130 @@ done
 
 show() { # $1: 名前, $2: パス
   if [ -n "$2" ] && [ -e "$2" ]; then
-    printf '  %-6s %8s  %s\n' "$1" "$(du -sh "$2" 2>/dev/null | cut -f1)" "$2"
+    printf '  %-8s %8s  %s\n' "$1" "$(du -sh "$2" 2>/dev/null | cut -f1)" "$2"
   fi
+}
+
+show_first() { # $1: 名前, 残り: 候補のパス(最初に存在するものを表示)
+  name=$1
+  shift
+  for candidate in "$@"; do
+    if [ -n "$candidate" ] && [ -e "$candidate" ]; then
+      show "$name" "$candidate"
+      break
+    fi
+  done
+}
+
+# 置き場が決まっているツールは、起動せず場所だけで検出する(corepack などは起動すると取得を始めることがある)
+report_detected() {
+  detected=$(
+    show_first yarn "${YARN_CACHE_FOLDER:-}" "$HOME/Library/Caches/Yarn" "$HOME/.cache/yarn"
+    show_first bun "${BUN_INSTALL_CACHE_DIR:-}" "${BUN_INSTALL:-$HOME/.bun}/install/cache"
+    show_first deno "${DENO_DIR:-}" "$HOME/Library/Caches/deno" "$HOME/.cache/deno"
+    show_first poetry "${POETRY_CACHE_DIR:-}" "$HOME/Library/Caches/pypoetry" "$HOME/.cache/pypoetry"
+    show_first conda "$HOME/.conda/pkgs" "$HOME/miniconda3/pkgs" "$HOME/anaconda3/pkgs"
+    show_first cargo "${CARGO_HOME:-$HOME/.cargo}/registry"
+    show_first go-mod "${GOMODCACHE:-}" "${GOPATH:-$HOME/go}/pkg/mod"
+    show_first go-build "${GOCACHE:-}" "$HOME/Library/Caches/go-build" "$HOME/.cache/go-build"
+    show_first gradle "${GRADLE_USER_HOME:-$HOME/.gradle}/caches"
+    show_first maven "$HOME/.m2/repository"
+    show_first composer "${COMPOSER_CACHE_DIR:-}" "$HOME/Library/Caches/composer" "$HOME/.cache/composer"
+    show_first nuget "${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+  )
+  [ -n "$detected" ] || return 0
+  echo ""
+  echo "== その他のパッケージツール(検出のみ。--clean の対象外なので、消すときは各ツールのコマンドで)"
+  printf '%s\n' "$detected"
+}
+
+# Windows 側で動かす PowerShell(改行を除いて1行にして渡すので、文の区切りは ; で書き、引用符は ' だけを使う)。
+# 一覧の形は 名前|候補|候補...。%VAR% は Windows 側で展開し、未定義の変数は存在しないパスになって飛ばされる。
+# winget と Chocolatey のダウンロードは %TEMP% の下に入るので temp に含まれる。
+windows_script() {
+  tr -d '\n' <<'PS'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8;
+$limit = 120000;
+$clock = [Diagnostics.Stopwatch]::StartNew();
+$list = 'npm|%npm_config_cache%|%LOCALAPPDATA%\npm-cache;
+pnpm|%LOCALAPPDATA%\pnpm\store|%USERPROFILE%\.pnpm-store;
+yarn|%YARN_CACHE_FOLDER%|%LOCALAPPDATA%\Yarn\Cache;
+yarn-b|%LOCALAPPDATA%\Yarn\Berry\cache;
+bun|%BUN_INSTALL_CACHE_DIR%|%USERPROFILE%\.bun\install\cache;
+deno|%DENO_DIR%|%LOCALAPPDATA%\deno;
+pip|%PIP_CACHE_DIR%|%LOCALAPPDATA%\pip\Cache;
+uv|%UV_CACHE_DIR%|%LOCALAPPDATA%\uv\cache;
+poetry|%POETRY_CACHE_DIR%|%LOCALAPPDATA%\pypoetry\Cache;
+conda|%USERPROFILE%\.conda\pkgs|%USERPROFILE%\miniconda3\pkgs|%USERPROFILE%\anaconda3\pkgs;
+nuget|%NUGET_PACKAGES%|%USERPROFILE%\.nuget\packages;
+cargo|%CARGO_HOME%\registry|%USERPROFILE%\.cargo\registry;
+go-mod|%GOMODCACHE%|%USERPROFILE%\go\pkg\mod;
+go-build|%GOCACHE%|%LOCALAPPDATA%\go-build;
+gradle|%GRADLE_USER_HOME%\caches|%USERPROFILE%\.gradle\caches;
+maven|%USERPROFILE%\.m2\repository;
+composer|%COMPOSER_CACHE_DIR%|%LOCALAPPDATA%\Composer;
+scoop|%SCOOP%\cache|%USERPROFILE%\scoop\cache;
+vcpkg|%VCPKG_DEFAULT_BINARY_CACHE%|%LOCALAPPDATA%\vcpkg\archives;
+temp|%TEMP%';
+foreach ($entry in $list.Split(';')) {
+$parts = $entry.Split('|');
+foreach ($candidate in $parts[1..($parts.Length - 1)]) {
+$path = [Environment]::ExpandEnvironmentVariables($candidate);
+if (Test-Path -LiteralPath $path -ErrorAction SilentlyContinue) {
+$sum = [long]0;
+$cut = $false;
+try {
+Get-ChildItem -LiteralPath $path -Recurse -Force -File -ErrorAction SilentlyContinue | ForEach-Object {
+$sum += $_.Length;
+if ($clock.ElapsedMilliseconds -gt $limit) { throw 'limit' };
+};
+} catch { $cut = $true };
+[Console]::Out.WriteLine($parts[0] + [char]9 + [long]($sum / 1024) + [char]9 + $path + [char]9 + $cut);
+break;
+};
+};
+if ($clock.ElapsedMilliseconds -gt $limit) { break };
+};
+PS
+}
+
+# /mnt 越しの du は桁違いに遅いので、Windows 側の PowerShell に数えさせる(9P を通らない)
+report_windows() {
+  [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null || return 0
+  echo ""
+  echo "== Windows 側のキャッシュ(表示のみ。--clean では消しません)"
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    echo "  (powershell.exe が見つからないので数えません。Windows 連携が無効?)"
+    return 0
+  fi
+  script=$(windows_script)
+  limiter=
+  command -v timeout >/dev/null 2>&1 && limiter="timeout 150"
+  windows_rc=0
+  # shellcheck disable=SC2086  # limiter は「timeout 150」を2語に分けて渡す意図
+  windows_out=$(
+    cd /mnt/c 2>/dev/null || cd /
+    $limiter powershell.exe -NoProfile -NonInteractive -Command "$script" 2>/dev/null
+  ) || windows_rc=$?
+  if [ "$windows_rc" -ne 0 ] && [ -z "$windows_out" ]; then
+    echo "  (数えられませんでした。PowerShell の実行に失敗したか、上限時間を超えました)"
+    return 0
+  fi
+  printf '%s\n' "$windows_out" | tr -d '\r' | awk -F'\t' '
+    function human(k) {
+      if (k >= 1048576) return sprintf("%.1fG", k / 1048576)
+      if (k >= 1024) return sprintf("%.1fM", k / 1024)
+      return sprintf("%dK", k)
+    }
+    NF >= 4 {
+      n++
+      total += $2
+      printf "  %-8s %8s  %s%s\n", $1, human($2), $3, ($4 == "True" ? "(上限時間で打ち切り。以降は数えていません)" : "")
+    }
+    END {
+      if (n) printf "  %-8s %8s\n", "合計", human(total)
+      else print "  (見つかりませんでした)"
+    }'
 }
 
 echo "== キャッシュの状態"
@@ -52,6 +176,8 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 if [ "$MODE" = report ]; then
+  report_detected
+  report_windows
   echo ""
   echo "削除するには: cachesweep --clean(Docker も含めるなら --docker)"
   exit 0
