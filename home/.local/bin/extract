@@ -38,7 +38,8 @@ strip_ext() {
 # 単体圧縮ファイル(.gz 等)の解凍。$1: ファイル、$2: 解凍コマンド
 decompress_single() {
   out=$(strip_ext "$1")
-  if [ -e "$out" ]; then
+  # -e はリンク先を見るので、リンク先の無いシンボリックリンクは -L で弾く
+  if [ -e "$out" ] || [ -L "$out" ]; then
     echo "extract: $out が既にあるので展開しません" >&2
     return 1
   fi
@@ -46,8 +47,13 @@ decompress_single() {
     echo "extract: $2 が見つかりません($1 の展開に必要)" >&2
     return 1
   fi
-  "$2" -dc -- "$1" >"$out" || {
-    rm -f -- "$out"
+  # 検査のあとに置かれたリンクもたどらないよう、noclobber で新規作成に限って開く。
+  # 125 は「開けたが解凍に失敗した」印で、開けなかったときは自分の作っていないものなので消さない
+  (
+    set -C
+    { "$2" -dc -- "$1" || exit 125; } >"$out"
+  ) || {
+    [ "$?" -ne 125 ] || rm -f -- "$out"
     return 1
   }
   echo "extract: $1 → $out"
@@ -62,7 +68,8 @@ unpack_into() {
       elif have bsdtar; then
         bsdtar -xf "$1" -C "$2"
       elif have python3; then
-        python3 -m zipfile -e "$1" "$2"
+        # -I(隔離モード): カレントの zipfile.py などを標準ライブラリより先に読まないようにする
+        python3 -I -m zipfile -e "$1" "$2"
       else
         echo "extract: unzip が見つかりません(bsdtar・python3 も無し)" >&2
         return 1

@@ -22,6 +22,14 @@ if command -v fzf >/dev/null 2>&1; then
       return 0
     }
     if [ -n "$_fbr_sel" ]; then
+      # リモートのブランチ名は相手が決められ、- で始まると git switch のオプションになるため切り替えない
+      case "$_fbr_sel" in
+        -*)
+          echo "fbr: - で始まるブランチ名には切り替えられません" >&2
+          unset _fbr_sel
+          return 1
+          ;;
+      esac
       git switch "$_fbr_sel"
     fi
     unset _fbr_sel
