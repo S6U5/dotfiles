@@ -295,6 +295,32 @@ else
 fi
 expect_in "$out" "+3.0M      4.0M  $DISK_TEST/home/real" "索引: 偽造した行があっても、普通の行の前回比は出る"
 
+echo "== 5) cachesweep が入っているツールだけを表示し、WSL では Windows 側も数えるか"
+# Windows 側は偽の powershell.exe が返す行の表示だけを確かめる(PowerShell の中身は動かない)
+SWEEP_TEST=$WORK_DIR/cachesweep
+mkdir -p "$SWEEP_TEST/bin" "$SWEEP_TEST/home/.cargo/registry/index"
+head -c 4096 /dev/urandom >"$SWEEP_TEST/home/.cargo/registry/index/crate"
+cat >"$SWEEP_TEST/bin/powershell.exe" <<'EOF'
+#!/bin/sh
+printf 'npm\t2097152\tC:\\Users\\me\\AppData\\Local\\npm-cache\tFalse\r\n'
+printf 'scoop\t1024\tC:\\Users\\me\\scoop\\cache\tTrue\r\n'
+EOF
+chmod +x "$SWEEP_TEST/bin/powershell.exe"
+run_cachesweep() { # 引数は env に渡す追加の環境変数
+  env -i HOME="$SWEEP_TEST/home" PATH="$SWEEP_TEST/bin:/usr/bin:/bin" "$@" \
+    "$DOTFILES_DIR/home/.local/bin/cachesweep" </dev/null 2>&1
+}
+out=$(run_cachesweep WSL_DISTRO_NAME=test) || ng "cachesweep が非0で終了"
+expect_in "$out" "cargo" "cachesweep: 入っているツールを検出する"
+expect_not_in "$out" "yarn" "cachesweep: 入っていないツールは出さない"
+expect_in "$out" "2.0G  C:\\Users\\me\\AppData\\Local\\npm-cache" "cachesweep: WSL では Windows 側のサイズを出す"
+expect_in "$out" "上限時間で打ち切り" "cachesweep: 打ち切ったことを出す"
+expect_in "$out" "合計" "cachesweep: Windows 側の合計を出す"
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  out=$(run_cachesweep) || ng "cachesweep が非0で終了(WSL 以外)"
+  expect_not_in "$out" "Windows 側" "cachesweep: WSL 以外では Windows 側を数えない"
+fi
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1
