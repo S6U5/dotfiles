@@ -28,6 +28,6 @@
 ## トレードオフ
 
 - **`home-manager switch` で完結しない。** マシンごとに `agent-plugins-setup`(`home/.local/bin/`)の明示実行が1回要る。更新時も、ローカル参照の Marketplace は自動更新が効かないため実行が必要。
-- **マニフェストが3つになる。** Claude Code も Codex もルート直下の標準 `plugin.json` を読まない(Cursor と Copilot / VS Code は読む)。1つに寄せると、寄せた先を読まないツールがメタデータを黙って失う。
+- **マニフェストが3つになる。** Claude Code はルート直下の標準 `plugin.json` を読まないので `.claude-plugin/plugin.json` を別に置く。Codex は標準版を読むが、表示用の `interface` は `.codex-plugin/plugin.json` で上乗せする(詳細は `plugins/README.md`)。1つに寄せると、寄せた先を読まないツールがメタデータを黙って失う。
 - **リポジトリを移動するとローカル参照が切れる。** エラーにはならず静かに読み込まれなくなるだけなので気づきにくい。`agent-plugins-setup` の再実行で復旧する。
 - **有効化はマシンごとの手作業になる。** 登録しただけでは使える状態にならない。ただしこれは上記「環境ごとの有効/無効」の裏返しで、切り替えられることと引き換えの手数。
