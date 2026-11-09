@@ -49,7 +49,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | ユーザーデータ | `du` で各フォルダ(ローカル FS) | Everything → WizTree → 無ければ「ストレージ」設定を開く。`/mnt` 越しの `du` はしない | `du` で各フォルダ、大きいファイルは `mdfind` |
 | クラウド同期 | (該当なし) | OneDrive フォルダはプレースホルダに注意(論理サイズで見える) | `~/Library/CloudStorage`、iCloud の退避可能分 |
 | 仮想ディスク・コンテナ | `docker system df`(Engine) | Lxss の BasePath から各 `ext4.vhdx` を `stat`、`%LOCALAPPDATA%\Docker\wsl` | VM イメージの既知パス |
-| アプリデータ・キャッシュ | 既知パス一覧(`~/.cache` 等) | Everything / WizTree に任せる | 既知パス一覧(`~/Library/{Caches,Application Support,Containers,Developer,Logs}`) |
+| アプリデータ・キャッシュ | 既知パス一覧(`~/.cache` 等) | Everything / WizTree に任せる。場所が決まっている開発キャッシュだけは `cachesweep` が Windows 側の PowerShell で数える | 既知パス一覧(`~/Library/{Caches,Application Support,Containers,Developer,Logs}`) |
 | 開発成果物 | マーカー探索(明示指定) | 同左(ローカルに置く前提。`/mnt` 配下は遅い旨を注記) | 同左 |
 | ごみ箱・バックアップ | `~/.local/share/Trash` | `$Recycle.Bin`、`Windows.old`(帳簿なし。ストレージ設定) | `~/.Trash`、`MobileSync/Backup` |
 
@@ -132,10 +132,11 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 実装済み(索引・アプリ別): `scan`(`$HOME` の `du -xkd 6`、WSL では WizTree の CSV 取り込み、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`--windows`(Windows の「ストレージ」設定を開く)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
 - 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
-- 実機未検証: WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に WizTree のコマンドライン引数(`/export` `/admin=1` `/exportfolders=1` `/exportfiles=0` `/exportdrivecapacity=0`)と CSV の見出し行は公式ガイドをこの環境から読めず、記憶に基づく。実機で `diskreport scan` を1回走らせて CSV が取り込めるかを確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
+- 実機未検証: `cachesweep` の Windows 側(PowerShell の動作は macOS の PowerShell 7 で確かめただけで、Windows PowerShell 5.1 と WSL からの起動は未実行。各ツールの置き場は既定の場所の知識に基づく)。WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に WizTree のコマンドライン引数(`/export` `/admin=1` `/exportfolders=1` `/exportfiles=0` `/exportdrivecapacity=0`)と CSV の見出し行は公式ガイドをこの環境から読めず、記憶に基づく。実機で `diskreport scan` を1回走らせて CSV が取り込めるかを確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
+- (2026-11: `cachesweep` のサイズ表示に、WSL での Windows 側の開発キャッシュと、そのほかのパッケージツールの検出を足した。WizTree が無くても Windows 側のキャッシュの量が分かるようにするため。Windows 側の中身は Windows の道具で見る原則どおり、`/mnt` 越しの `du` ではなく Windows 側の PowerShell に決まった場所だけを数えさせ、上限時間を付けた。新しいコマンドは足さず、表示だけにして `--clean` は Windows 側に触れない。ツールは起動せず場所で検出する。corepack などは起動すると取得を始めることがあるため)
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)
 - (2026-11: `diskreport --windows` は `/mnt` 越しの `du` をやめ、Windows の「ストレージ」設定を開くだけに変更。理由は本文「帳簿優先の原則」)
 - (2026-11: 集計の誤りを修正し、macOS 分岐を実機で確認。Docker Desktop では `docker system df` を会計に足さない。イメージは仮想ディスクのファイルの中にあり、そのファイルを別に数えているため。判定は OS ではなく `docker info` の OperatingSystem で行う。macOS でも Colima などは VM のファイルが一覧に無く、帳簿の値が唯一の帰属になるため。入れ子はカテゴリが違えば内側のカテゴリへ移す。大きいファイルは見かけのサイズではなく実割り当てで測る。疎ファイルの仮想ディスクとローカルに実体の無いクラウドのファイルが上位を占めるため)
