@@ -9,6 +9,9 @@
 #   ./update.sh --no-switch  # pull だけ(反映はあとで dotfiles-switch)
 #   ./update.sh --dry-run    # pull も反映もせず状態表示のみ
 #
+# pull と反映のあいだで、Node.js のセキュリティリリースに nixpkgs が遅れていないかを調べ、
+# 遅れていれば公式バイナリを取り込む(scripts/nodejs-security.sh。git 管理外のファイルに書くだけ)。
+#
 # 安全設計:
 #   - 未コミットのローカル変更(未追跡ファイル含む)があれば中断する(上書き事故防止)。
 #   - pull は fast-forward のみ(--ff-only)。勝手にマージコミットを作らない。
@@ -55,8 +58,28 @@ if [ -n "$(git -C "$DOTFILES_DIR" status --porcelain)" ]; then
   exit 1
 fi
 
+# Node.js のセキュリティリリースに nixpkgs が遅れていれば、公式バイナリを取り込む。
+# 書くのは git 管理外の nix/nodejs-bin.local.json だけで、実際に入るのは続く switch のとき
+# (判断根拠は docs/decisions/nodejs-security-releases.md)。判定できなかったとき
+# (nix が無い・オフライン等)は何も表示しない。--dry-run では遅れを表示するだけで書かない。
+sync_nodejs_security() {
+  local rc=0
+  "$DOTFILES_DIR/scripts/nodejs-security.sh" check >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 10 ] || return 0
+  log ""
+  if [ "$DRY_RUN" -eq 1 ]; then
+    warn "Node.js のセキュリティリリースに nixpkgs が追いついていません(dry-run のため取り込みません)。"
+    return 0
+  fi
+  log "Node.js のセキュリティリリースに nixpkgs が追いついていないため、公式バイナリを取り込みます:"
+  if ! "$DOTFILES_DIR/scripts/nodejs-security.sh" update 2>&1 | sed 's/^/  /'; then
+    warn "取り込みに失敗しました。nixpkgs 版のまま進めます(上の出力を確認してください)。"
+  fi
+}
+
 if [ "$DRY_RUN" -eq 1 ]; then
   log "[dry-run] git pull と反映(switch.sh)はスキップします。"
+  sync_nodejs_security
   exit 0
 fi
 
@@ -69,6 +92,8 @@ if [ "$old_head" != "$new_head" ]; then
   log "同梱プラグインも更新する場合(Claude Code / Codex):"
   log "  agent-plugins-setup"
 fi
+
+sync_nodejs_security
 
 if [ "$NO_SWITCH" -eq 1 ]; then
   log ""
