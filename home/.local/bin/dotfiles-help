@@ -1,0 +1,89 @@
+#!/bin/sh
+# この dotfiles が提供する自作コマンド・関数の一覧を表示する(説明は各スクリプトの先頭コメントから読む)。
+#   dotfiles-help            # 一覧(home/.local/bin/ のコマンドと、シェル関数)
+#   dotfiles-help <名前>     # そのコマンドのヘッダコメント全文(= <名前> --help と同じ内容)
+# 説明文をここに二重に持たない。各スクリプトは2行目から始まるコメントの1文目を説明として読まれる
+# 前提で書く(シェル関数は定義の直上にあるコメントブロックの1行目)。
+set -eu
+
+# インストール後の実体はリポジトリへのシンボリックリンクなので、自身のリンクをたどって
+# リポジトリの場所を割り出す(パスのハードコードを避ける。dotfiles-update と同じ)
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case "$link" in
+    /*) target=$link ;;
+    *) target=$(dirname "$target")/$link ;;
+  esac
+done
+repo=$(cd "$(dirname "$target")/../../.." && pwd)
+bin_dir=$repo/home/.local/bin
+shell_dir=$repo/home/.config/shell
+
+if [ ! -d "$bin_dir" ]; then
+  echo "dotfiles-help: リポジトリが見つかりません($bin_dir がありません)" >&2
+  exit 1
+fi
+
+case "${1:-}" in
+  -h | --help)
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+    exit 0
+    ;;
+  "") ;;
+  *)
+    f=$bin_dir/$1
+    if [ ! -f "$f" ]; then
+      echo "dotfiles-help: $1 というコマンドはありません(一覧は dotfiles-help)" >&2
+      exit 1
+    fi
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$f"
+    exit 0
+    ;;
+esac
+
+# 2行目から始まるコメントブロックをつなげて、1文目(最初の「。」まで)を返す。
+# 文が複数行にまたがっていても切れない。「。」が無ければブロック全体
+first_sentence() {
+  awk '
+    NR > 1 && !/^#/ { exit }
+    NR > 1 {
+      sub(/^# */, "")
+      # 行をつなぐとき、英数字・記号どうしが隣り合うなら空白を1つ挟む(日本語どうしはそのまま)
+      if (s != "" && (s ~ /[ -~]$/ || $0 ~ /^[ -~]/)) s = s " "
+      s = s $0
+    }
+    END { sub(/。.*/, "", s); print s "。" }' "$1"
+}
+
+echo "dotfiles の自作コマンド(詳細: dotfiles-help <名前> または <名前> --help)"
+echo ""
+echo "  dotfiles-update = git pull --ff-only + dotfiles-switch。手元の編集を反映するだけなら dotfiles-switch。"
+echo ""
+echo "== コマンド(home/.local/bin/)"
+for f in "$bin_dir"/*; do
+  [ -f "$f" ] && [ -x "$f" ] || continue
+  name=$(basename "$f")
+  # 他コマンドの共通実体で、直接使わないもの
+  case "$name" in office-open) continue ;; esac
+  printf '  %-22s %s\n' "$name" "$(first_sentence "$f")"
+done
+
+echo ""
+echo "== シェル関数(home/.config/shell/)"
+for f in "$shell_dir"/*.sh; do
+  [ -f "$f" ] || continue
+  # 定義 `name() {` の直上に続くコメントブロックの1行目を説明にする。_ 始まりは内部用なので除く
+  awk '
+    /^[ \t]*#/ { if (block == "") block = $0; next }
+    /^[ \t]*[a-z][a-z0-9_]*\(\) *\{/ {
+      name = $1; sub(/\(\).*/, "", name)
+      desc = block; sub(/^[ \t]*# */, "", desc); sub(/。.*/, "", desc)
+      printf "  %-22s %s\n", name, desc
+    }
+    { block = "" }
+  ' "$f"
+done
+
+echo ""
+echo "  cd 系の関数は実際に移動したときだけ終了コード 0 を返す(README「ユーティリティ」参照)。"

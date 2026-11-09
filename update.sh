@@ -2,19 +2,24 @@
 #
 # dotfiles update
 #
-# リポジトリを最新化(git pull)する。dotfiles 本体の配布・パッケージ導入は
-# home-manager に一本化しているため(判断根拠は docs/decisions/dotfiles-distribution.md
-# 参照)、反映には別途 home-manager switch の実行が必要。
+# リポジトリを最新化(git pull)し、続けて home-manager switch(switch.sh)でパッケージ導入と
+# home/ 配下の配布を反映する。「リポジトリの状態にこのマシンを揃える」コマンド。
 #
-#   ./update.sh            # 更新
-#   ./update.sh --dry-run  # pull はせず状態表示のみ
+#   ./update.sh              # pull → 反映(更新が無くても反映は実行する。冪等)
+#   ./update.sh --no-switch  # pull だけ(反映はあとで dotfiles-switch)
+#   ./update.sh --dry-run    # pull も反映もせず状態表示のみ
 #
 # 安全設計:
 #   - 未コミットのローカル変更(未追跡ファイル含む)があれば中断する(上書き事故防止)。
 #   - pull は fast-forward のみ(--ff-only)。勝手にマージコミットを作らない。
+#   - 反映はこのコマンドを明示実行したときだけ走る(シェル起動時やタイマーで勝手に走る
+#     仕組みは作らない。判断根拠は docs/decisions/package-management.md、pull と反映を
+#     1コマンドにした理由は docs/decisions/home-manager-switch-invocation.md 参照)。
 #
-# home-manager switch は自動実行しない(パッケージ導入・dotfiles反映は明示実行のみ
-# という方針のため。判断根拠は docs/decisions/package-management.md 参照)。
+# home/ 配下は home-manager がリポジトリの実体へ直接シンボリックリンクするため、pull の
+# 時点で既存ファイルの変更は反映済みになる。新規ファイルのリンク・パッケージの増減・
+# activation の処理だけが switch 待ちになるので、pull だけで止めると新旧が混ざる。
+# それを避けるため既定で続けて反映する。
 set -euo pipefail
 
 DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -23,9 +28,11 @@ log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 DRY_RUN=0
+NO_SWITCH=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
+    --no-switch) NO_SWITCH=1 ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
       exit 0
@@ -49,7 +56,7 @@ if [ -n "$(git -C "$DOTFILES_DIR" status --porcelain)" ]; then
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "[dry-run] git pull はスキップします。"
+  log "[dry-run] git pull と反映(switch.sh)はスキップします。"
   exit 0
 fi
 
@@ -59,10 +66,20 @@ new_head=$(git -C "$DOTFILES_DIR" rev-parse HEAD)
 
 if [ "$old_head" != "$new_head" ]; then
   log ""
-  log "更新を反映するには以下を実行してください:"
-  log "  DOTFILES_DIR=\"$DOTFILES_DIR\" home-manager switch --flake \"$DOTFILES_DIR/nix#<system>\" --impure"
-  log "  (<system> は x86_64-linux / aarch64-linux / aarch64-darwin から選択)"
-  log ""
   log "同梱プラグインも更新する場合(Claude Code / Codex):"
   log "  agent-plugins-setup"
+fi
+
+if [ "$NO_SWITCH" -eq 1 ]; then
+  log ""
+  log "反映は後で実行してください:"
+  log "  dotfiles-switch   (または $DOTFILES_DIR/switch.sh)"
+  exit 0
+fi
+
+log ""
+if ! "$DOTFILES_DIR/switch.sh"; then
+  warn "反映(home-manager switch)に失敗しました。既存ファイルとの衝突なら、退避して上書きする次のコマンドで再実行できます:"
+  warn "  dotfiles-switch -b bak   (または $DOTFILES_DIR/switch.sh -b bak)"
+  exit 1
 fi

@@ -65,7 +65,8 @@ nixpkgs側で `broken` フラグが付いている、更新が長期間止まっ
 ユーザーの承認を得てから、`nix/home.nix` の `home.packages` リストにパッケージ名を追記する
 (既存のエントリと同じ形式に揃える。用途がひと目で分かるようコメントを添える)。
 
-- 追記後は `home-manager switch --flake ./nix#<system> --impure` で実機に反映し、実際に導入
+- 追記後は `dotfiles-switch`(リポジトリ内なら `./switch.sh`。中身は
+  `home-manager switch --flake ./nix#<system> --impure`)で実機に反映し、実際に導入
   できることを確認する(可能な環境であれば)。
 - `TODO.md` に決定事項として1行〜数行で記録する(既存エントリを参考にしたフォーマットで、
   背景・判断が後から追えるようにする)。
@@ -75,8 +76,8 @@ nixpkgs側で `broken` フラグが付いている、更新が長期間止まっ
 
 ## 注意点
 
-- `nix/home.nix` の変更は `home-manager switch --flake ./nix#<system>` を **明示的に実行した
-  ときだけ**反映される(CLAUDE.md の「明示的に実行したときだけ動く」方針。update.sh からは
-  呼ばれない)。
+- `nix/home.nix` の変更は `dotfiles-switch` / `./switch.sh`(`home-manager switch` のラッパー)か、
+  `git pull` に続けて同じ反映を行う `dotfiles-update` を **明示的に実行したときだけ**反映される
+  (CLAUDE.md の「明示的に実行したときだけ動く」方針。シェル起動時などに勝手には走らない)。
 - 機密情報・個人情報を一切コメントに含めない(CLAUDE.md 最重要ルール)。
 - 迷ったら `references/repo-conventions.md` にこのリポジトリの関連方針をまとめてあるので参照する。

@@ -45,7 +45,8 @@ _obsidian_pick() {
   if command -v jq >/dev/null 2>&1; then
     _obs_paths=$(jq -r '.vaults[].path' "$_obs_conf")
   elif command -v python3 >/dev/null 2>&1; then
-    _obs_paths=$(python3 -c 'import json, sys
+    # -I: カレントディレクトリに置かれた json.py などを import しない(sys.path から外す)
+    _obs_paths=$(python3 -I -c 'import json, sys
 for v in json.load(open(sys.argv[1], encoding="utf-8"))["vaults"].values():
     print(v["path"])' "$_obs_conf")
   else
@@ -137,7 +138,8 @@ ov() {
   if command -v jq >/dev/null 2>&1; then
     _ov_enc=$(jq -rn --arg s "$_ov_name" '$s|@uri')
   elif command -v python3 >/dev/null 2>&1; then
-    _ov_enc=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$_ov_name")
+    # -I: カレントディレクトリに置かれた urllib などを import しない(sys.path から外す)
+    _ov_enc=$(python3 -I -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$_ov_name")
   else
     echo "ov: URL エンコードに jq か python3 が必要です(どちらも見つかりません)" >&2
     unset _ov_t _ov_name

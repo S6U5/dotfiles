@@ -1,0 +1,59 @@
+#!/bin/sh
+# 標準入力(またはファイル)の内容を OS のクリップボードへコピーする。
+#   macOS: pbcopy / WSL: Windows のクリップボード(clip.exe) / Linux: wl-copy・xclip・xsel
+# 使い方: git diff | clipcopy / clipcopy ファイル...
+# 手段が無いときは非0で終わる(`... | clipcopy && echo 済` で誤って成功扱いにしないため)。
+set -eu
+
+for f in "$@"; do
+  if [ ! -f "$f" ]; then
+    echo "clipcopy: ファイルがありません: $f" >&2
+    exit 1
+  fi
+done
+
+# 引数があればそのファイル群、無ければ標準入力を流す
+emit() {
+  if [ "$#" -gt 0 ]; then
+    cat -- "$@"
+  else
+    cat
+  fi
+}
+
+case "$(uname -s)" in
+  Darwin)
+    emit "$@" | pbcopy
+    ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      if ! command -v clip.exe >/dev/null 2>&1; then
+        echo "clipcopy: clip.exe が見つかりません(Windows 連携が無効?)" >&2
+        exit 1
+      fi
+      if ! command -v iconv >/dev/null 2>&1; then
+        echo "clipcopy: iconv が見つかりません(日本語を文字化けさせずに渡すのに必要)" >&2
+        exit 1
+      fi
+      # clip.exe は UTF-8 をそのまま渡すと OEM コードページとして解釈して文字化けする。
+      # BOM 付き UTF-16LE なら Unicode として受け取るので、変換してから渡す
+      {
+        printf '\377\376'
+        emit "$@" | iconv -f UTF-8 -t UTF-16LE
+      } | clip.exe
+    elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null 2>&1; then
+      emit "$@" | wl-copy
+    elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null 2>&1; then
+      emit "$@" | xclip -selection clipboard -in
+    elif [ -n "${DISPLAY:-}" ] && command -v xsel >/dev/null 2>&1; then
+      emit "$@" | xsel --clipboard --input
+    else
+      echo "clipcopy: クリップボードを扱う手段が見つかりません(wl-copy / xclip / xsel が無いか、表示環境が無い)" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "clipcopy: 未対応の OS です($(uname -s))" >&2
+    exit 1
+    ;;
+esac

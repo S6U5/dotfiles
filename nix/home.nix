@@ -3,11 +3,13 @@ let
   # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
   # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
   # pure 評価では空文字になるため、呼び出し側は `--impure` を付けたうえで、事前に
-  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある(README 参照)。
+  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある。通常は
+  # これらを揃える `switch.sh` / `dotfiles-switch` 経由で実行する(README、
+  # docs/decisions/home-manager-switch-invocation.md 参照)。
   dotfilesDir =
     let e = builtins.getEnv "DOTFILES_DIR";
     in if e != "" then e
-       else throw "DOTFILES_DIR が未設定です。リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
+       else throw "DOTFILES_DIR が未設定です。リポジトリルートの `./switch.sh`(導入後は `dotfiles-switch`)経由で実行するか、リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
 
   homeSrcDir = dotfilesDir + "/home";
 
@@ -58,8 +60,15 @@ in
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
   # 実行時に環境から解決する。`builtins.getEnv` は flake の pure 評価では空文字になるため、
   # 呼び出し側は `--impure` を付ける必要がある(README 参照)。
+  # ホームディレクトリは $HOME をそのまま使う(/home/<名前> 決め打ちだと、ホームが別の場所にある
+  # Linux(Fedora Silverblue の /var/home、useradd -d での指定など)で home.file が別の場所に
+  # 張られてしまう)。$HOME が無いときだけ従来どおり OS の慣例から組み立てる。
   home.username = builtins.getEnv "USER";
-  home.homeDirectory = if pkgs.stdenv.isDarwin then "/Users/${config.home.username}" else "/home/${config.home.username}";
+  home.homeDirectory =
+    let h = builtins.getEnv "HOME";
+    in if h != "" then h
+       else if pkgs.stdenv.hostPlatform.isDarwin then "/Users/${config.home.username}"
+       else "/home/${config.home.username}";
 
   # home-manager 自体の互換性バージョン。初回導入時に固定し、以後は変更しない(home-manager の作法)。
   home.stateVersion = "24.11";
@@ -155,7 +164,7 @@ in
   # (dotfiles 管理外の実ファイル)。プラグイン自体が WSL 以外では何もしないため、Linux 全般で登録する
   # (manifest の platforms が linux のみのため macOS では登録しない)。
   # 再登録で有効状態に戻るため、`herdr plugin disable` での一時停止は次の switch までとなる。
-  home.activation.dotfilesHerdrPlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.isLinux ''
+  home.activation.dotfilesHerdrPlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
     if $DRY_RUN_CMD ${pkgs.herdr}/bin/herdr plugin link "${dotfilesDir}/herdr-plugins/wsl-notify" >/dev/null; then
       $VERBOSE_ECHO "dotfiles: herdr プラグイン dotfiles.wsl-notify を登録しました"
     else
@@ -171,7 +180,7 @@ in
   # xdg-mime で書き込む(WSL 内のブラウザが既定を奪い返しても、次の switch で戻る)。
   # WSL かどうかはビルド時に分からないため、Linux 全般で生成して実行時に判定する。
   # xdg-mime はストアのパスで呼ぶ(activation は空の PATH で走るため、/usr/bin の xdg-mime は見えない)。
-  home.activation.dotfilesWslBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.isLinux ''
+  home.activation.dotfilesWslBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
     if [ -n "''${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
       _dotfiles_desktop="$HOME/.local/share/applications/dotfiles-wsl-browser.desktop"
       $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_desktop")"
