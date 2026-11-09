@@ -7,6 +7,10 @@ local.sh
 # *.local にマッチしないため明示指定)
 .claude/settings.local.json
 
+# Node.js のセキュリティリリース用の固定値(dotfiles-update がマシンごとに書く。
+# docs/decisions/nodejs-security-releases.md 参照)
+/nix/nodejs-bin.local.json
+
 # マシン固有・個人的なファイル置き場(壁紙画像など、コミットしないがリポジトリ配下に置きたいもの)
 /local/
 

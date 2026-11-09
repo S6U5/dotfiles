@@ -295,9 +295,16 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 </details>
 
 <details>
+<summary><b>Nix で入れたコマンドが使われないとき(同名のコマンドが先に見つかる)</b></summary>
+
+この dotfiles は `~/.local/bin` と Homebrew の bin を PATH の先頭に足すため、そこに Nix で入れたものと同じ名前のコマンドがあると、そちらが使われます。`home-manager switch`(`dotfiles-update` / `dotfiles-switch`)のたびに調べ、見つかれば警告と消すコマンド(`rm ~/.local/bin/...` / `brew uninstall ...`)を表示します。自動では消しません。
+
+</details>
+
+<details>
 <summary><b>公式インストーラで入れた uv が残っているとき</b></summary>
 
-uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。`command -v uv` が `~/.local/bin/uv` を指していたら、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
+uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。switch のときに警告と消すコマンドが表示されるので、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
 
 ```sh
 rm ~/.local/bin/uv ~/.local/bin/uvx
@@ -521,7 +528,7 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
                    プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
                    詳細な手順は plugins/README.md)
-scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック
+scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック・Node.js のセキュリティリリース追従
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 
@@ -534,6 +541,18 @@ dotfiles-update
 ```
 
 `dotfiles-update` はどこからでも `git pull --ff-only` を実行し、続けて `dotfiles-switch` 相当の反映(`home-manager switch`)まで行います。未コミットのローカル変更がある場合は安全のため pull の前に中断します。pull だけで止めたいときは `--no-switch`、反映だけをやり直したいときは `dotfiles-switch` を使います(pull の時点で `home/` 配下の既存ファイルの変更はシンボリックリンク越しに反映済みになるため、新規ファイル・パッケージ・activation だけが取り残されないよう既定で続けて反映します。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。反映はこのコマンドを自分で実行したときだけ走り、シェル起動時などに勝手に走ることはありません。
+
+### Node.js のセキュリティリリース
+
+nixpkgs の `nodejs` は、セキュリティリリースの反映が数週間遅れることがあります。`dotfiles-update` は pull と反映のあいだでこの遅れを調べ、遅れていれば nodejs.org の公式バイナリを取り込みます(署名を検証してから、git 管理外の `nix/nodejs-bin.local.json` にバージョンとハッシュを書くだけです。続く反映で入ります)。nixpkgs が追いつけば、自動で nixpkgs 版に戻ります。判断根拠は [`docs/decisions/nodejs-security-releases.md`](docs/decisions/nodejs-security-releases.md)。
+
+```sh
+./scripts/nodejs-security.sh status   # 今どちらの Node か、次の反映でどちらが入るか
+```
+
+- 署名の検証には `gpgv` を使います。入っていなければ(macOS など)、Nix の gnupg を使います。検証できなければ何も書かず、nixpkgs 版のまま進みます。
+- オフラインなどで判定できないときは何もしません(反映は失敗しません)。
+- 公式バイナリが合わないマシンでは、`~/.config/shell/local.sh` に `export DOTFILES_NODEJS=nixpkgs` と書くと、そのマシンだけ nixpkgs 版に固定できます。
 
 WezTerm はプライバシー上の理由で組み込みの自動更新チェックを無効化しています(判断根拠は [`docs/decisions/terminal-emulator.md`](docs/decisions/terminal-emulator.md) 参照)。macOS / Linux(WSL 内)は `home-manager switch` で他のツールと同様に更新されますが、**Windows ネイティブ側だけは手動での更新が必要**です:
 

@@ -193,6 +193,46 @@ else
   ng "bootstrap: バックアップ付き上書きに失敗"
 fi
 
+echo "== 8b) Nix で入れたコマンドが同名の別コマンドに隠れていないかの検知(dotfilesPathShadow)"
+# 偽の HOME / 新しい世代 / Homebrew を作り、activation script から取り出したブロックだけを走らせる
+SHADOW_ROOT=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT"' EXIT
+awk '/^_iNote "Activating %s" "dotfilesPathShadow"$/{flag=1; next} flag && /^_iNote /{exit} flag{print}' \
+  "$RESULT/activate" >"$SHADOW_ROOT/block"
+mkdir -p "$SHADOW_ROOT/gen/home-path/bin" "$SHADOW_ROOT/home/.local/bin" \
+  "$SHADOW_ROOT/brew/bin" "$SHADOW_ROOT/brew/Cellar/ripgrep/1.0/bin"
+for name in uv uvx rg mytool other; do
+  : >"$SHADOW_ROOT/gen/home-path/bin/$name"
+done
+: >"$SHADOW_ROOT/home/.local/bin/uv"
+: >"$SHADOW_ROOT/home/.local/bin/uvx"
+# home-manager が配る自作コマンド(ストアを指すリンク)は対象外
+ln -s "$RESULT/activate" "$SHADOW_ROOT/home/.local/bin/mytool"
+: >"$SHADOW_ROOT/brew/bin/brew"
+chmod +x "$SHADOW_ROOT/brew/bin/brew"
+: >"$SHADOW_ROOT/brew/Cellar/ripgrep/1.0/bin/rg"
+ln -s ../Cellar/ripgrep/1.0/bin/rg "$SHADOW_ROOT/brew/bin/rg"
+if [ -s "$SHADOW_ROOT/block" ] &&
+  shadow_out=$(HOME="$SHADOW_ROOT/home" newGenPath="$SHADOW_ROOT/gen" _dotfiles_brew_prefixes="$SHADOW_ROOT/brew" \
+    bash -euo pipefail -c ". \"$SHADOW_ROOT/block\"" 2>&1); then
+  if printf '%s\n' "$shadow_out" | grep -qF 'rm ~/.local/bin/uv ~/.local/bin/uvx' &&
+    printf '%s\n' "$shadow_out" | grep -qF 'brew uninstall ripgrep' &&
+    ! printf '%s\n' "$shadow_out" | grep -qE 'mytool|other'; then
+    ok "隠れているもの(~/.local/bin の uv / uvx、Homebrew の ripgrep)だけを案内する"
+  else
+    ng "案内の内容が想定外: $shadow_out"
+  fi
+else
+  ng "dotfilesPathShadow ブロックが見つからない、または途中で失敗した: ${shadow_out:-}"
+fi
+if [ -s "$SHADOW_ROOT/block" ] &&
+  shadow_out=$(HOME="$SHADOW_ROOT/empty" newGenPath="$SHADOW_ROOT/gen" _dotfiles_brew_prefixes="$SHADOW_ROOT/none" \
+    bash -euo pipefail -c ". \"$SHADOW_ROOT/block\"" 2>&1) && [ -z "$shadow_out" ]; then
+  ok "隠れているものが無ければ何も表示しない"
+else
+  ng "隠れているものが無いのに表示された、または失敗した: ${shadow_out:-}"
+fi
+
 echo "== 9) pre-commit フック有効化(dotfilesGitHooks)と WSL のブラウザ設定が activation script に正しく含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
@@ -237,7 +277,7 @@ echo "== 11) switch.sh / dotfiles-switch が正しい home-manager コマンド�
 # 偽の home-manager を PATH の先頭に置き、実際には switch せず渡された引数だけを記録する
 FAKE_BIN=$(mktemp -d)
 FAKE_HOME=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME"' EXIT
 cat >"$FAKE_BIN/home-manager" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >"$FAKE_ARGS"
@@ -267,7 +307,7 @@ fi
 # 権限を緩めるテストがあるので、本人だけが入れる親フォルダ(mktemp -d は 0700)の下に作る
 OTHER_ROOT=$(mktemp -d)
 OTHER_CLONE=$(cd "$OTHER_ROOT" && pwd -P)/clone
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT"' EXIT
 mkdir -p "$OTHER_CLONE/nix" "$OTHER_CLONE/home/.config"
 cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
 cp "$DOTFILES_DIR/nix/home.nix" "$OTHER_CLONE/nix/home.nix"
@@ -393,7 +433,7 @@ echo "== 12) update.sh が pull のあとに switch.sh を呼ぶか(--no-switch 
 # 合成した origin / clone で検証する(実リポジトリの remote には触れない)。clone 側の update.sh が
 # 偽の home-manager(上の FAKE_BIN)を呼ぶので、組み立てたコマンドで確認できる
 UPD_ROOT=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT"' EXIT
 GIT_T=(git -c user.name=test -c user.email=test@example.com -c init.defaultBranch=main -c commit.gpgsign=false)
 mkdir -p "$UPD_ROOT/origin/nix"
 cp "$DOTFILES_DIR/update.sh" "$DOTFILES_DIR/switch.sh" "$UPD_ROOT/origin/"
@@ -415,6 +455,57 @@ if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/e
   ok "update.sh --no-switch: switch.sh を呼ばない"
 else
   ng "update.sh --no-switch: switch.sh が呼ばれた、または失敗した"
+fi
+
+echo "== 12b) Node.js の公式バイナリ(nix/nodejs-bin.nix)への切り替え"
+# 実リポジトリの nix/nodejs-bin.local.json(マシン固有の値)には触れず、DOTFILES_DIR を
+# 一時ディレクトリに向けて、そこに置いた固定値(scripts/fixtures/nodejs-bin.json)で評価する
+NODE_ROOT=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT" "$NODE_ROOT"' EXIT
+mkdir -p "$NODE_ROOT/nix" "$NODE_ROOT/home"
+cp "$DOTFILES_DIR/scripts/fixtures/nodejs-bin.json" "$NODE_ROOT/nix/nodejs-bin.local.json"
+node_pkg_name() {
+  env DOTFILES_DIR="$NODE_ROOT" "$@" nix eval --impure --raw "$DOTFILES_DIR/nix#homeConfigurations.$SYSTEM.config.home.packages" \
+    --apply 'ps: builtins.concatStringsSep "\n" (map (p: p.name) ps)' 2>/dev/null | grep -E '^nodejs(-bin)?-[0-9]'
+}
+fixture_version=$(nix eval --raw --impure --expr "(builtins.fromJSON (builtins.readFile \"$DOTFILES_DIR/scripts/fixtures/nodejs-bin.json\")).version")
+nixpkgs_node=$(nix eval --raw --inputs-from "$DOTFILES_DIR/nix" nixpkgs#nodejs.version)
+if [ "$(nix eval --raw --expr "toString (builtins.compareVersions \"$nixpkgs_node\" \"$fixture_version\")")" = "-1" ]; then
+  want_node="nodejs-bin-$fixture_version"
+else
+  want_node="nodejs-$nixpkgs_node"
+fi
+got_node=$(node_pkg_name || true)
+if [ "$got_node" = "$want_node" ]; then
+  ok "固定値があるとき: $want_node が入る(nixpkgs は $nixpkgs_node)"
+else
+  ng "固定値があるときの Node が想定外 (got: ${got_node:-なし}, want: $want_node)"
+fi
+got_node=$(node_pkg_name DOTFILES_NODEJS=nixpkgs || true)
+if [ "$got_node" = "nodejs-$nixpkgs_node" ]; then
+  ok "DOTFILES_NODEJS=nixpkgs: 固定値があっても nixpkgs 版"
+else
+  ng "DOTFILES_NODEJS=nixpkgs で nixpkgs 版にならない (got: ${got_node:-なし})"
+fi
+if ! node_pkg_name DOTFILES_NODEJS=official >/dev/null; then
+  ok "DOTFILES_NODEJS に想定外の値: 評価エラーで止まる"
+else
+  ng "DOTFILES_NODEJS に想定外の値を渡しても評価が通ってしまう"
+fi
+# nixpkgs が追いついていても、つなぎの公式バイナリ自体が壊れていないことを確かめる
+if node_bin=$(nix build --no-link --print-out-paths --impure --expr "
+  let
+    f = builtins.getFlake \"$DOTFILES_DIR/nix\";
+    pkgs = f.inputs.nixpkgs.legacyPackages.$SYSTEM;
+  in pkgs.callPackage $DOTFILES_DIR/nix/nodejs-bin.nix {
+    pin = pkgs.lib.importJSON $DOTFILES_DIR/scripts/fixtures/nodejs-bin.json;
+  }" 2>"$BUILD_DIR/nodejs-bin.log") &&
+  [ "$("$node_bin/bin/node" --version 2>/dev/null)" = "v$fixture_version" ] &&
+  PATH=/usr/bin:/bin "$node_bin/bin/npm" --version >/dev/null 2>&1; then
+  ok "公式バイナリ $fixture_version がビルドでき、node / npm が動く"
+else
+  ng "公式バイナリのビルドまたは実行に失敗"
+  show_log_tail "$BUILD_DIR/nodejs-bin.log"
 fi
 
 if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
