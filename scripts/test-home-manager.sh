@@ -193,6 +193,46 @@ else
   ng "bootstrap: バックアップ付き上書きに失敗"
 fi
 
+echo "== 8b) Nix で入れたコマンドが同名の別コマンドに隠れていないかの検知(dotfilesPathShadow)"
+# 偽の HOME / 新しい世代 / Homebrew を作り、activation script から取り出したブロックだけを走らせる
+SHADOW_ROOT=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT"' EXIT
+awk '/^_iNote "Activating %s" "dotfilesPathShadow"$/{flag=1; next} flag && /^_iNote /{exit} flag{print}' \
+  "$RESULT/activate" >"$SHADOW_ROOT/block"
+mkdir -p "$SHADOW_ROOT/gen/home-path/bin" "$SHADOW_ROOT/home/.local/bin" \
+  "$SHADOW_ROOT/brew/bin" "$SHADOW_ROOT/brew/Cellar/ripgrep/1.0/bin"
+for name in uv uvx rg mytool other; do
+  : >"$SHADOW_ROOT/gen/home-path/bin/$name"
+done
+: >"$SHADOW_ROOT/home/.local/bin/uv"
+: >"$SHADOW_ROOT/home/.local/bin/uvx"
+# home-manager が配る自作コマンド(ストアを指すリンク)は対象外
+ln -s "$RESULT/activate" "$SHADOW_ROOT/home/.local/bin/mytool"
+: >"$SHADOW_ROOT/brew/bin/brew"
+chmod +x "$SHADOW_ROOT/brew/bin/brew"
+: >"$SHADOW_ROOT/brew/Cellar/ripgrep/1.0/bin/rg"
+ln -s ../Cellar/ripgrep/1.0/bin/rg "$SHADOW_ROOT/brew/bin/rg"
+if [ -s "$SHADOW_ROOT/block" ] &&
+  shadow_out=$(HOME="$SHADOW_ROOT/home" newGenPath="$SHADOW_ROOT/gen" _dotfiles_brew_prefixes="$SHADOW_ROOT/brew" \
+    bash -euo pipefail -c ". \"$SHADOW_ROOT/block\"" 2>&1); then
+  if printf '%s\n' "$shadow_out" | grep -qF 'rm ~/.local/bin/uv ~/.local/bin/uvx' &&
+    printf '%s\n' "$shadow_out" | grep -qF 'brew uninstall ripgrep' &&
+    ! printf '%s\n' "$shadow_out" | grep -qE 'mytool|other'; then
+    ok "隠れているもの(~/.local/bin の uv / uvx、Homebrew の ripgrep)だけを案内する"
+  else
+    ng "案内の内容が想定外: $shadow_out"
+  fi
+else
+  ng "dotfilesPathShadow ブロックが見つからない、または途中で失敗した: ${shadow_out:-}"
+fi
+if [ -s "$SHADOW_ROOT/block" ] &&
+  shadow_out=$(HOME="$SHADOW_ROOT/empty" newGenPath="$SHADOW_ROOT/gen" _dotfiles_brew_prefixes="$SHADOW_ROOT/none" \
+    bash -euo pipefail -c ". \"$SHADOW_ROOT/block\"" 2>&1) && [ -z "$shadow_out" ]; then
+  ok "隠れているものが無ければ何も表示しない"
+else
+  ng "隠れているものが無いのに表示された、または失敗した: ${shadow_out:-}"
+fi
+
 echo "== 9) pre-commit フック有効化(dotfilesGitHooks)と WSL のブラウザ設定が activation script に正しく含まれるか"
 if grep -qF 'core.hooksPath .githooks' "$RESULT/activate"; then
   ok "pre-commit フック有効化ロジックを含む"
@@ -237,7 +277,7 @@ echo "== 11) switch.sh / dotfiles-switch が正しい home-manager コマンド�
 # 偽の home-manager を PATH の先頭に置き、実際には switch せず渡された引数だけを記録する
 FAKE_BIN=$(mktemp -d)
 FAKE_HOME=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME"' EXIT
 cat >"$FAKE_BIN/home-manager" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >"$FAKE_ARGS"
@@ -267,7 +307,7 @@ fi
 # 権限を緩めるテストがあるので、本人だけが入れる親フォルダ(mktemp -d は 0700)の下に作る
 OTHER_ROOT=$(mktemp -d)
 OTHER_CLONE=$(cd "$OTHER_ROOT" && pwd -P)/clone
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT"' EXIT
 mkdir -p "$OTHER_CLONE/nix" "$OTHER_CLONE/home/.config"
 cp "$DOTFILES_DIR/switch.sh" "$OTHER_CLONE/switch.sh"
 cp "$DOTFILES_DIR/nix/home.nix" "$OTHER_CLONE/nix/home.nix"
@@ -393,7 +433,7 @@ echo "== 12) update.sh が pull のあとに switch.sh を呼ぶか(--no-switch 
 # 合成した origin / clone で検証する(実リポジトリの remote には触れない)。clone 側の update.sh が
 # 偽の home-manager(上の FAKE_BIN)を呼ぶので、組み立てたコマンドで確認できる
 UPD_ROOT=$(mktemp -d)
-trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT"' EXIT
+trap 'rm -rf "$BUILD_DIR" "$BOOTSTRAP_BLOCK" "$BOOTSTRAP_HOME" "$PROTECT_HOME" "$SHADOW_ROOT" "$FAKE_BIN" "$FAKE_HOME" "$OTHER_ROOT" "$UPD_ROOT"' EXIT
 GIT_T=(git -c user.name=test -c user.email=test@example.com -c init.defaultBranch=main -c commit.gpgsign=false)
 mkdir -p "$UPD_ROOT/origin/nix"
 cp "$DOTFILES_DIR/update.sh" "$DOTFILES_DIR/switch.sh" "$UPD_ROOT/origin/"

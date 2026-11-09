@@ -295,9 +295,16 @@ Starship のプロンプト(セパレーター記号や言語アイコン)や Ne
 </details>
 
 <details>
+<summary><b>Nix で入れたコマンドが使われないとき(同名のコマンドが先に見つかる)</b></summary>
+
+この dotfiles は `~/.local/bin` と Homebrew の bin を PATH の先頭に足すため、そこに Nix で入れたものと同じ名前のコマンドがあると、そちらが使われます。`home-manager switch`(`dotfiles-update` / `dotfiles-switch`)のたびに調べ、見つかれば警告と消すコマンド(`rm ~/.local/bin/...` / `brew uninstall ...`)を表示します。自動では消しません。
+
+</details>
+
+<details>
 <summary><b>公式インストーラで入れた uv が残っているとき</b></summary>
 
-uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。`command -v uv` が `~/.local/bin/uv` を指していたら、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
+uv は `home-manager switch` で Nix から入ります。以前に公式インストーラ(`curl ... | sh`)で入れた uv は `~/.local/bin/uv` / `~/.local/bin/uvx` に置かれていて、この dotfiles は `~/.local/bin` を PATH の先頭に足すため、そちらが Nix 版より優先されます。switch のときに警告と消すコマンドが表示されるので、次で消してください(uv がダウンロードした Python やキャッシュは消えません):
 
 ```sh
 rm ~/.local/bin/uv ~/.local/bin/uvx
