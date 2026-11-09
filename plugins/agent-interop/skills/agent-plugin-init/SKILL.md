@@ -1,46 +1,98 @@
 ---
 name: agent-plugin-init
-description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one: "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
+description: Create an agent plugin that reaches Claude Code, Codex and the Agent Plugins standard (agent-plugins.org), deciding what can be shared and where the tool-specific parts have to go. Use this for any new skill or plugin meant for more than one coding agent — "新しいスキルを作りたい", "プラグインを追加して", "create a skill for this", "make this work in Codex too" — and equally when extending or migrating an existing one, as in "add a hook to this plugin", "bundle an MCP server", "両方のツールで使えるようにして". Deciding what goes where is the substance of the task, so trigger even when the user just says "create a skill" without mentioning portability, since choosing the wrong location silently limits it to one tool. A repository-local skill still counts — it needs no manifest, but where its directory goes is the same decision, and the wrong one reaches a single tool just as quietly. Skip it for plugins that are deliberately single-tool, or when only the prose inside an existing SKILL.md is being edited.
 ---
 
 # Deciding what to share across agent plugin formats
 
-## Two standards, and two tools that sit outside them
+## Two standards, and how the two main tools relate to them
 
 - **Agent Skills** (agentskills.io) covers a single skill: `SKILL.md` is required, and client-specific settings are meant to live in **sidecar files** (Codex's `agents/openai.yaml` is one).
 - **Agent Plugins 1.0** (agent-plugins.org) covers packaging: `plugin.json`, `skills/`, `mcp.json`, `com.<reverse-domain>/`.
 
 Hooks, agents and rules fall outside both. Each tool decides those alone.
 
-**Neither Claude Code nor Codex reads the root `plugin.json`** — the two most likely targets are the two that sit outside the standard they helped write. Claude Code reads `.claude-plugin/plugin.json`; Codex requires `.codex-plugin/plugin.json` and, unlike Claude Code, does **not** discover `skills/` by convention, so the manifest has to name the path. Cursor and Copilot/VS Code do read the root manifest, which is why it still earns its place.
+**Claude Code does not read the root `plugin.json`; Codex does, but only for part of what it needs.** Claude Code reads `.claude-plugin/plugin.json` alone. Codex (0.147.0 and later) reads the root manifest *first* whenever its `$schema` points at agent-plugins.org, and takes `name`, `version`, `description` and the default `skills/` from it — then applies `.codex-plugin/plugin.json` on top only for its `interface` (plus `apps` / `hooks`). So the Codex manifest is no longer what makes the skills load; it is where Codex's UI metadata lives (the same block can instead go under `extensions["com.openai"]` in the root manifest). Cursor, Copilot CLI / VS Code and Antigravity read the root manifest too, which is why it earns its place.
 
 So `skills/` is the only genuinely shared thing, and manifests are written once per tool.
+
+## Before the shape: is this a plugin at all?
+
+A skill used only inside one repository needs no manifest and no catalog. Both tools already read a
+skills directory straight out of the working tree — they just read **different** ones, and neither
+reads the other's.
+
+| | Project skills | Personal skills |
+|---|---|---|
+| Claude Code | `.claude/skills/<name>/SKILL.md`, in the startup directory and every parent up to the repo root | `~/.claude/skills/` |
+| Codex | `.agents/skills/<name>/SKILL.md` in `$CWD`, each parent, and `$REPO_ROOT` — **and `.codex/skills/`, which works but is undocumented** | `~/.agents/skills/` |
+
+All of that is measured rather than assumed, including the negatives: Claude Code reads neither of
+Codex's directories, Codex does not read Claude Code's, and both follow a symlinked skill directory
+(`references/measurements.md`).
+
+So Codex reading two locations gives you a choice, while Claude Code reading one makes a link
+unavoidable. Put the real directory in `.agents/skills/` — the neutral location, owned by no tool —
+and let the tool-specific path be the link:
+
+```sh
+mkdir -p .agents/skills/<name>
+ln -sfn ../../.agents/skills/<name> .claude/skills/<name>
+git add .agents/skills/<name> .claude/skills/<name>
+```
+
+Claude Code loads a target reachable from two locations only once, so nothing is read twice, and
+Codex needs no configuration at all — the symlink is the part Claude Code requires. **Commit it.**
+An ignored symlink is a skill that silently exists for one tool only, and the machine that authored
+it is the one place that never notices.
+
+Anchoring the real directory in `.codex/skills/` and linking from `.claude/skills/` also reaches
+both tools today. It leaves a layout that says Codex is the home tool, though — an odd thing for the
+third tool to arrive into, and it rests on the undocumented half of Codex's behaviour. Same for a
+plain `skills/` at the root with two links: it works, and it costs a second link forever, because
+the real directory sits somewhere no tool looks.
+
+Two failure directions, both worth checking before committing:
+
+- a real directory at `.claude/skills/<name>` — reaches Claude Code alone
+- `.agents/skills/<name>` with no symlink beside it — reaches Codex alone
+
+**Claude Code's `skill-creator` writes to `.claude/skills/`**, so a skill authored with it starts in
+the first of those states. Move it and link it back as part of finishing, not later.
+
+Reach for `plugins/<name>/` only when the skill is meant to leave the repository. Manifests and
+catalog entries buy distribution and nothing else; a skill that never leaves pays their maintenance
+for no return.
 
 ## The shape that reaches every tool
 
 ```
 plugins/<name>/
-├── plugin.json                    ← standard: Cursor, Copilot/VS Code (confirmed); other conformant clients
+├── plugin.json                    ← standard: Codex 0.147+, Cursor, Copilot CLI/VS Code, Antigravity (confirmed); other conformant clients
 ├── .claude-plugin/plugin.json     ← Claude Code
-├── .codex-plugin/plugin.json      ← Codex; needs "skills": "./skills/" spelled out
+├── .codex-plugin/plugin.json      ← Codex UI metadata (interface); also the manifest for Codex before 0.147
 ├── README.md
 └── skills/<skill>/
     ├── SKILL.md                   ← the single real artifact; every tool reads this file
     └── agents/openai.yaml         ← Codex / ChatGPT UI metadata (optional)
 ```
 
-Three manifests is not duplication — each is read by a different tool, and collapsing any two silently drops that tool's metadata. **Keep `name`, `version` and `description` in step across all three.**
+Three manifests is not duplication — each is read by a different tool, and collapsing any two silently drops that tool's metadata. **Keep `name`, `version` and `description` in step across all three** — Codex shows the root manifest's values, older Codex the `.codex-plugin/` ones.
+
+Two things about the root manifest break Codex specifically. Keep `$schema` at `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json`: Codex rejects any other agent-plugins.org version, including the 1.1.0 working draft. And keep `plugin.json` a regular file — Codex treats a symlinked one as if the plugin had no manifest at all.
 
 **The condition is keeping the payload inside `skills/`.** Hold that, and new tools become reachable without restructuring.
 
 ## Creating one from scratch
 
-1. Pick a name — check it against built-in commands and existing skills before anything else.
-2. Lay out the shape above.
-3. Write the three manifests, keeping `name`, `version` and `description` identical.
-4. Write `skills/<skill>/SKILL.md`. Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
-5. Add an entry to each catalog the plugin should appear in.
-6. Verify (below) before calling it done.
+1. Settle whether it leaves the repository at all (above). If it does not, the symlink is the
+   whole task — stop there.
+2. Pick a name — check it against built-in commands and existing skills before anything else.
+3. Lay out the shape above.
+4. Write the three manifests, keeping `name`, `version` and `description` identical.
+5. Write `skills/<skill>/SKILL.md`, keeping the frontmatter to the spec's six fields (below). Every "when to use" cue belongs in the `description` — the body is only read *after* the skill has fired, so a "When to use this skill" section in it can never influence whether it fires. Add `agents/openai.yaml` if Codex presentation matters.
+6. Add an entry to each catalog the plugin should appear in.
+7. Verify (below) before calling it done.
 
 Everything below is the reasoning behind those steps — read it when a decision is not obvious.
 
@@ -64,13 +116,35 @@ The same holds inside a SKILL.md. Enumerating options a model already knows, or 
 
 ### Absence is not evidence
 
-Another repository having a file tells you a tool needs it. That file being **missing tells you nothing** — the plugin may simply not target that tool. Concluding "Codex needs no manifest of its own" because Google's `chrome-devtools-mcp` ships no `.codex-plugin/` was exactly this mistake; Codex requires it. Presence is evidence, absence is not.
+Another repository having a file tells you a tool needs it. That file being **missing tells you nothing** — the plugin may simply not target that tool. Google's `chrome-devtools-mcp` shipping no `.codex-plugin/` said nothing either way about Codex; what settled the question was Codex's own loader, which reads the root manifest first. The reverse slip happened here too: OpenAI's guide still calls `.codex-plugin/plugin.json` the required manifest, and that was taken as "Codex does not read the root one" — while the loader had been reading it since 0.147.0. Presence is evidence, absence is not, and when a guide and the implementation disagree, the implementation decides what loads.
 
 The same trap appears in tooling output: a plugin listed by `codex plugin list` only proves the catalog points at it. Whether its skills load is a separate question, and only installing it answers that.
 
 ### No `.md` outside what the standards cover
 
 **Do not create `agents/`.** Same for `commands/` and `rules/`. A subagent placed there reaches Claude Code only: Codex cannot register agents bundled in a plugin at all, and its own format is TOML rather than Markdown, so there is no single file that serves both. Tools also select files in these directories by extension without validating contents, so a foreign `.md` gets adopted silently while `validate` only warns. Express the behaviour as a skill instead; if it genuinely needs enforcement, keep the definition in `com.<reverse-domain>/` and document the manual install.
+
+### One tool passing is not passing
+
+Frontmatter is **YAML**, not free text, and a long `description` is the easiest place to break it: a plain scalar containing `: ` is a parse error. Claude Code accepts it — `claude plugin validate` reports success and the plugin installs — while Codex's validator rejects the file outright. This skill's own frontmatter shipped broken that way, through a marketplace, unnoticed. **Run every target tool's validator, and treat a green from one as saying nothing about the others.**
+
+### Frontmatter has six fields, and the seventh costs you a distribution path
+
+The Agent Skills spec defines exactly six: `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`. Only the first two are required. **Every path accepts all six**, so a skill that stays inside them travels everywhere without edits.
+
+Claude Code's CLI accepts a dozen more — `when_to_use`, `argument-hint`, `arguments`, `model`, `effort`, `context`, `agent`, `background`, `hooks`, `paths`, `shell`, `disallowed-tools`, `disable-model-invocation`, `user-invocable`. **These are not "ignored where unsupported".** claude.ai uploads, the Skills API and `package_skill.py` reject any of them outright:
+
+```
+Unexpected key(s) in SKILL.md frontmatter: argument-hint. Allowed properties are: allowed-tools, compatibility, description, license, metadata, name
+```
+
+Codex is the lenient one — it ignores keys it does not know, except `disable-model-invocation`, which it requires to be absent or `false` in a bundled plugin.
+
+So **fix on the six and add a seventh only when the behaviour is genuinely needed and this skill is not meant to travel.** Reaching for one is the frontmatter form of step 3 above: portability stops there, deliberately. Anything that can be said in the body instead should be.
+
+**`metadata` is the trap inside the safe set.** It is a free-form map, so the same key can mean different things in different tools: Codex reads `metadata.short-description` for its UI, Claude Code acts on nothing in it, and the spec asks for "reasonably unique" key names for exactly this reason. Namespace yours, and never reuse a frontmatter field name as a key.
+
+Key names collide across formats too, quietly. `tools` is a subagent field; the skill field is `allowed-tools`. Two skills in the official Claude Code marketplace carry `tools:` and nothing warns them. **A key that does nothing looks identical to a key that works.**
 
 ### Split by what you would turn off
 
@@ -85,9 +159,17 @@ claude plugin validate ./plugins/<name>
 # "Validating plugin manifest: ..." → the manifest is being read
 # "Validating components in: ..."   → it is not (only skills/ is being seen)
 
+# Codex ships its own validator inside its bundled plugin-creator skill, and it is
+# the stricter of the two — manifest fields, agents/openai.yaml, and frontmatter.
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py ./plugins/<name>
+
 claude --plugin-dir ./plugins/<name> -p "list the available skill names"
 # A name different from the manifest's `name` means that manifest was not read
 ```
+
+Both must pass. See `references/measurements.md` for where each tool keeps its own field
+definitions on disk — reachable and current, so neither the manifests nor `agents/openai.yaml`
+need to be guessed at.
 
 Plugin and skill names become slash commands, so avoid colliding with built-ins. Overriding is only documented for bundled skills; nothing says a custom skill can take over something like `/init`.
 
@@ -105,5 +187,5 @@ A SKILL.md is a prompt, so the author's situation leaks in easily — real proje
 
 **Do not read these during normal work.** Everything needed to decide is above.
 
-- `references/tool-differences.md` — per-tool layout table, where names collide, `openai.yaml` and hooks in detail. Open it when **adding support for a new tool** or when **you suspect a collision**.
+- `references/tool-differences.md` — per-tool layout table, the full frontmatter matrix with each field's constraints, where names collide, `openai.yaml` and hooks in detail. Open it when **adding support for a new tool**, when **you need a field the six do not cover**, or when **you suspect a collision**.
 - `references/measurements.md` — the measurements behind the claims above, with dates and versions. Open it when **the approach is challenged** or when **a version changed and you need to re-measure**.

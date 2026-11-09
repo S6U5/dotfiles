@@ -8,11 +8,11 @@
 
 | パス | 用途 |
 |------|------|
-| `.claude-plugin/marketplace.json` | Claude Code 用の目録 |
+| `.claude-plugin/marketplace.json` | Claude Code 用の目録(Copilot CLI もこれを読む) |
 | `.agents/plugins/marketplace.json` | Codex 用の目録(Codex で意味のあるものだけ載せる) |
-| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Cursor / Copilot / VS Code / Kiro / Gemini ほか) |
+| `plugins/<名前>/plugin.json` | Agent Plugins 1.0 標準のマニフェスト(Codex 0.147 以降 / Cursor / Copilot / VS Code / Antigravity / Kiro ほか) |
 | `plugins/<名前>/.claude-plugin/plugin.json` | Claude Code 用(ルートの標準版を読まないため別に要る) |
-| `plugins/<名前>/.codex-plugin/plugin.json` | Codex 用(同上。加えて `"skills": "./skills/"` のパス明示が要る) |
+| `plugins/<名前>/.codex-plugin/plugin.json` | Codex の表示用メタデータ(`interface`)。Codex はルートの標準版を先に読み、これを上乗せする。0.147 より前の Codex ではこれが唯一のマニフェスト |
 | `plugins/<名前>/skills/<名前>/SKILL.md` | **スキル本体(全ツールで共有する唯一の実体)** |
 | `plugins/<名前>/skills/<名前>/agents/openai.yaml` | Codex / ChatGPT 用の UI メタデータ(任意) |
 
@@ -21,11 +21,14 @@
 
 ## 収録プラグイン
 
-| 名前 | 収録スキル | 説明 | Claude Code | Codex |
-|------|------------|------|-------------|-------|
-| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ |
-| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ |
-| | `agent-plugin-init` | Claude Code / Codex / 標準の3形式に届くプラグインを作る(共通化の範囲を判断して実装) | ○ | ○ |
+| 名前 | 収録スキル | 説明 | Claude Code | Codex | Copilot CLI / VS Code | Antigravity | Cursor |
+|------|------------|------|-------------|-------|-----------------------|-------------|--------|
+| [`shin5`](shin5/README.md) | `shin5` | 図を主体に、とても簡単な日本語で解説する | ○ | ○ | ○\* | ○ | ○\* |
+| [`agent-interop`](agent-interop/README.md) | `agents-init` | CLAUDE.md を `@AGENTS.md` の1行にとどめ、指示の実体を AGENTS.md に集約する | ○ | ○ | ○\* | ○ | ○\* |
+| | `agent-plugin-init` | スキル・プラグインの置き場を決めて実装する(リポジトリ限定なら `.agents/skills/` + symlink、配布するなら3形式のマニフェスト) | ○ | ○ | ○\* | ○ | ○\* |
+
+\* 公式ドキュメントに基づく。実機では未検証(Copilot CLI は `.claude-plugin/marketplace.json` を目録として読み、
+VS Code は Copilot CLI で導入したものを読む。Cursor は標準形式のプラグインをそのまま読む)。
 
 ## セットアップ
 
@@ -41,6 +44,9 @@ claude plugin marketplace add S6U5/dotfiles --sparse .claude-plugin plugins
 
 # Codex
 codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
+
+# Copilot CLI(VS Code は Copilot CLI で入れたものを自動で読む)
+copilot plugin marketplace add S6U5/dotfiles
 ```
 
 **プラグイン自体を編集しているときはローカルパスで登録する**(GitHub 経由だと push するまで
@@ -50,6 +56,7 @@ codex plugin marketplace add S6U5/dotfiles --sparse .agents --sparse plugins
 /plugin marketplace add ./path/to/dotfiles      # Claude Code、セッション内から
 claude plugin marketplace add ./path/to/dotfiles # Claude Code、シェルから
 codex plugin marketplace add ./path/to/dotfiles  # Codex
+copilot plugin marketplace add ./path/to/dotfiles # Copilot CLI
 ```
 
 ローカルパスの場合、Claude Code には `.claude-plugin/marketplace.json` を含むディレクトリか、
@@ -57,7 +64,7 @@ codex plugin marketplace add ./path/to/dotfiles  # Codex
 (UI・コマンドから登録しても同じ内容)。
 
 ```toml
-[marketplaces.personal]
+[marketplaces.s6u5-dotfiles]
 source_type = "local"
 source = "<このリポジトリのパス>"   # 例: ~/Projects/dotfiles
 ```
@@ -71,13 +78,35 @@ ln -s "$PWD/plugins/agent-interop" ~/.cursor/plugins/local/agent-interop
 
 張ったあと Cursor を再起動するか **Developer: Reload Window** を実行する。
 
+**Antigravity も目録を経由しない。** `~/.gemini/config/plugins/` に置いたものを直接読む
+(ルート直下の `plugin.json`。Antigravity / Antigravity CLI / IDE の三者共通の置き場)。
+`agy plugin install <パス>` は**コピー**で導入するため、リポジトリを編集しても反映されない。
+シンボリックリンクなら反映されるので、Cursor と同じくリンクを張る(判断根拠は
+[`../docs/decisions/antigravity-plugins.md`](../docs/decisions/antigravity-plugins.md))。
+
+```sh
+ln -s "$PWD/plugins/agent-interop" ~/.gemini/config/plugins/agent-interop
+```
+
+**WSL とネイティブ Windows は別々に登録する。** 別々にインストールしている以上、設定ディレクトリも
+別(WSL 内は `~/.claude` / `~/.codex`、Windows 側は `%USERPROFILE%\.claude` / `%USERPROFILE%\.codex`)
+なので、WSL 内で行った登録は Windows 側に届かない。Windows 側でも GitHub 経由で登録する
+(UNC パス `\\wsl.localhost\...` でのローカル登録は採らない。判断根拠は
+[`../docs/decisions/windows-agent-plugins.md`](../docs/decisions/windows-agent-plugins.md)、
+手順はリポジトリ README の「同梱プラグイン」参照)。`agent-plugins-setup` は POSIX sh のため
+ネイティブ Windows では動かない。
+
 ### まとめてやる
 
 `agent-plugins-setup`(`home/.local/bin/`)が、以下をまとめて行う。何度実行しても安全。
+対象はその環境に入っているエージェントだけ(Claude Code / Codex / Copilot CLI / Antigravity / Cursor。無いものはスキップ)。
 
 - Marketplace の登録(未登録なら)と更新
-- 未導入のプラグインの導入
-- 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの)
+- 未導入のプラグインの導入(Antigravity / Cursor はシンボリックリンクを張る。既にある別物は上書きしない)
+- Codex の導入済みプラグインの更新(導入時の中身をコピーして読むため、リポジトリと中身が違えば入れ直す。
+  バージョンを上げずに直した場合も拾えるよう、バージョンではなく中身で比べる)
+- Copilot CLI の導入済みプラグインの更新(導入がコピーのため、`copilot plugin update` で追従させる)
+- 取り残しの点検(`~/.claude/skills/` の手動配置、`plugins/` から消えたのに導入済みのもの・リンク)
 
 ```sh
 agent-plugins-setup             # plugins/ 配下すべて
@@ -96,8 +125,8 @@ agent-plugins-setup shin5       # 指定したものだけ
 **Claude Code**
 
 ```sh
-/plugin install shin5@personal          # セッション内から(スコープを対話で選ぶ)
-claude plugin install shin5@personal    # シェルから(既定は user スコープ。--scope で変更)
+/plugin install shin5@s6u5-dotfiles          # セッション内から(スコープを対話で選ぶ)
+claude plugin install shin5@s6u5-dotfiles    # シェルから(既定は user スコープ。--scope で変更)
 ```
 
 インストール後の要約に `Run /reload-plugins to activate.` と出たら `/reload-plugins` を実行する
@@ -110,7 +139,7 @@ claude plugin install shin5@personal    # シェルから(既定は user スコ�
 `~/.codex/config.toml` に書く。
 
 ```toml
-[plugins."shin5@personal"]
+[plugins."shin5@s6u5-dotfiles"]
 enabled = true
 ```
 
@@ -122,8 +151,8 @@ enabled = true
 **Claude Code**
 
 ```sh
-/plugin install agent-interop@personal
-claude plugin install agent-interop@personal
+/plugin install agent-interop@s6u5-dotfiles
+claude plugin install agent-interop@s6u5-dotfiles
 ```
 
 呼び出しは **`/agent-interop:agents-init`** と **`/agent-interop:agent-plugin-init`**。どちらも
@@ -132,13 +161,13 @@ claude plugin install agent-interop@personal
 **Codex**
 
 ```sh
-codex plugin add agent-interop@personal
+codex plugin add agent-interop@s6u5-dotfiles
 ```
 
 `~/.codex/config.toml` に直接書いてもよい。
 
 ```toml
-[plugins."agent-interop@personal"]
+[plugins."agent-interop@s6u5-dotfiles"]
 enabled = true
 ```
 
@@ -148,11 +177,11 @@ enabled = true
 明示的に取り込む。
 
 ```sh
-/plugin marketplace update personal     # このリポジトリの変更を取り込む
+/plugin marketplace update s6u5-dotfiles     # このリポジトリの変更を取り込む
 /plugin list                            # 入っているプラグインを見る
-/plugin disable shin5@personal          # 消さずに無効化
-/plugin enable shin5@personal           # 再度有効化
-/plugin uninstall shin5@personal        # 削除
+/plugin disable shin5@s6u5-dotfiles          # 消さずに無効化
+/plugin enable shin5@s6u5-dotfiles           # 再度有効化
+/plugin uninstall shin5@s6u5-dotfiles        # 削除
 ```
 
 Codex 側はプラグインを再インストールすると反映される。
@@ -211,21 +240,50 @@ project スコープを上書きするため)。古い実体が残っている�
 
 共有できるのは `skills/<名前>/SKILL.md` だけ。マニフェストは各ツールの分をそれぞれ置く。
 
-**Claude Code も Codex もルート直下の `plugin.json` を読まない。** Claude Code は
-`.claude-plugin/plugin.json` を、Codex は `.codex-plugin/plugin.json` を見る。しかも Codex は
-Claude Code と違って `skills/` を規約で自動検出しないため、マニフェストにパスを書く必要がある。
+**Claude Code はルート直下の `plugin.json` を読まない。Codex は読む(0.147.0 以降)。** Claude Code が
+見るのは `.claude-plugin/plugin.json` だけ。Codex はルートの `plugin.json` の `$schema` が
+agent-plugins.org を指していればそれを先に読み、`name` / `version` / `description` と `skills/` を
+そこから取る。`.codex-plugin/plugin.json` はその上に `interface`(表示名・説明・カテゴリ等)を
+上乗せするためだけに読まれ、そこに書いた `name` や `skills` は使われない。ルートの版が無ければ
+`.codex-plugin/` → `.claude-plugin/` → `.cursor-plugin/` の順に探す。`skills/` はどちらの形式でも
+既定で探索されるので、`"skills": "./skills/"` は書かなくても動く(OpenAI の雛形が書くので残している)。
+出典は openai/codex のソース(`codex-rs/utils/plugins/src/plugin_namespace.rs` と
+`codex-rs/core-plugins/src/`)で、OpenAI の手引きは今も `.codex-plugin/plugin.json` を必須の
+マニフェストとして説明している(手引きと実装が食い違っている)。
+
+ルートの `$schema` は `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` のまま固定する。
+Codex はそれ以外の版(作業中の 1.1.0 を含む)を拒否する。`plugin.json` をシンボリックリンクにすると
+Codex はマニフェスト無しとして扱う。
 
 紛らわしいのは、標準形式だけのプラグインでも Claude Code では `skills/` があれば動いてしまう
 こと。ただしそのときマニフェストは読まれておらず、プラグイン名はディレクトリ名から取られ、
 `version` も `displayName` も伝わらない(実測で確認)。**動くことと意図どおり読まれていることは
 別なので、1つに寄せて整理した気にならないこと。** 3つのマニフェストは重複ではなく、それぞれ
-別のツールが読む。`name` / `version` / `description` は3つとも揃えておく。
+別の役目を持つ(ルート版は標準と Codex の本体、`.claude-plugin/` は Claude Code、`.codex-plugin/` は
+Codex の表示用)。`name` / `version` / `description` は3つとも揃えておく。
 
 | 項目 | Claude Code | Codex |
 |------|-------------|-------|
-| 目録の場所 | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` |
+| 目録の場所 | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json`(無ければ `.claude-plugin/marketplace.json` も読む) |
 | スキルの UI メタデータ | 指定できない | `skills/<名前>/agents/openai.yaml` の `interface` |
 | 暗黙呼び出しの制御 | `SKILL.md` の frontmatter `disable-model-invocation` | 同ファイルの `policy.allow_implicit_invocation` |
+| マニフェストの検証 | `claude plugin validate <パス>` | `python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py <パス>`(Codex 同梱の plugin-creator スキル内) |
+
+**`SKILL.md` の frontmatter は標準の6つに収める。** Agent Skills 標準が定めるのは `name` /
+`description` / `license` / `compatibility` / `metadata` / `allowed-tools` の6つだけ(必須は前の
+2つ)。Claude Code の CLI はこれに加えて `argument-hint`・`model`・`hooks`・`paths` などを解釈
+するが、**claude.ai へのアップロード / Skills API / `package_skill.py` は標準外のキーをエラーで
+弾く**(無視ではない)。Codex は未知のキーを無視するが、`disable-model-invocation` だけは値を見て
+`true` を拒否する。7つ目に手を出すのは、可搬性を捨てて挙動を取る判断になる。
+
+`metadata` は自由マップなので**同じキー名が別の意味を持ちうる**(Codex は `metadata.short-description`
+を UI に使う)。標準自身がキー名を十分ユニークにするよう推奨している。
+
+**検証は両方走らせる。** Codex 側のバリデータの方が厳しく、`.codex-plugin/plugin.json` の
+`author` / `interface.developerName`、`agents/openai.yaml` のキー、さらに `SKILL.md` の
+frontmatter が YAML として妥当かまで見る。Claude Code は frontmatter が YAML として壊れていても
+`validate` を通してしまうため、**片方が緑でももう片方の保証にはならない**(実測。詳細は
+`plugins/agent-interop/skills/agent-plugin-init/references/measurements.md`)。
 
 `agents/openai.yaml` は Claude Code のコンポーネント探索の対象外なので、置いたままで問題ない。
 `allow_implicit_invocation` の既定は `true` なので、暗黙発火を許すなら `policy` ごと省略する。

@@ -4,7 +4,7 @@
 
 - README で薦める・このリポジトリ経由で配布するスキルは、**ツール公式(開発元)のもの、または自作のみ**。
 - **非公式(サードパーティ製)スキルは自作を除き絶対に入れない**。スキルはエージェントへの指示文そのものであり、供給元が信頼できないものを取り込むのはサプライチェーンリスクになる(GitHub Actions をコミットハッシュで固定するのと同じ思想)。
-- 公式/非公式の判定は**「誰がスキル本文を書いたか(著者)」であって、配布経路ではない**。nixpkgs 経由の herdr スキルは、nixpkgs がビルドした公式バイナリ自身に `herdr --skill` で本文を出力させたものなので、著者は開発元のまま = 公式扱い(バイナリ本体を nixpkgs 経由で導入するのと同じ信頼構造で、新しい信頼相手は増えない)。弾きたいのは開発元以外の第三者が書いた指示文。
+- 公式/非公式の判定は **「誰がスキル本文を書いたか(著者)」であって、配布経路ではない**。nixpkgs 経由の herdr スキルは、nixpkgs がビルドした公式バイナリ自身に `herdr --skill` で本文を出力させたものなので、著者は開発元のまま = 公式扱い(バイナリ本体を nixpkgs 経由で導入するのと同じ信頼構造で、新しい信頼相手は増えない)。弾きたいのは開発元以外の第三者が書いた指示文。
 
 ## 配布方式
 
@@ -15,7 +15,7 @@
 | 他者コンテンツのコミット | ○(不要) | ×(必要。ライセンス表記も持ち込む) | ○(不要。ストアへのリンクのみ) |
 | 適用範囲 | ○(何にでも使える) | ○ | ×(nixpkgs パッケージがスキルを同梱している場合のみ) |
 
-- **herdr**: nixpkgs の `herdr` パッケージが postInstall で `herdr --skill` の出力を `share/herdr/skills/herdr/SKILL.md` として同梱しているため、`nix/home.nix` の `home.file` でストアパス参照して `~/.claude/skills/herdr` に配布する(`home-manager switch` で自動導入・手動インストール不要)。
+- **herdr**: nixpkgs の `herdr` パッケージが installAgentSkills フック(nixpkgs 共通の配置規約 `share/skills/<パッケージ名>/<スキル名>/`)で `herdr --skill` の出力を `share/skills/herdr/herdr/SKILL.md` として同梱しているため、`nix/home.nix` の `home.file` でストアパス参照して `~/.claude/skills/herdr` に配布する(`home-manager switch` で自動導入・手動インストール不要)。
 - **それ以外(Playwright CLI / Obsidian 等)**: nixpkgs にスキル同梱が無いため vendoring するしかなく、上表の理由で不採用。README に公式ドキュメントへのリンクのみ載せ、手順も転記しない(手順・配布形態の変化に公式ドキュメント側で気づけるようにする)。
 - `~/.claude/` 配下は原則エージェント側の領域で dotfiles の管理対象外だが、`~/.claude/skills/herdr` のみ例外として home.file 管理にする(機密を含まない読み取り専用データのため、AGENTS.md の home-manager 配布の判断基準にも適合)。
 

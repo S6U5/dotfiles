@@ -1,13 +1,15 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, mdgridSrc, ... }:
 let
   # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
   # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
   # pure 評価では空文字になるため、呼び出し側は `--impure` を付けたうえで、事前に
-  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある(README 参照)。
+  # `export DOTFILES_DIR=$(pwd)`(リポジトリルートで実行)しておく必要がある。通常は
+  # これらを揃える `switch.sh` / `dotfiles-switch` 経由で実行する(README、
+  # docs/decisions/home-manager-switch-invocation.md 参照)。
   dotfilesDir =
     let e = builtins.getEnv "DOTFILES_DIR";
     in if e != "" then e
-       else throw "DOTFILES_DIR が未設定です。リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
+       else throw "DOTFILES_DIR が未設定です。リポジトリルートの `./switch.sh`(導入後は `dotfiles-switch`)経由で実行するか、リポジトリルートで `export DOTFILES_DIR=$(pwd)` を実行してから home-manager switch を実行してください(README 参照)。";
 
   homeSrcDir = dotfilesDir + "/home";
 
@@ -34,13 +36,39 @@ let
           { ${rel} = { source = outOfStore rel; }; }
       )
       (builtins.readDir dir);
+
+  # mdgrid(Markdown の frontmatter を表で見る TUI)。nixpkgs に無いため、flake の入力 mdgrid
+  # (nix/flake.nix)のソースからビルドする。取得するコミットと中身のハッシュは flake.lock が固定し、
+  # 依存のクレートは mdgrid 自身の Cargo.lock のハッシュで固定される(cargoHash を手で持たない)。
+  # 試験は mdgrid 側の CI で回っており、疑似端末を使う試験はビルドの隔離環境で動かないため省く。
+  # 判断根拠は docs/decisions/mdgrid.md 参照。
+  mdgrid = pkgs.rustPlatform.buildRustPackage {
+    pname = "mdgrid";
+    version = (lib.importTOML "${mdgridSrc}/Cargo.toml").package.version;
+    src = mdgridSrc;
+    cargoLock.lockFile = "${mdgridSrc}/Cargo.lock";
+    doCheck = false;
+    meta = {
+      description = "Browse and edit Markdown frontmatter as a table in the terminal";
+      homepage = "https://github.com/S6U5/mdgrid";
+      license = with lib.licenses; [ mit asl20 ];
+      mainProgram = "mdgrid";
+    };
+  };
 in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
   # 実行時に環境から解決する。`builtins.getEnv` は flake の pure 評価では空文字になるため、
   # 呼び出し側は `--impure` を付ける必要がある(README 参照)。
+  # ホームディレクトリは $HOME をそのまま使う(/home/<名前> 決め打ちだと、ホームが別の場所にある
+  # Linux(Fedora Silverblue の /var/home、useradd -d での指定など)で home.file が別の場所に
+  # 張られてしまう)。$HOME が無いときだけ従来どおり OS の慣例から組み立てる。
   home.username = builtins.getEnv "USER";
-  home.homeDirectory = if pkgs.stdenv.isDarwin then "/Users/${config.home.username}" else "/home/${config.home.username}";
+  home.homeDirectory =
+    let h = builtins.getEnv "HOME";
+    in if h != "" then h
+       else if pkgs.stdenv.hostPlatform.isDarwin then "/Users/${config.home.username}"
+       else "/home/${config.home.username}";
 
   # home-manager 自体の互換性バージョン。初回導入時に固定し、以後は変更しない(home-manager の作法)。
   home.stateVersion = "24.11";
@@ -52,11 +80,11 @@ in
   # 生成する(nvm/pyenv 等のインストーラによる追記をリポジトリ管理下ファイルに届かせないため)。
   home.file = walkHome homeSrcDir "" // {
     # herdr の agent skill を配布する(判断根拠は docs/decisions/agent-skills.md 参照)。
-    # nixpkgs の herdr パッケージが postInstall で `herdr --skill` の出力を同梱しているため、
+    # nixpkgs の herdr パッケージが installAgentSkills フックで `herdr --skill` の出力を同梱しているため、
     # ストアパス参照にすればスキル本文とバイナリのバージョンが構造的に一致する
     # (npx skills 等での手動導入と違い、flake.lock の更新で herdr 本体と一緒に追従する)。
     # ~/.claude/ 配下は原則エージェント側の領域で管理対象外だが、このディレクトリのみ例外。
-    ".claude/skills/herdr".source = "${pkgs.herdr}/share/herdr/skills/herdr";
+    ".claude/skills/herdr".source = "${pkgs.herdr}/share/skills/herdr/herdr";
   };
 
   # ~/.bashrc / ~/.bash_profile / ~/.config/zsh/.zshrc を「dotfiles 管理外の実ファイル」として生成する。
@@ -119,15 +147,51 @@ in
 
   # このリポジトリ自身の pre-commit フック(機密情報の事前ブロック)を有効化する。
   # 旧 install.sh 末尾のロジックの移植。dotfilesDir は Nix 側の値をそのまま文字列補間する
-  # (bash 変数ではない)。
+  # (bash 変数ではない)。git はストアのパスで呼ぶ(home-manager の activation は空の PATH で
+  # 走るため、command -v git では見つからず黙って飛ばされる)。
   home.activation.dotfilesGitHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if command -v git >/dev/null 2>&1 \
-      && [ -d "${dotfilesDir}/.git" ] \
+    if [ -d "${dotfilesDir}/.git" ] \
       && [ -d "${dotfilesDir}/.githooks" ]; then
-      $DRY_RUN_CMD git -C "${dotfilesDir}" config core.hooksPath .githooks
+      $DRY_RUN_CMD ${pkgs.git}/bin/git -C "${dotfilesDir}" config core.hooksPath .githooks
       $VERBOSE_ECHO "dotfiles: ${dotfilesDir} の pre-commit フックを有効化しました(core.hooksPath = .githooks)"
     fi
   '';
+
+  # 自作の herdr プラグイン(herdr-plugins/wsl-notify: WSL でエージェントの完了・入力待ちを Windows の
+  # トースト通知で知らせる。判断根拠は docs/decisions/herdr-notification.md 参照)を登録する。
+  # `herdr plugin link` はプラグイン id をキーに上書き登録するため、毎回実行しても冪等
+  # (herdr サーバー未起動でも登録できる)。登録先は herdr 管理の ~/.config/herdr/plugins.json
+  # (dotfiles 管理外の実ファイル)。プラグイン自体が WSL 以外では何もしないため、Linux 全般で登録する
+  # (manifest の platforms が linux のみのため macOS では登録しない)。
+  # 再登録で有効状態に戻るため、`herdr plugin disable` での一時停止は次の switch までとなる。
+  home.activation.dotfilesHerdrPlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+    if $DRY_RUN_CMD ${pkgs.herdr}/bin/herdr plugin link "${dotfilesDir}/herdr-plugins/wsl-notify" >/dev/null; then
+      $VERBOSE_ECHO "dotfiles: herdr プラグイン dotfiles.wsl-notify を登録しました"
+    else
+      echo "dotfiles: 警告: herdr プラグイン dotfiles.wsl-notify の登録に失敗しました" >&2
+    fi
+  '');
+
+  # WSL: xdg-open で開く URL・HTML を、WSL 内のブラウザではなく Windows 側の既定ブラウザ
+  # (home/.local/bin/wsl-browser)へ回す。xdg-open は BROWSER より x-scheme-handler の既定アプリを
+  # 優先するため、BROWSER(os/wsl.sh)だけでは WSL 内の Chrome 等が開いてしまう。
+  # .desktop は Exec に絶対パスが要るため home/ ではなくここで生成する(dotfiles 管理外の実ファイル)。
+  # 既定アプリの登録先 ~/.config/mimeapps.list もブラウザ自身が書き換えるファイルなので管理外のまま
+  # xdg-mime で書き込む(WSL 内のブラウザが既定を奪い返しても、次の switch で戻る)。
+  # WSL かどうかはビルド時に分からないため、Linux 全般で生成して実行時に判定する。
+  # xdg-mime はストアのパスで呼ぶ(activation は空の PATH で走るため、/usr/bin の xdg-mime は見えない)。
+  home.activation.dotfilesWslBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] (lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+    if [ -n "''${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      _dotfiles_desktop="$HOME/.local/share/applications/dotfiles-wsl-browser.desktop"
+      $DRY_RUN_CMD mkdir -p "$(dirname "$_dotfiles_desktop")"
+      $DRY_RUN_CMD sh -c 'printf "%s\n" "[Desktop Entry]" "Type=Application" "Name=Windows Browser (WSL)" "Exec=$1 %u" "NoDisplay=true" "MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;" > "$2"' \
+        _ "$HOME/.local/bin/wsl-browser" "$_dotfiles_desktop"
+      for _dotfiles_mime in x-scheme-handler/http x-scheme-handler/https text/html; do
+        $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default dotfiles-wsl-browser.desktop "$_dotfiles_mime"
+      done
+      $VERBOSE_ECHO "dotfiles: xdg-open の URL・HTML を Windows 側の既定ブラウザ(wsl-browser)に向けました"
+    fi
+  '');
 
   # パッケージ管理は Nix に一本化(2026-08-01。判断根拠は docs/decisions/package-management.md 参照)。
   # zsh バイナリ(ログインシェル本体)は引き続き対象外(docs/decisions/login-shell.md 参照。
@@ -159,6 +223,8 @@ in
   # `nodejs` エイリアス(= 現行 LTS)に追従する。プロジェクトごとのバージョン切り替えツール
   # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
+  # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
+  # 入力からビルドしたものを入れる。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -179,6 +245,7 @@ in
     zsh-syntax-highlighting
     wezterm
     nodejs
+    mdgrid
   ];
 
   programs.home-manager.enable = true;

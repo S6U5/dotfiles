@@ -19,6 +19,9 @@ result
 # skill-creator によるスキル検証時の一時ワークスペース(評価ログ・レポート等。
 # スキル本体の動作には不要なので追跡しない)
 .claude/skills/*-workspace/
+# プラグイン配下のスキルの分は local/skill-workspaces/ に置く。plugins/<名前>/skills/ の
+# 直下に置くと Codex がそれをスキルとして読もうとし、validate_plugin.py が
+# 「skill <名前>-workspace is missing SKILL.md」で落ちる(実測)。
 
 # 開発中のプラグインを、このリポジトリ内で配布時と同じ形のまま試すための symlink。
 # .claude/skills/<名前> へプラグインのディレクトリを指すリンクを張ると

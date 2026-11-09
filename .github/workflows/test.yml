@@ -9,19 +9,28 @@ on:
 permissions:
   contents: read
 
+# 同じ PR への連続 push では古い実行を打ち切る(main への push は打ち切らない)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # ジョブ名 home-manager-test は main の required status check として参照されているため変えない
+  # (docs/decisions/oss-publish-plan.md)
   home-manager-test:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # Nix のダウンロード・ビルドが詰まったときに既定の 6 時間を使い切らないようにする
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Nix
         # nix-installer を未固定の curl|sh で取得する代わりに、SHA 固定した公式 action を使う。
         # この action 自体が dependabot.yml の github-actions エコシステムで追跡され、
         # actions/checkout と同様に SHA が自動更新される(固定しても更新は止まらない)。
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           extra-conf: experimental-features = nix-command flakes
       - name: Run home-manager test

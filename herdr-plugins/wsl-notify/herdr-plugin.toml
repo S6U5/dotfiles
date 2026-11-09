@@ -1,0 +1,19 @@
+# herdr プラグイン: エージェントの完了・入力待ちを Windows のトースト通知で知らせる(WSL 専用)。
+# 登録は nix/home.nix の home.activation(home-manager switch)が `herdr plugin link` で自動で行う。
+# 判断根拠は docs/decisions/herdr-notification.md 参照。
+id = "dotfiles.wsl-notify"
+name = "WSL Windows Notify"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Show a Windows toast when an agent finishes or needs input (WSL only)"
+platforms = ["linux"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["sh", "notify.sh"]
+
+# 動作確認用: herdr plugin action invoke dotfiles.wsl-notify.test
+[[actions]]
+id = "test"
+title = "Send a test Windows toast"
+command = ["sh", "notify.sh", "--test"]

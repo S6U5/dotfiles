@@ -1,5 +1,5 @@
 #!/bin/sh
-# このリポジトリのプラグインを Claude Code / Codex に登録・導入する。
+# このリポジトリのプラグインを Claude Code / Codex / Copilot CLI(VS Code)/ Antigravity / Cursor に登録・導入する。
 #
 # 明示実行のみ。home-manager switch では走らない(プラグインはエージェントの挙動を
 # 変えるため、意図しないタイミングで増減しないようにしている)。
@@ -108,15 +108,109 @@ if command -v codex >/dev/null 2>&1; then
     for p in $plugins; do
       # "not installed" にも installed が含まれるため、直後に来る語で判定する
       if echo "$installed" | grep -qE "^${p}@${marketplace}[[:space:]]+installed"; then
-        echo "  $p: 導入済み(有効/無効はそのまま)"
+        # Codex は導入時の中身を cache/<目録名>/<名前>/<バージョン>/ にコピーして読むため、
+        # リポジトリを更新しても反映されない。バージョンを上げずに直した場合もあるので、
+        # バージョンではなく中身を比べ、違えば入れ直す(有効/無効の状態は保たれる)。
+        fresh=0
+        for c in "${CODEX_HOME:-$HOME/.codex}/plugins/cache/$marketplace/$p"/*/; do
+          [ -d "$c" ] || continue
+          if diff -rq "$c" "$repo/plugins/$p" >/dev/null 2>&1; then
+            fresh=1
+          fi
+        done
+        if [ "$fresh" -eq 1 ]; then
+          echo "  $p: 導入済み(有効/無効はそのまま)"
+        else
+          echo "  $p: 導入済み。中身が古いため入れ直します(有効/無効はそのまま)"
+          codex plugin add "$p@$marketplace" >/dev/null ||
+            echo "  警告: $p の入れ直しに失敗しました(手動で確認してください)" >&2
+        fi
       else
         echo "  $p: 導入します"
-        codex plugin add "$p@$marketplace" >/dev/null
+        codex plugin add "$p@$marketplace" >/dev/null ||
+          echo "  警告: $p の導入に失敗しました(手動で確認してください)" >&2
       fi
     done
   fi
 else
   echo "[Codex] codex が見つかりません。スキップします"
+fi
+echo
+
+# --- Copilot CLI ---
+# .claude-plugin/marketplace.json をそのまま目録として読む(公式ドキュメント。実機では未検証)。
+# 導入先は ~/.copilot/installed-plugins/<目録名>/<名前>/ で、VS Code もここを自動で読む。
+# 導入はコピーになるため、導入済みのものは plugin update で追従させる。
+# 未検証のため、失敗しても警告して先へ進む。
+copilot_installed="$HOME/.copilot/installed-plugins/$marketplace"
+if command -v copilot >/dev/null 2>&1; then
+  echo "[Copilot CLI](VS Code にも反映)"
+  if copilot plugin marketplace list 2>/dev/null | grep -q "$marketplace"; then
+    echo "  Marketplace 登録済み。更新します"
+    copilot plugin marketplace update "$marketplace" >/dev/null 2>&1 ||
+      echo "  警告: 更新に失敗しました(手動で確認してください)" >&2
+  else
+    echo "  Marketplace を登録します"
+    copilot plugin marketplace add "$repo" >/dev/null 2>&1 ||
+      echo "  警告: 登録に失敗しました(手動で確認してください)" >&2
+  fi
+
+  for p in $plugins; do
+    if [ -d "$copilot_installed/$p" ]; then
+      echo "  $p: 導入済み。更新します(有効/無効はそのまま)"
+      copilot plugin update "$p" >/dev/null 2>&1 ||
+        echo "  警告: $p の更新に失敗しました(手動で確認してください)" >&2
+    else
+      echo "  $p: 導入します"
+      copilot plugin install "$p@$marketplace" >/dev/null 2>&1 ||
+        echo "  警告: $p の導入に失敗しました(手動で確認してください)" >&2
+    fi
+  done
+else
+  echo "[Copilot CLI] copilot が見つかりません。スキップします"
+fi
+echo
+
+# --- 目録を経由しないエージェント(Antigravity / Cursor) ---
+# どちらも決まったディレクトリに置いたプラグインのルート直下 plugin.json を直接読む。
+# リポジトリへのシンボリックリンクを張れば、編集がそのまま反映される。
+# 別のもの(コピーや手で置いたもの)があるときは上書きせず報告だけする。
+link_plugins() {
+  dir=$1
+  mkdir -p "$dir"
+  for p in $plugins; do
+    dest="$dir/$p"
+    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$repo/plugins/$p" ]; then
+      echo "  $p: 導入済み"
+    elif [ -e "$dest" ] || [ -L "$dest" ]; then
+      echo "  ! $p: $dest に別のものがあります。上書きしません"
+      echo "    (コピーで入れたものなら、退避してから再実行してください)"
+    else
+      echo "  $p: 導入します"
+      ln -s "$repo/plugins/$p" "$dest"
+    fi
+  done
+}
+
+# Antigravity / Antigravity CLI / IDE の三者共通の置き場。agy plugin install はコピーで
+# 導入するため使わない。IDE だけ入れて agy が無い環境もあるため、設定ディレクトリでも判定する。
+agy_plugins="$HOME/.gemini/config/plugins"
+if command -v agy >/dev/null 2>&1 || [ -d "$HOME/.gemini/antigravity" ]; then
+  echo "[Antigravity]"
+  link_plugins "$agy_plugins"
+else
+  echo "[Antigravity] 見つかりません。スキップします"
+fi
+echo
+
+# Cursor は ~/.cursor/plugins/local/ を読む(張ったあとは Reload Window が要る)。
+cursor_plugins="$HOME/.cursor/plugins/local"
+if command -v cursor >/dev/null 2>&1 || [ -d "$HOME/.cursor" ]; then
+  echo "[Cursor]"
+  link_plugins "$cursor_plugins"
+  echo "  反映には Cursor の再起動か Developer: Reload Window が必要です"
+else
+  echo "[Cursor] 見つかりません。スキップします"
 fi
 echo
 
@@ -151,7 +245,32 @@ if command -v claude >/dev/null 2>&1; then
     done
 fi
 
+# 3. Antigravity / Cursor 側のリンク先が plugins/ から消えたもの。
+for l in "$agy_plugins"/* "$cursor_plugins"/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in
+    "$repo"/plugins/*) ;;
+    *) continue ;;
+  esac
+  if [ ! -e "$l" ]; then
+    echo "  ! $l のリンク先が plugins/ にありません(改名や削除の取り残し)。"
+    echo "    不要なら: rm '$l'"
+    found=1
+  fi
+done
+
+# 4. Copilot CLI に導入済みなのに plugins/ に無いもの。
+for d in "$copilot_installed"/*/; do
+  [ -d "$d" ] || continue
+  p=$(basename "$d")
+  if [ ! -d "$repo/plugins/$p" ]; then
+    echo "  ! Copilot CLI の $p@$marketplace は導入済みですが plugins/ にありません(改名や削除の取り残し)。"
+    echo "    不要なら: copilot plugin uninstall $p"
+    found=1
+  fi
+done
+
 [ "$found" -eq 0 ] && echo "  取り残しは見つかりませんでした"
 echo
 echo "完了しました。有効/無効の切り替えはこのコマンドでは触りません"
-echo "(Claude Code: /plugin、Codex: config.toml の enabled)。"
+echo "(Claude Code: /plugin、Codex: config.toml の enabled、Copilot CLI: copilot plugin enable/disable)。"

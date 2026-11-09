@@ -1,4 +1,4 @@
 interface:
-  display_name: "shin5"
+  display_name: "Shin5"
   short_description: "Very simple Japanese explanation mode"
   default_prompt: "Use $shin5 to explain this in a very simple way."

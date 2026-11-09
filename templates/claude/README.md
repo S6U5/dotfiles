@@ -28,6 +28,20 @@ cp templates/claude/commands/*.md ~/.claude/commands/
   `~/.config/shell/local.sh`(git 管理外)の環境変数か `apiKeyHelper` 方式を使う。
 - マシン固有の設定はコピー先でのみ変更する。全マシンに効かせたい変更は
   この雛形に反映してコミットする(その際キー・個人情報が混ざっていないか全文確認)。
+- **コミット・PR の帰属表示は無効化してある**。`attribution.commit` / `attribution.pr` を空文字にして
+  `Co-Authored-By: Claude` 行と「Generated with Claude Code」を消し、`attribution.sessionUrl` を `false` にして
+  クラウド・Remote Control セッションで付く `Claude-Session:` 行と PR 本文のセッションリンクを消す
+  (`commit` を空にしてもセッションリンクは消えない)。作業文脈を公開リポジトリに残さないため。
+  `"attribution": false` でも全部消せるが、v2.1.281 未満は設定ファイルごと読み飛ばすため個別指定にしている。
+  旧設定 `includeCoAuthoredBy` は非推奨
+- クラウドセッション(claude.ai/code)は `~/.claude/settings.json` を読まないため、同じ設定をリポジトリの
+  `.claude/settings.json` にも置いている(このリポジトリ用。他のリポジトリでも消したければ同様に置く)
+- **資格情報ファイルの読み取りを `permissions.deny` の `Read(...)` で禁止している**(SSH 鍵、`.env`、`~/.config/shell/local.sh`、
+  Git/gh の認証、各パッケージマネージャの認証ファイル(npm / yarn / bun / pip / uv / poetry / conda / cargo / gem /
+  composer / NuGet / Maven / Gradle / pub / Nix)、Docker・クラウド CLI・kubeconfig、GnuPG、AI エージェントの認証情報)。
+  `Read` の deny は Read / Grep / Glob に効き、sandbox を有効にすると Bash 用の読み取り禁止リストにも自動で合流する
+  (`cat .env` のような Bash 経由の読み取りまで止めるには sandbox が要る)。判断根拠は `docs/decisions/claude-secret-read-guard.md`。
+  対象を増やすときは、資格情報を書き込むファイルだけを足す(dotfiles 配布の設定ファイルを丸ごと塞がない)
 - 通知フックはクロスプラットフォームの `notify` コマンド(`home/.local/bin/notify`)
   経由なので、macOS / WSL / Linux のどこでも動く。
 

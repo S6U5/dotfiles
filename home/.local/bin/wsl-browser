@@ -1,0 +1,38 @@
+#!/bin/sh
+# WSL から URL やファイルを Windows 側の既定ブラウザで開く。
+# WSL 内(Linux 側)のブラウザが起動するのを避けるため、WSL では BROWSER(os/wsl.sh)と
+# xdg-open の http/https ハンドラ(nix/home.nix の home.activation)をこのコマンドに向けている。
+# 使い方: wsl-browser <URL|ファイル>...
+set -eu
+
+if [ -z "${WSL_DISTRO_NAME:-}" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+  echo "wsl-browser: WSL 専用のコマンドです(この環境では何もしません)" >&2
+  exit 0
+fi
+
+if [ $# -eq 0 ]; then
+  echo "使い方: wsl-browser <URL|ファイル>..." >&2
+  exit 1
+fi
+
+if ! command -v rundll32.exe >/dev/null 2>&1; then
+  echo "wsl-browser: rundll32.exe が見つかりません(Windows 連携が無効?)" >&2
+  exit 0
+fi
+
+for target in "$@"; do
+  # WSL 内のファイルは Windows から見えるパス(\\wsl.localhost\...)に変換して渡す
+  case "$target" in
+    file://*)
+      path=${target#file://}
+      if [ -e "$path" ]; then target=$(wslpath -w "$path"); fi
+      ;;
+    *://* | mailto:*) ;;
+    *)
+      if [ -e "$target" ]; then target=$(wslpath -w "$target"); fi
+      ;;
+  esac
+  # cmd.exe の start は & 等を解釈して URL が壊れ、powershell.exe は起動が遅いため、
+  # 引数をそのまま既定のハンドラへ渡す url.dll を使う
+  rundll32.exe url.dll,FileProtocolHandler "$target"
+done

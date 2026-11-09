@@ -6,10 +6,10 @@
 
 ```sh
 # Claude Code
-claude plugin install shin5@personal
+claude plugin install shin5@s6u5-dotfiles
 
 # Codex
-codex plugin add shin5@personal
+codex plugin add shin5@s6u5-dotfiles
 ```
 
 Marketplace をまだ登録していない場合は、先に [../README.md](../README.md) の手順を実行する。

@@ -6,6 +6,83 @@ Taken 2026-09 against Claude Code (bundled version), Codex CLI 0.152.1, and Agen
 re-run them before trusting the guidance — and update SKILL.md if a result moved. That is the
 maintenance path for a 2.0.
 
+## 2026-10-23 — documentation review (not a re-probe)
+
+A documentation pass (not an on-machine re-measurement) added a per-tool table for **repo-committed
+auto-loading of a bundled plugin** to `tool-differences.md`, covering Claude Code, Codex, Copilot,
+Cursor and Antigravity. It is doc-based; trust and headless behaviour are mostly unstated upstream
+and were left as "unconfirmed". The probes below are still the 2026-09 run and are due for a re-run
+against current tool versions.
+
+## 2026-10 recheck against Codex's source: the root manifest is read
+
+Taken 2026-10-15 by reading openai/codex at tags `rust-v0.147.0`, `rust-v0.152.1` (the version the
+September measurements used) and main (`bb64b894`), plus agentplugins/agent-plugins-spec (`ff8ab5e3`)
+and openai/plugins (`0722921d`). Source reading, not a run — but the code paths are the loader's own.
+
+| Claim made earlier here | What the source says |
+|---|---|
+| Codex does not read the root `plugin.json` | It reads it **first**. `find_plugin_manifest_path` (`codex-rs/utils/plugins/src/plugin_namespace.rs`) returns the root file whenever its `$schema` starts with `https://agent-plugins.org/schemas/`; only otherwise does it look at `.codex-plugin/`, `.claude-plugin/`, `.cursor-plugin/` (`DISCOVERABLE_PLUGIN_MANIFEST_PATHS`). Present in all three revisions checked; in `rust-v0.146.1` the function still looked only at the three dot-directories |
+| `.codex-plugin/plugin.json` is the Codex manifest | Under a root manifest it is an **overlay**: `manifest_cache.rs` reads it only when no `extensions["com.openai"]` exists, and `apply_codex_agent_plugin_extension` copies just `interface`, `apps`, `hooks` and the onboarding skill. Its `name`, `version` and `skills` are not used |
+| Codex does not discover `skills/` by convention | `plugin_skill_roots` in `core-plugins/src/loader.rs` falls back to `skills/` when the manifest names none, for either manifest format. Under a root manifest the path is fixed at `./skills` |
+| Codex's namespace for standard extensions | `com.openai` (`CODEX_AGENT_PLUGIN_EXTENSION_NAMESPACE`), not `com.openai.codex` |
+| — | Only the 1.0.0 `$schema` is accepted; another agent-plugins.org version is an error, and a symlinked root `plugin.json` makes the lookup return nothing |
+| — | Codex's catalog lookup also accepts `.claude-plugin/marketplace.json` and `.cursor-plugin/marketplace.json`, after `.agents/plugins/marketplace.json` |
+
+OpenAI's documentation and plugin-creator skill still scaffold `.codex-plugin/plugin.json` and call it
+the required manifest, so guide and implementation disagree. The implementation decides what loads.
+`developers.openai.com` was not reachable from the environment this was checked in, so the guide's
+current wording was read through search excerpts only.
+
+For this repository's plugins the practical effect was nil — the three manifests carried identical
+`name` / `version` / `description` — but the reason for keeping `.codex-plugin/` changed: it supplies
+Codex's `interface`, and it is the whole manifest for Codex before 0.147.0.
+
+Not rechecked here: the `validate_plugin.py` field requirements below. That script ships inside the
+Codex install, not in the public repositories, so it was not re-read.
+
+## Where a skill outside a plugin is discovered
+
+Taken 2026-09 against Codex CLI 0.153.0 and Claude Code, for the case where a `SKILL.md` sits in a
+repository with no manifest around it. Three marker skills were placed in one throwaway repository —
+one in `.agents/skills/`, one in `.codex/skills/`, one reached through a symlink — and each tool was
+asked to list the skill names it could see.
+
+| Tool | Locations |
+|---|---|
+| Claude Code | `.claude/skills/<name>/SKILL.md` in the startup directory and every parent up to the repo root; `~/.claude/skills/`; `.claude/skills/` inside each `--add-dir` directory; nested `.claude/skills/` below the startup directory, loaded lazily the first time a file in that subtree is read |
+| Codex | `$CWD/.agents/skills`, each parent, `$REPO_ROOT/.agents/skills`, `~/.agents/skills`, `/etc/codex/skills` |
+
+**Neither reads the other's.** `.agents/skills/` does not appear anywhere in Claude Code's documented
+locations, and `.codex/skills/` does not appear in Codex's.
+
+Symlinks are followed by both. Claude Code documents it for a `<skill-name>` entry in the
+enterprise, personal and project locations, and adds that a target reachable from more than one
+location loads once rather than twice. Codex documents that it follows the symlink target when
+scanning. So one real directory under `.agents/skills/` plus a link at `.claude/skills/<name>`
+reaches both, with no duplicate load.
+
+| Marker | Placed at | Codex saw it | Claude Code saw it |
+|---|---|---|---|
+| `probe-alpha` | `.agents/skills/probe-alpha/` (real directory) | yes | **no** |
+| `probe-beta` | `.codex/skills/probe-beta/` (real directory) | **yes — undocumented** | no |
+| `probe-gamma` | `.agents/skills/probe-gamma` → `real/probe-gamma` (symlink) | yes | **no** |
+| `probe-alpha`, `probe-gamma` | additionally linked from `.claude/skills/` | — | **yes** |
+
+Two results were not what the documentation implies. **`.codex/skills/` in a repository works**,
+though Codex's published list of locations does not mention it — so a layout anchored there reaches
+both tools, and the reason to prefer `.agents/` is neutrality rather than function. And Claude Code
+saw nothing at all while `.claude/skills/` was empty, confirming the negative directly rather than
+by absence from a doc page.
+
+`.agents/skills` is also present as a literal string in the 0.153.0 binary
+(`strings "$(command -v codex)"`), alongside its `ext/skills/src/loader/` paths.
+`/etc/codex/skills` is **not** — the documentation names it, the binary does not carry it as a
+literal. It does not matter for the repository case, and it was not exercised.
+
+**What this does not establish:** whether `.codex/skills/` stays supported, since it is undocumented
+and therefore not a promise. Re-run the probe on a version bump.
+
 ## Claude Code ignores the root `plugin.json`
 
 The first line of `claude plugin validate` tells you which one it read:
@@ -40,13 +117,85 @@ whenever the extension matches.
 Claude Code looks at `skills/*/SKILL.md` and at the **plugin-root** `agents/`. A directory nested
 inside a skill is not on that path. The measured subagent list contained no `openai` entry.
 
+## The tools' own definitions are on disk
+
+Codex CLI 0.152.1 installs its authority locally, so neither the manifest shapes nor
+`agents/openai.yaml` has to be inferred from published examples:
+
+| Path | What it settles |
+|---|---|
+| `~/.codex/skills/.system/skill-creator/references/openai_yaml.md` | every `agents/openai.yaml` field, with constraints |
+| `~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py` | runnable validator for `.codex-plugin/plugin.json`, `openai.yaml` and frontmatter |
+| `~/.codex/skills/.system/*/agents/openai.yaml`, `~/.codex/vendor_imports/skills/skills/.curated/*/` | 45 shipped examples |
+
+Their licence is unstated. **Cite the paths and record conclusions; do not copy the contents into
+this repository.**
+
+Confirmed against all 45 examples: `agents/openai.yaml` allows `interface`, `policy` and
+`dependencies` at the top level and nothing else. `interface` takes `display_name`,
+`short_description`, `icon_small`, `icon_large`, `brand_color` and `default_prompt`; the first two
+are required once the file exists, and unknown keys are rejected. `default_prompt` is documented as
+having to name the skill as `$skill-name`, and `short_description` as 25–64 characters — neither is
+enforced by the validator.
+
+`.codex-plugin/plugin.json` demands more than Claude Code's manifest: `author` as an object with a
+`name`, and `interface` carrying `displayName`, `shortDescription`, `longDescription`,
+`developerName`, `category`, `capabilities` and a `defaultPrompt`.
+
+## Frontmatter must parse as YAML, and only Codex enforces it
+
+This skill's own `description` contained `existing one: "add a hook to this plugin"`. A plain YAML
+scalar cannot contain `: `, so the frontmatter did not parse.
+
+| Check | Result |
+|---|---|
+| `claude plugin validate` | passed |
+| Codex `validate_plugin.py` | rejected — "frontmatter must be valid YAML" |
+| Claude Code skill loading | **not measured** — the broken file sat in the installed marketplace cache without either validator or install step objecting |
+
+Of 184 `SKILL.md` files under `~/.claude/`, this was the only one `yaml.safe_load` rejected — in
+both marketplace cache copies. Of 45 under `~/.codex/`, none failed. **A green from one tool says
+nothing about the other.**
+
+### Sources for the field lists
+
+The frontmatter tables are read off the specs, not inferred from samples: agentskills.io's
+specification page for the six fields and their constraints, and Claude Code's skills documentation
+for the CLI-only fields, the six-field restriction on claude.ai uploads / the Skills API /
+`package_skill.py`, and the verbatim unexpected-key error. Both were current at the date above.
+
+Key frequency across the same samples:
+
+| Key | `~/.claude` (182 parsed) | `~/.codex` (45) |
+|---|---|---|
+| `name`, `description` | all | all |
+| `license` | 105 | – |
+| `version` | 21 | – |
+| `allowed-tools` | 8 | – |
+| `user-invocable` | 7 | – |
+| `metadata` | 4 | 9 |
+| `tools` | 2 | – |
+| `disable-model-invocation`, `argument-hint` | 1 each | – |
+
+Codex's validator ignores unknown frontmatter keys rather than failing on them, so a Claude-only
+key is inert there — except `disable-model-invocation`, which it requires to be absent or `false` in
+a bundled plugin. **Inert is not the same as safe everywhere**: the same keys are a hard error on
+claude.ai uploads, the Skills API and `package_skill.py`.
+
+Two keys in the sample show how quietly this goes wrong. `tools` appears twice — it is the subagent
+frontmatter field, not the skill one (`allowed-tools`), and both files are in the official Claude
+Code marketplace, loading without complaint and granting nothing. `version` appears 21 times and is
+in neither the spec's six nor Claude Code's own field table — including in the official
+marketplace's `plugin-dev/skills/skill-development`, the skill that teaches skill authoring. Those
+skills load in the CLI and would fail an upload.
+
 ## Appearing in a catalog is not the same as loading
 
 A plugin carrying only the standard `plugin.json` did show up under `codex plugin list`. That only
-proves the catalog entry points at the directory. Codex names component paths in its manifest rather
-than discovering them, so whether the skills actually load is a separate question — one that only
-installing the plugin answers. It was not installed, so this was left unverified and the
-documentation was followed instead.
+proves the catalog entry points at the directory; whether the skills load is a separate question. It
+was not installed at the time, and the documentation was followed instead — which led to the wrong
+conclusion that Codex ignores the standard manifest. The 2026-10 source check above settled it: the
+root manifest is read and `skills/` is loaded from it.
 
 ## A vanished source directory fails quietly
 
@@ -79,13 +228,16 @@ out — that one costs nothing, because the body is read only after the skill ha
 **Google — ChromeDevTools/chrome-devtools-mcp** — root holds `plugin.json`, `.claude-plugin/` and
 `.cursor-plugin/`, and no `.codex-plugin/`.
 
-**This was misread once.** The missing `.codex-plugin/` was taken as "Codex needs no manifest of its
-own", which is wrong — Codex documents `.codex-plugin/plugin.json` as required. That repository
-simply does not target Codex. Presence of a file is evidence about a tool; absence is not.
+**This was misread twice.** First the missing `.codex-plugin/` was taken as "Codex needs no manifest
+of its own"; then, correcting that from the documentation, as "Codex requires `.codex-plugin/` and
+ignores the root manifest". Neither followed from the file being absent. Codex's loader reads the
+root manifest when it carries the Agent Plugins `$schema`. Presence of a file is evidence about a
+tool; absence is not.
 
 **GitHub — github/awesome-copilot** — `plugins/<name>/plugin.json` only. Being Copilot-facing, it
 needs no Claude Code manifest.
 
 **OpenAI's Codex plugins** (as loaded by Codex CLI 0.152.1) — still on `.codex-plugin/plugin.json`
 despite the version being newer than the 0.147.0 that added standard support, and pairing it with
-`skills/<name>/agents/openai.yaml`. Recognising the standard and shipping in it are separate things.
+`skills/<name>/agents/openai.yaml`. Recognising the standard and shipping in it are separate things —
+and, as the recheck above found, the loader reads the standard manifest first whenever one is present.

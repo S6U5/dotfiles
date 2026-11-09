@@ -1,4 +1,4 @@
 interface:
-  display_name: "agents-init"
+  display_name: "Agents Init"
   short_description: "Put agent instructions in AGENTS.md, not CLAUDE.md"
-  default_prompt: "Set up agent instructions for this repository."
+  default_prompt: "Use $agents-init to set up agent instructions for this repository."
