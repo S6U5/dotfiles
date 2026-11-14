@@ -1,4 +1,5 @@
 #!/bin/sh
+# Windows 側の WezTerm が、この dotfiles の wezterm.lua を設定ファイルとして読むようにする。
 # Windows ネイティブ側の WezTerm(winget 等で別途インストール)が、WSL 側の
 # home/.config/wezterm/wezterm.lua(home-manager 配布・git 管理下)をそのまま設定ファイルとして
 # 使うように、Windows の環境変数 WEZTERM_CONFIG_FILE を設定する(判断根拠は

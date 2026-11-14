@@ -356,6 +356,64 @@ expect_in "$out" "読めなかったフォルダ: 3 個" "diskreport windows: �
 expect_in "$out" "docker" "diskreport windows: アプリ別に出す"
 expect_not_in "$out" "not a size line" "diskreport windows: 数字で始まらない行は索引に入れない"
 
+echo "== 7) dotfiles-help が用途ごとに分けて出し、端末の幅で説明を切るか"
+run_help() { # 引数は env に渡す追加の環境変数
+  env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" "$@" "$DOTFILES_DIR/home/.local/bin/dotfiles-help" </dev/null 2>&1
+}
+out=$(run_help) || ng "dotfiles-help が非0で終了"
+expect_in "$out" "調べる・片付ける" "dotfiles-help: 用途ごとの見出しを出す"
+expect_in "$out" "diskreport" "dotfiles-help: 見出しの下にコマンドを出す"
+expect_not_in "$out" "office-open" "dotfiles-help: 共通実体は出さない"
+expect_in "$out" "読み取り専用。何も消さない)" "dotfiles-help: 括弧の中の「。」で説明を切らない"
+expect_not_in "$out" $'\e[' "dotfiles-help: パイプでは色を付けない"
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  expect_in "$out" "WSL でだけ使う: " "dotfiles-help: WSL 以外では WSL 専用のコマンドを名前だけにする"
+  expect_not_in "$out" "仮想ディスク" "dotfiles-help: WSL 以外では WSL 専用のコマンドの説明を出さない"
+fi
+out=$(run_help WSL_DISTRO_NAME=test) || ng "dotfiles-help が非0で終了(WSL)"
+expect_in "$out" "仮想ディスク" "dotfiles-help: WSL では WSL 専用のコマンドも説明つきで出す"
+out=$(env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" "$DOTFILES_DIR/home/.local/bin/dotfiles-help" cdgr 2>&1) ||
+  ng "dotfiles-help cdgr が非0で終了"
+expect_in "$out" "git リポジトリのルートへ移動する" "dotfiles-help <関数名>: シェル関数のコメントを出す"
+if command -v python3 >/dev/null 2>&1; then
+  # 幅 60 の疑似端末で動かし、どの行も 60 桁に収まり、色が付くかを見る(桁は East Asian Width で数える)
+  out=$(
+    python3 -I - "$DOTFILES_DIR/home/.local/bin/dotfiles-help" <<'PY'
+import fcntl, os, pty, re, struct, sys, termios, unicodedata
+pid, fd = pty.fork()
+if pid == 0:
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    os.environ["TERM"] = "xterm"
+    os.environ.pop("NO_COLOR", None)
+    os.execv(sys.argv[1], [sys.argv[1]])
+data = b""
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    data += chunk
+os.waitpid(pid, 0)
+text = data.decode("utf-8", "replace")
+colored = "\x1b[" in text
+plain = re.sub(r"\x1b\[[0-9;]*m", "", text).replace("\r", "")
+width = max(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in line) for line in plain.split("\n"))
+print(f"colored={colored} width={width} ellipsis={'…' in plain}")
+PY
+  ) || ng "疑似端末での dotfiles-help の実行に失敗"
+  expect_in "$out" "colored=True" "dotfiles-help: 端末では色を付ける"
+  expect_in "$out" "ellipsis=True" "dotfiles-help: 幅に収まらない説明を … で切る"
+  if [[ $out =~ width=([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -le 60 ]; then
+    ok "dotfiles-help: どの行も端末の幅(60 桁)に収まる"
+  else
+    ng "dotfiles-help: 端末の幅を超える行がある($out)"
+  fi
+else
+  echo "  skip: python3 が無いので疑似端末での確認を飛ばす"
+fi
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

@@ -1,5 +1,5 @@
 #!/bin/sh
-# wincred — Windows の資格情報マネージャー(汎用資格情報)を WSL から読み書きする。
+# Windows の資格情報マネージャー(汎用資格情報)を WSL から読み書きする。
 # API キー等のシークレットを平文ファイル(local.sh)に直接書かず、DPAPI で暗号化される
 # Windows 側のストアへ逃がすためのコマンド(判断根拠は docs/decisions/secrets-storage.md)。
 # Windows 側の GUI(資格情報マネージャー → Windows 資格情報 → 汎用資格情報)で
