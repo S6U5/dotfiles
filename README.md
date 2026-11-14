@@ -373,6 +373,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 | コマンド | 動作 |
 |---|---|
 | `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧を用途ごとに表示(説明は各スクリプトの先頭コメントから生成。端末では色付きで、幅に収まらない説明は … で切る。WSL 専用のコマンドは WSL 以外では名前だけ並べる。名前を付けるとそのコマンドのヘッダ全文、シェル関数なら定義の直上のコメント) |
+| `pkgwhere [名前...]` | コマンドの出どころを表示(読み取り専用)。引数なしでは、パッケージツール(npm・uv・brew など)がどこから入ったか(**dotfiles · Nix** / dotfiles · 自作 / **OS**: Homebrew・apt・macOS 標準など / **個別**: nix profile・npm -g・uv tool・cargo など / Windows 側)、dotfiles が Nix で入れたパッケージとバージョン、PATH で別のものに隠れている Nix のコマンドと消し方、dotfiles の外で入れたもの(dotfiles を入れ直しても戻らないもの)をまとめて出す。`pkgwhere rg` のように名前を付けると、PATH 上のすべての場所と出どころを出し、使われるものに ✓ を付ける(dotfiles のシェル関数・エイリアスも見分ける)。判断根拠は [`docs/decisions/command-origin.md`](docs/decisions/command-origin.md) |
 | `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
 | `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。配布済みと違うクローンでは端末で y/N を聞き、端末が無ければ実行しない(そのクローンの `./switch.sh` を直接実行する)。別のユーザーのクローンは使わず、配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `extract <ファイル...>` | アーカイブを形式を気にせず展開(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。中身がばらまかれないよう、最上位が複数ならアーカイブ名のフォルダにまとめる。既存のファイルは上書きしない。zip は unzip が無ければ bsdtar → python3 で代用、7z / rar は各ツールがあるときだけ |

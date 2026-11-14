@@ -356,7 +356,79 @@ expect_in "$out" "読めなかったフォルダ: 3 個" "diskreport windows: �
 expect_in "$out" "docker" "diskreport windows: アプリ別に出す"
 expect_not_in "$out" "not a size line" "diskreport windows: 数字で始まらない行は索引に入れない"
 
-echo "== 7) dotfiles-help が用途ごとに分けて出し、端末の幅で説明を切るか"
+echo "== 7) pkgwhere が出どころ(dotfiles の Nix・自作・Homebrew・それ以外)を見分けるか"
+# 偽の Nix ストア・home-manager の世代・Homebrew の置き場を作業用ディレクトリの下に作る
+# (判定はパスの形と、リンクが同じファイルを指すかだけで行うので、本物の /nix/store は要らない)
+PKG_TEST=$WORK_DIR/pkgwhere
+PH=$PKG_TEST/home
+STORE=$PKG_TEST/nix/store
+BREW=$PKG_TEST/brew
+HM_GEN=$PH/.local/state/nix/profiles/home-manager
+mk_exe() {
+  mkdir -p "$(dirname "$1")"
+  printf '#!/bin/sh\n' >"$1"
+  chmod +x "$1"
+}
+RG_PKG=$STORE/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ripgrep-15.2.0
+UV_PKG=$STORE/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-uv-0.13.5
+CARGO_PKG=$STORE/cccccccccccccccccccccccccccccccc-cargo-1.98.1
+mk_exe "$RG_PKG/bin/rg"
+mk_exe "$UV_PKG/bin/uv"
+mk_exe "$CARGO_PKG/bin/cargo"
+mkdir -p "$HM_GEN/home-path/bin" "$PH/.nix-profile/bin" "$PH/.local/bin"
+ln -s "$RG_PKG/bin/rg" "$HM_GEN/home-path/bin/rg"
+ln -s "$UV_PKG/bin/uv" "$HM_GEN/home-path/bin/uv"
+ln -s "$HM_GEN/home-path/bin/rg" "$PH/.nix-profile/bin/rg"
+ln -s "$HM_GEN/home-path/bin/uv" "$PH/.nix-profile/bin/uv"
+# dotfiles の外で nix profile install したもの
+ln -s "$CARGO_PKG/bin/cargo" "$PH/.nix-profile/bin/cargo"
+# Homebrew: 自分で入れた ripgrep(PATH で Nix の rg より先に来る)と、依存で入った libfoo
+mk_exe "$BREW/bin/brew"
+mk_exe "$BREW/Cellar/ripgrep/14.0.0/bin/rg"
+ln -s ../Cellar/ripgrep/14.0.0/bin/rg "$BREW/bin/rg"
+printf '{\n  "installed_on_request": true\n}\n' >"$BREW/Cellar/ripgrep/14.0.0/INSTALL_RECEIPT.json"
+mkdir -p "$BREW/Cellar/libfoo/1.0"
+printf '{\n  "installed_on_request": false\n}\n' >"$BREW/Cellar/libfoo/1.0/INSTALL_RECEIPT.json"
+# uv tool、~/.local/bin に手で置いたもの、dotfiles の自作コマンドへのリンク、cargo install
+mk_exe "$PH/.local/share/uv/tools/ruff/bin/ruff"
+ln -s "$PH/.local/share/uv/tools/ruff/bin/ruff" "$PH/.local/bin/ruff"
+mk_exe "$PH/.local/bin/mytool"
+ln -s "$DOTFILES_DIR/home/.local/bin/diskreport" "$PH/.local/bin/diskreport"
+mk_exe "$PH/.cargo/bin/mdgrid"
+printf '[v1]\n"mdgrid 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = ["mdgrid"]\n' >"$PH/.cargo/.crates.toml"
+run_pkgwhere() {
+  env -i HOME="$PH" PATH="$BREW/bin:$PH/.local/bin:$PH/.nix-profile/bin:$PH/.cargo/bin:/usr/bin:/bin" \
+    "$DOTFILES_DIR/home/.local/bin/pkgwhere" "$@" </dev/null 2>&1
+}
+expect_line() { # $1: 出力, $2: 行全体に合う拡張正規表現, $3: 説明
+  if grep -qE -- "$2" <<<"$1"; then ok "$3"; else ng "$3(/$2/ に合う行が無い)"; fi
+}
+out=$(run_pkgwhere) || ng "pkgwhere が非0で終了"
+expect_line "$out" '^  uv +dotfiles · Nix\(uv 0\.13\.5\)$' "pkgwhere: home-manager で入れたものを dotfiles · Nix と出す"
+expect_line "$out" '^  brew +OS · Homebrew\(本体\)$' "pkgwhere: brew 本体を Homebrew と出す"
+expect_line "$out" '^  cargo +個別 · nix profile\(cargo 1\.98\.1\)$' "pkgwhere: nix profile で入れたものを dotfiles の外と出す"
+expect_in "$out" "ripgrep 15.2.0" "pkgwhere: home-manager の世代のパッケージを名前とバージョンで並べる"
+expect_in "$out" "要らなければ: brew uninstall ripgrep" "pkgwhere: Nix の rg を隠す Homebrew の消し方を案内する"
+expect_line "$out" '^  Homebrew +1  ripgrep$' "pkgwhere: Homebrew は自分で入れたものだけを出す"
+expect_not_in "$out" "libfoo" "pkgwhere: Homebrew の依存で入ったものは出さない"
+expect_line "$out" '^  nix profile +1  cargo$' "pkgwhere: nix profile の分を home-manager の分と分ける"
+expect_line "$out" '^  uv tool +1  ruff$' "pkgwhere: uv tool を出す"
+expect_line "$out" '^  cargo install +1  mdgrid$' "pkgwhere: cargo install を出す"
+expect_line "$out" '^  ~/\.local/bin +1  mytool$' "pkgwhere: ~/.local/bin は手で置いたものだけを出す(uv tool と自作は除く)"
+expect_not_in "$out" "$PH" "pkgwhere: \$HOME は ~ にして出す"
+out=$(run_pkgwhere rg) || ng "pkgwhere rg が非0で終了"
+expect_line "$out" "^  ✓ $BREW/bin/rg +OS · Homebrew\(ripgrep\)$" "pkgwhere rg: PATH で先のものに ✓ を付ける"
+expect_line "$out" '^    ~/\.nix-profile/bin/rg +dotfiles · Nix\(ripgrep 15\.2\.0\)$' "pkgwhere rg: 隠れている Nix の版も出す"
+out=$(run_pkgwhere diskreport cdgr) || ng "pkgwhere diskreport cdgr が非0で終了"
+expect_line "$out" '^  ✓ ~/\.local/bin/diskreport +dotfiles · 自作$' "pkgwhere: dotfiles の自作コマンドを見分ける"
+expect_in "$out" "home/.config/shell/functions.sh のシェル関数" "pkgwhere: dotfiles のシェル関数を見分ける"
+if out=$(run_pkgwhere no-such-command-x); then
+  ng "pkgwhere: 見つからないのに 0 で終了"
+else
+  expect_in "$out" "見つかりません" "pkgwhere: 見つからなければ非0で、そう出す"
+fi
+
+echo "== 8) dotfiles-help が用途ごとに分けて出し、端末の幅で説明を切るか"
 run_help() { # 引数は env に渡す追加の環境変数
   env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" "$@" "$DOTFILES_DIR/home/.local/bin/dotfiles-help" </dev/null 2>&1
 }

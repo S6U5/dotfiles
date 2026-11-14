@@ -1,0 +1,707 @@
+#!/bin/sh
+# コマンドがどこから入ったか(dotfiles の Nix か、OS のパッケージ管理か、それ以外か)を表示する。
+#   pkgwhere              # パッケージツール(npm・uv・brew など)の出どころ、dotfiles が Nix で入れたもの、
+#                         # dotfiles の外で入れたもの(Homebrew・npm -g・uv tool など)をまとめて出す
+#   pkgwhere <名前>...    # そのコマンドを PATH の順にすべて出し、使われるもの(先に見つかるもの)に ✓ を付ける
+# 出どころの分け方:
+#   dotfiles · Nix   nix/home.nix の home.packages(home-manager が入れたもの)
+#   dotfiles · 自作  home/.local/bin のスクリプトと home/.config/shell のシェル関数
+#   OS · …           Homebrew・apt(dpkg)・rpm・pacman・snap・macOS 標準とインストーラなど、OS 側の仕組み
+#   個別 · …         nix profile・npm -g・pnpm・uv tool・pipx・cargo・go・アプリ同梱・手で置いたもの
+#   Windows 側       WSL から見える Windows のコマンド(Docker Desktop の docker など)
+# dotfiles の外で入れたものは、dotfiles を入れ直しても戻らない。
+# 読み取り専用で何も消さない(Nix で入れたものが別のものに隠れているときだけ、消し方を案内する)。
+# まとめて出すときは、WSL が PATH の後ろに足す Windows 側(/mnt/c など)を見ない(9P 越しは遅いため)。
+set -eu
+
+# 自作コマンドの判定に使うため、自身のリンクをたどってリポジトリの場所を割り出す(dotfiles-help と同じ)
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case "$link" in
+    /*) target=$link ;;
+    *) target=$(dirname "$target")/$link ;;
+  esac
+done
+repo=$(cd "$(dirname "$target")/../../.." && pwd)
+bin_dir=$repo/home/.local/bin
+shell_dir=$repo/home/.config/shell
+
+case "${1:-}" in
+  -h | --help)
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+    exit 0
+    ;;
+esac
+
+nl='
+'
+tab=$(printf '\t')
+os=$(uname -s)
+
+cols=""
+if [ -t 1 ]; then
+  size=$(stty size </dev/tty 2>/dev/null || true)
+  cols=${size#* }
+fi
+case $cols in '' | *[!0-9]* | 0) cols=${COLUMNS:-100} ;; esac
+case $cols in '' | *[!0-9]* | 0) cols=100 ;; esac
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  esc=$(printf '\033')
+  B="${esc}[1m" D="${esc}[2m" R="${esc}[0m"
+  C_dot="${esc}[32m" C_os="${esc}[36m" C_ind="${esc}[33m" C_win="${esc}[35m"
+else
+  B="" D="" R="" C_dot="" C_os="" C_ind="" C_win=""
+fi
+
+# home-manager の今の世代の home-path(home.packages をまとめたもの)
+hp=""
+for g in "${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles/home-manager" \
+  "/nix/var/nix/profiles/per-user/${USER:-$(id -un)}/home-manager"; do
+  if [ -d "$g/home-path/bin" ]; then
+    hp=$g/home-path
+    break
+  fi
+done
+
+cargo_home=${CARGO_HOME:-$HOME/.cargo}
+gobin=${GOBIN:-${GOPATH:+${GOPATH%%:*}/bin}}
+gobin=${gobin:-$HOME/go/bin}
+
+# まとめて出すときは Windows 側の PATH を見ない(pkgwhere <名前> では見る)
+skip_mnt=false
+[ "$#" -gt 0 ] || skip_mnt=true
+
+short() { # $HOME を ~ にして出す(貼り付けたときにユーザー名を出さないため)
+  # shellcheck disable=SC2088  # 表示用の文字としての ~(展開させない)
+  case $1 in
+    "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+resolve() { # シンボリックリンクを最後までたどる(readlink -f の無い環境向けに1段ずつ)
+  _p=$1 _i=0
+  while [ -L "$_p" ] && [ "$_i" -lt 40 ]; do
+    _l=$(readlink "$_p") || break
+    case $_l in
+      /*) _p=$_l ;;
+      *) _p=${_p%/*}/$_l ;;
+    esac
+    _i=$((_i + 1))
+  done
+  printf '%s\n' "$_p"
+}
+
+store_name() { # /nix/store/<ハッシュ>-<名前>/... から <名前> を取り出す
+  _s=${1#*/nix/store/}
+  _s=${_s%%/*}
+  printf '%s\n' "${_s#*-}"
+}
+
+split_version() { # name-1.2.3 → "name 1.2.3"(数字で始まる最初の部分からをバージョンとみなす)
+  _rest=$1 _name=""
+  while :; do
+    case $_rest in *-*) ;; *) break ;; esac
+    _head=${_rest%%-*}
+    _tail=${_rest#*-}
+    case $_tail in
+      [0-9]*)
+        printf '%s %s\n' "${_name:+$_name-}$_head" "$_tail"
+        return 0
+        ;;
+    esac
+    _name=${_name:+$_name-}$_head
+    _rest=$_tail
+  done
+  printf '%s\n' "$1"
+}
+
+# リンクをたどる途中で最初に出会う、パッケージの /nix/store のパスから「名前 バージョン」を出す。
+# プロファイルや home-manager が束ねたもの(home-manager-path など)は飛ばす。最後までたどると
+# nodejs が nodejs-slim になるなど、home.packages に書いた名前と変わるため
+nix_pkg() {
+  _p=$1 _i=0
+  while :; do
+    case $_p in
+      */nix/store/*)
+        _s=$(store_name "$_p")
+        case $_s in
+          profile | *-profile | user-environment | home-manager-path | home-manager-files | hm_*) ;;
+          *)
+            split_version "$_s"
+            return 0
+            ;;
+        esac
+        ;;
+    esac
+    if [ ! -L "$_p" ] || [ "$_i" -ge 40 ]; then break; fi
+    _l=$(readlink "$_p") || break
+    case $_l in
+      /*) _p=$_l ;;
+      *) _p=${_p%/*}/$_l ;;
+    esac
+    _i=$((_i + 1))
+  done
+  case $_p in */nix/store/*) split_version "$(store_name "$_p")" ;; esac
+}
+
+skip_dir() {
+  [ "$skip_mnt" = true ] || return 1
+  case $1 in /mnt/[a-z] | /mnt/[a-z]/*) return 0 ;; esac
+  return 1
+}
+
+first_hit() { # $1 を PATH の順に探し、最初の実行ファイルを fh に入れる(無ければ空)
+  fh=""
+  set -f
+  _ifs=$IFS
+  IFS=:
+  for _d in $PATH; do
+    [ -n "$_d" ] || continue
+    if skip_dir "$_d"; then continue; fi
+    if [ -f "$_d/$1" ] && [ -x "$_d/$1" ]; then
+      fh=$_d/$1
+      break
+    fi
+  done
+  IFS=$_ifs
+  set +f
+}
+
+all_hits() { # $1 を PATH の順にすべて出す(同じディレクトリが PATH に2回あっても1回だけ)
+  _seen=:
+  set -f
+  _ifs=$IFS
+  IFS=:
+  for _d in $PATH; do
+    [ -n "$_d" ] || continue
+    if skip_dir "$_d"; then continue; fi
+    case $_seen in *":$_d:"*) continue ;; esac
+    _seen=$_seen$_d:
+    if [ -f "$_d/$1" ] && [ -x "$_d/$1" ]; then printf '%s\n' "$_d/$1"; fi
+  done
+  IFS=$_ifs
+  set +f
+}
+
+usr_alt() { # usrmerge の環境では dpkg の記録が /bin と /usr/bin のどちらかにしか無いので、もう一方を作る
+  case $1 in
+    /usr/bin/* | /usr/sbin/*) printf '%s\n' "${1#/usr}" ;;
+    /bin/* | /sbin/*) printf '/usr%s\n' "$1" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+node_pkg() { # .../lib/node_modules/<名前>/... から npm のパッケージ名(@scope/名前 も)を取り出す
+  _f=${1#*/lib/node_modules/}
+  case $_f in
+    @*/*)
+      _scope=${_f%%/*}
+      _f=${_f#*/}
+      printf '%s/%s\n' "$_scope" "${_f%%/*}"
+      ;;
+    *) printf '%s\n' "${_f%%/*}" ;;
+  esac
+}
+
+crate_of() { # cargo install の記録(.crates.toml)から、そのコマンドを入れたクレート名を探す
+  [ -f "$cargo_home/.crates.toml" ] || return 0
+  grep -F "\"$1\"" "$cargo_home/.crates.toml" 2>/dev/null | sed -n 's/^"\([^ "]*\) .*/\1/p' | head -n 1
+}
+
+# OS 側の持ち主を調べる。見つからなければ /usr/local・/opt は手で置いたもの、それ以外は持ち主不明
+os_owner() { # $1: PATH 上のパス、$2: リンクをたどった先
+  k_kind=os
+  if [ "$os" = Darwin ]; then
+    case $1 in
+      /usr/bin/* | /bin/* | /usr/sbin/* | /sbin/* | /usr/libexec/* | /System/* | /Library/Apple/*)
+        k_group="OS · macOS 標準"
+        return 0
+        ;;
+    esac
+    if command -v pkgutil >/dev/null 2>&1; then
+      for _q in "$1" "$2"; do
+        _o=$(pkgutil --file-info "$_q" 2>/dev/null | sed -n 's/^pkgid: //p' | head -n 1) || _o=""
+        if [ -n "$_o" ]; then
+          k_group="OS · macOS インストーラ" k_detail=$_o
+          return 0
+        fi
+      done
+    fi
+  elif command -v dpkg >/dev/null 2>&1; then
+    for _q in "$1" "$2" "$(usr_alt "$1")"; do
+      _o=$(dpkg -S "$_q" 2>/dev/null | grep -v '^diversion' | head -n 1) || _o=""
+      case $_o in
+        *": "*)
+          _o=${_o%%: *}
+          k_group="OS · apt" k_detail=${_o%%:*}
+          return 0
+          ;;
+      esac
+    done
+  elif command -v rpm >/dev/null 2>&1; then
+    _o=$(rpm -qf --qf '%{NAME}\n' "$1" 2>/dev/null | head -n 1) || _o=""
+    case $_o in
+      '' | *" "*) ;;
+      *)
+        k_group="OS · rpm" k_detail=$_o
+        return 0
+        ;;
+    esac
+  elif command -v pacman >/dev/null 2>&1; then
+    _o=$(pacman -Qqo "$1" 2>/dev/null | head -n 1) || _o=""
+    if [ -n "$_o" ]; then
+      k_group="OS · pacman" k_detail=$_o
+      return 0
+    fi
+  fi
+  case $1 in
+    /usr/local/* | /opt/*) k_kind=ind k_group="個別 · 手で置いたもの" ;;
+    *) k_group="OS · 持ち主不明" ;;
+  esac
+}
+
+# PATH 上のパスの出どころを k_kind(色分け用: dot / os / ind / win / other)・k_group・k_detail に入れる
+classify() {
+  _p=$1 _n=${1##*/}
+  k_kind=other k_group="" k_detail=""
+  if [ -e "$bin_dir/$_n" ] && [ "$_p" -ef "$bin_dir/$_n" ]; then
+    k_kind=dot k_group="dotfiles · 自作"
+    return 0
+  fi
+  if [ -n "$hp" ] && [ -e "$hp/bin/$_n" ] && [ "$_p" -ef "$hp/bin/$_n" ]; then
+    k_kind=dot k_group="dotfiles · Nix" k_detail=$(nix_pkg "$hp/bin/$_n")
+    return 0
+  fi
+  _r=$(resolve "$_p")
+  # PATH のディレクトリの親に Cellar があれば Homebrew の置き場(/opt/homebrew・/usr/local・linuxbrew)
+  _pd=${_p%/*}
+  _pd=${_pd%/*}
+  _brew=false
+  [ ! -d "$_pd/Cellar" ] || _brew=true
+  case $_r in
+    */home/.local/bin/*)
+      # 別の場所にある dotfiles のクローン(配布済みのクローンと、いま動いているクローンが違うとき)
+      if [ -f "${_r%/home/.local/bin/*}/nix/home.nix" ]; then
+        k_kind=dot k_group="dotfiles · 自作"
+        return 0
+      fi
+      ;;
+    */nix/store/*)
+      k_kind=ind
+      case $_p in
+        /nix/var/nix/profiles/default/*) k_group="個別 · Nix 本体" ;;
+        *) k_group="個別 · nix profile" ;;
+      esac
+      k_detail=$(nix_pkg "$_p")
+      return 0
+      ;;
+    */Cellar/*)
+      _f=${_r#*/Cellar/}
+      k_kind=os k_group="OS · Homebrew" k_detail=${_f%%/*}
+      return 0
+      ;;
+    */Caskroom/*)
+      _f=${_r#*/Caskroom/}
+      k_kind=os k_group="OS · Homebrew cask" k_detail=${_f%%/*}
+      return 0
+      ;;
+    */uv/tools/*)
+      _f=${_r#*/uv/tools/}
+      k_kind=ind k_group="個別 · uv tool" k_detail=${_f%%/*}
+      return 0
+      ;;
+    */pipx/venvs/*)
+      _f=${_r#*/pipx/venvs/}
+      k_kind=ind k_group="個別 · pipx" k_detail=${_f%%/*}
+      return 0
+      ;;
+    */lib/node_modules/*)
+      k_kind=ind k_detail=$(node_pkg "$_r")
+      case $k_detail in
+        npm | corepack)
+          if [ "$_brew" = true ]; then
+            k_kind=os k_group="OS · Homebrew" k_detail="node に同梱の $k_detail"
+          else
+            k_group="個別 · node に同梱"
+          fi
+          ;;
+        *) k_group="個別 · npm -g" ;;
+      esac
+      return 0
+      ;;
+    /mnt/wsl/docker-desktop*)
+      k_kind=win k_group="Windows 側" k_detail="Docker Desktop"
+      return 0
+      ;;
+    */Applications/*.app/*)
+      _f=${_r%%.app/*}
+      k_kind=ind k_group="個別 · アプリ同梱" k_detail=${_f##*/}.app
+      return 0
+      ;;
+  esac
+  if [ "$_brew" = true ]; then
+    # brew 本体と、Homebrew の置き場の中を指すリンク(Cellar 以外: opt/ など)
+    if [ "$_n" = brew ] && [ "$_r" = "$_p" ]; then
+      k_kind=os k_group="OS · Homebrew" k_detail="本体"
+      return 0
+    fi
+    case $_r in "$_pd"/*) if [ "$_r" != "$_p" ]; then
+      k_kind=os k_group="OS · Homebrew"
+      return 0
+    fi ;;
+    esac
+  fi
+  case $_p in
+    "$cargo_home"/bin/*)
+      k_kind=ind
+      if [ -e "$cargo_home/bin/rustup" ] && [ "$_p" -ef "$cargo_home/bin/rustup" ]; then
+        k_group="個別 · rustup"
+      else
+        k_group="個別 · cargo install" k_detail=$(crate_of "$_n")
+      fi
+      return 0
+      ;;
+    "$gobin"/*)
+      k_kind=ind k_group="個別 · go install"
+      return 0
+      ;;
+    "${BUN_INSTALL:-$HOME/.bun}"/bin/*)
+      k_kind=ind k_group="個別 · bun"
+      return 0
+      ;;
+    "${DENO_INSTALL_ROOT:-$HOME/.deno}"/bin/*)
+      k_kind=ind k_group="個別 · deno"
+      return 0
+      ;;
+  esac
+  if [ -n "${PNPM_HOME:-}" ]; then
+    case $_p in "$PNPM_HOME"/*)
+      k_kind=ind k_group="個別 · pnpm"
+      return 0
+      ;;
+    esac
+  fi
+  case $_p in
+    "$HOME"/*)
+      k_kind=ind k_group="個別 · 手で置いたもの"
+      [ "$_r" = "$_p" ] || k_detail=$(short "$_r")
+      return 0
+      ;;
+    /mnt/[a-z]/*)
+      k_kind=win k_group="Windows 側"
+      return 0
+      ;;
+    /snap/*)
+      k_kind=os k_group="OS · snap"
+      return 0
+      ;;
+  esac
+  os_owner "$_p" "$_r"
+}
+
+label() { # classify の結果を「出どころ(詳細)」の形で、色付きで出す
+  case $k_kind in
+    dot) _c=$C_dot ;;
+    os) _c=$C_os ;;
+    ind) _c=$C_ind ;;
+    win) _c=$C_win ;;
+    *) _c="" ;;
+  esac
+  printf '%s%s%s%s\n' "$_c" "$k_group" "$R" "${k_detail:+($k_detail)}"
+}
+
+# 1行1項目(ASCII)を、端末の幅に合わせて ls のように段組みにする(列ごとに幅を決め、
+# 収まる範囲で列を最も多くする)。$1: 字下げ
+grid() {
+  awk -v cols="$cols" -v ind="$1" '
+    { item[++n] = $0 }
+    END {
+      if (!n) exit
+      for (per = n; per >= 1; per--) {
+        rows = int((n + per - 1) / per)
+        total = ind
+        for (c = 0; c < per; c++) {
+          w[c] = 0
+          for (r = 1; r <= rows; r++) { i = c * rows + r; if (i <= n && length(item[i]) > w[c]) w[c] = length(item[i]) }
+          total += w[c] + 2
+        }
+        if (total - 2 <= cols || per == 1) break
+      }
+      pad = sprintf("%" ind "s", "")
+      for (r = 1; r <= rows; r++) {
+        line = pad
+        for (c = 0; c < per; c++) {
+          i = c * rows + r
+          if (i > n) break
+          line = line sprintf("%-" (w[c] + 2) "s", item[i])
+        }
+        sub(/ +$/, "", line)
+        print line
+      }
+    }'
+}
+
+# 標準入力の項目(1行1つ、ASCII)を、ラベルの右に空白区切りで並べ、幅を超えたら折り返す。
+# $1: 色、$2: ラベル。項目が無ければ何も出さない
+list_line() {
+  _items=$(cat)
+  [ -n "$_items" ] || return 0
+  _count=$(printf '%s\n' "$_items" | awk 'END { print NR }')
+  printf '  %s%-14s%s %s%3s%s  ' "$1" "$2" "$R" "$D" "$_count" "$R"
+  printf '%s\n' "$_items" | awk -v cols="$cols" -v ind=23 '
+    {
+      if (pos && pos + 1 + length($0) > cols) { printf "\n%" ind "s", ""; pos = ind }
+      else if (pos) { printf " "; pos++ }
+      else pos = ind
+      printf "%s", $0; pos += length($0)
+    }
+    END { print "" }'
+}
+
+# ---- pkgwhere <名前>: PATH の順にすべて出す
+show_one() {
+  printf '%s%s%s\n' "$B" "$1" "$R"
+  case $1 in
+    */*)
+      if [ -e "$1" ]; then
+        classify "$1"
+        printf '  %s  %s\n' "$(short "$1")" "$(label)"
+        return 0
+      fi
+      echo "  見つかりません"
+      return 1
+      ;;
+  esac
+  _found=false _mark="✓"
+  # dotfiles のシェル関数・エイリアス(対話シェルでは PATH より先に使われる)
+  _func=$(awk -v n="$1" '
+    /^[ \t]*[A-Za-z_][A-Za-z0-9_]*\(\) *\{/ { s = $0; sub(/^[ \t]*/, "", s); sub(/\(.*/, "", s); if (s == n) { print "シェル関数\t" FILENAME; exit } }
+    /^[ \t]*alias [A-Za-z0-9_.-]+=/ { s = $0; sub(/^[ \t]*alias /, "", s); sub(/=.*/, "", s); if (s == n) { print "エイリアス\t" FILENAME; exit } }
+  ' "$shell_dir"/*.sh 2>/dev/null) || _func=""
+  if [ -n "$_func" ]; then
+    _file=${_func#*"$tab"}
+    printf '  %s %s  %sdotfiles · 自作%s(%s の%s)\n' "$_mark" "$1" "$C_dot" "$R" "${_file#"$repo"/}" "${_func%%"$tab"*}"
+    _mark=" " _found=true
+  fi
+  _hits=$(all_hits "$1")
+  if [ -n "$_hits" ]; then
+    _w=$(printf '%s\n' "$_hits" | while IFS= read -r _h; do short "$_h"; done | awk '{ if (length($0) > w) w = length($0) } END { print w }')
+    while IFS= read -r _h; do
+      classify "$_h"
+      # shellcheck disable=SC2059  # 桁数だけを書式に埋める(_w は awk が数えた数字)
+      printf "  %s %-${_w}s  %s\n" "$_mark" "$(short "$_h")" "$(label)"
+      _mark=" "
+    done <<EOF
+$_hits
+EOF
+    _found=true
+  fi
+  if [ "$_found" = false ]; then
+    echo "  見つかりません(コマンド名で指定する。例: ripgrep なら rg)"
+    return 1
+  fi
+}
+
+# ---- pkgwhere: まとめて出す
+report_tools() {
+  printf '%sパッケージツール%s  %s使われるもの(PATH で先に見つかるもの)の出どころ%s\n' "$B" "$R" "$D" "$R"
+  _any=false
+  for _t in nix home-manager brew apt dnf pacman snap flatpak node npm pnpm yarn bun deno \
+    python3 pip3 uv pipx poetry conda cargo rustup go gem docker; do
+    _hits=$(all_hits "$_t")
+    [ -n "$_hits" ] || continue
+    _any=true
+    _first=${_hits%%"$nl"*}
+    classify "$_first"
+    printf '  %-13s %s\n' "$_t" "$(label)"
+    printf '%s\n' "$_hits" | while IFS= read -r _h; do
+      [ "$_h" != "$_first" ] || continue
+      [ ! "$_h" -ef "$_first" ] || continue
+      classify "$_h"
+      printf '  %-13s %sほかに %s%s  %s\n' "" "$D" "$(short "$_h")" "$R" "$(label)"
+    done
+  done
+  [ "$_any" = true ] || printf '  %s(見つかりませんでした)%s\n' "$D" "$R"
+}
+
+# home-path が参照するパッケージを「名前 バージョン」で出す(nix-store が無ければ bin のリンク先から)。
+# man・doc などの出力と、home-manager が足す内部のものは除く
+nix_packages() {
+  if command -v nix-store >/dev/null 2>&1; then
+    nix-store -q --references "$(resolve "$hp")" 2>/dev/null || true
+  else
+    for _b in "$hp"/bin/*; do
+      [ -e "$_b" ] && readlink "$_b"
+    done
+  fi | while IFS= read -r _sp; do
+    case $_sp in */nix/store/*) ;; *) continue ;; esac
+    _n=$(store_name "$_sp")
+    case $_n in *-man | *-doc | *-info | *-devdoc | *-terminfo | *-manpage | *.sh) continue ;; esac
+    split_version "${_n%-bin}"
+  done | sed 's/+[^ ]*$//' | sort -u # バージョンの + 以降(ビルドの付記)は一覧では省く
+}
+
+report_nix() {
+  if [ -z "$hp" ]; then
+    printf '%sdotfiles · Nix%s  %shome-manager の世代が見つかりません(dotfiles-switch をまだ実行していない?)%s\n' "$B" "$R" "$D" "$R"
+    return 0
+  fi
+  _pkgs=$(nix_packages)
+  _count=$(printf '%s\n' "$_pkgs" | awk 'NF { n++ } END { print n + 0 }')
+  printf '%sdotfiles · Nix%s  %snix/home.nix の home.packages など %s 個%s\n' "$B" "$R" "$D" "$_count" "$R"
+  printf '%s\n' "$_pkgs" | grid 2
+
+  # Nix で入れたコマンドが、PATH で先に見つかる別のものに隠れていないか
+  _shadowed="" _missing=0 _total=0
+  for _b in "$hp"/bin/*; do
+    [ -e "$_b" ] || continue
+    _n=${_b##*/}
+    _total=$((_total + 1))
+    first_hit "$_n"
+    if [ -z "$fh" ]; then
+      _missing=$((_missing + 1))
+      continue
+    fi
+    [ ! "$fh" -ef "$_b" ] || continue
+    classify "$fh"
+    _shadowed="$_shadowed$_n$tab$(short "$fh")$tab$k_kind$tab$k_group$tab$k_detail$nl"
+  done
+  if [ "$_total" -gt 0 ] && [ "$_missing" -eq "$_total" ]; then
+    printf '  %s⚠ Nix で入れたコマンドが PATH にありません(~/.nix-profile/bin が PATH に入っていない?)%s\n' "$C_ind" "$R"
+  fi
+  [ -n "$_shadowed" ] || return 0
+  printf '  %s⚠ 次のコマンドは PATH で先に別のものが見つかり、Nix の版が使われていない%s\n' "$C_ind" "$R"
+  printf '%s' "$_shadowed" | while IFS="$tab" read -r _n _path _kind _group _detail; do
+    k_kind=$_kind k_group=$_group k_detail=$_detail
+    printf '    %-14s %s  %s\n' "$_n" "$_path" "$(label)"
+  done
+  # 消し方の案内(消すかどうかは人が決める)
+  _formulae=$(printf '%s' "$_shadowed" | awk -F '\t' '$4 == "OS · Homebrew" && $5 ~ /^[A-Za-z0-9@._+-]+$/ && !seen[$5]++ { printf " %s", $5 }')
+  _locals=$(printf '%s' "$_shadowed" | awk -F '\t' '$4 == "個別 · 手で置いたもの" && $2 ~ /^~\// { printf " %s", $2 }')
+  _crates=$(printf '%s' "$_shadowed" | awk -F '\t' '$4 == "個別 · cargo install" && $5 != "" && !seen[$5]++ { printf " %s", $5 }')
+  [ -z "$_formulae" ] || printf '    %s要らなければ: brew uninstall%s%s\n' "$D" "$_formulae" "$R"
+  [ -z "$_locals" ] || printf '    %s要らなければ: rm%s%s\n' "$D" "$_locals" "$R"
+  [ -z "$_crates" ] || printf '    %s要らなければ: cargo uninstall%s%s\n' "$D" "$_crates" "$R"
+  printf '    %s残すなら、PATH で Nix の bin(~/.nix-profile/bin)を先にする%s\n' "$D" "$R"
+}
+
+npm_globals() { # npm -g で入れたもの(node に同梱の npm・corepack は除く)
+  command -v npm >/dev/null 2>&1 || return 0
+  _np=$(npm prefix -g 2>/dev/null || true)
+  [ -n "$_np" ] || return 0
+  for _d in "$_np"/lib/node_modules/* "$_np"/lib/node_modules/@*/*; do
+    [ -d "$_d" ] || continue
+    _rel=${_d#"$_np"/lib/node_modules/}
+    case $_rel in
+      npm | corepack) ;;
+      @*/*) printf '%s\n' "$_rel" ;;
+      @*) ;;
+      *) printf '%s\n' "$_rel" ;;
+    esac
+  done
+}
+
+pnpm_globals() { # pnpm add -g で入れたもの
+  [ -n "${PNPM_HOME:-}" ] || return 0
+  for _d in "$PNPM_HOME"/global/*/node_modules/* "$PNPM_HOME"/global/*/node_modules/@*/*; do
+    [ -d "$_d" ] || continue
+    _rel=${_d#"$PNPM_HOME"/global/*/node_modules/}
+    case $_rel in
+      @*/*) printf '%s\n' "$_rel" ;;
+      @*) ;;
+      *) printf '%s\n' "$_rel" ;;
+    esac
+  done | sort -u
+}
+
+nix_profile_extra() { # nix profile install で入れたもの(home-manager の分は除く)
+  for _b in "$HOME"/.nix-profile/bin/*; do
+    [ -e "$_b" ] || continue
+    _n=${_b##*/}
+    if [ -n "$hp" ] && [ -e "$hp/bin/$_n" ] && [ "$_b" -ef "$hp/bin/$_n" ]; then continue; fi
+    _v=$(nix_pkg "$_b")
+    [ -z "$_v" ] || printf '%s\n' "${_v%% *}"
+  done | sort -u
+}
+
+local_bin_manual() { # ~/.local/bin に手で置いたもの(dotfiles の自作・uv tool・pipx・Nix のリンクは除く)
+  for _f in "$HOME"/.local/bin/*; do
+    [ -e "$_f" ] || continue
+    _n=${_f##*/}
+    if [ -e "$bin_dir/$_n" ] && [ "$_f" -ef "$bin_dir/$_n" ]; then continue; fi
+    _r=$(resolve "$_f")
+    case $_r in
+      */uv/tools/* | */pipx/venvs/* | */nix/store/*) continue ;;
+      # 別の場所にある dotfiles のクローンの自作コマンド(名前に home を含むだけの場所は除かない)
+      */home/.local/bin/*) [ ! -f "${_r%/home/.local/bin/*}/nix/home.nix" ] || continue ;;
+    esac
+    printf '%s\n' "$_n"
+  done
+}
+
+names_in() { # 引数のうち、存在するもののファイル名を出す
+  for _d in "$@"; do
+    [ ! -e "$_d" ] || basename "$_d"
+  done
+}
+
+report_outside() {
+  # Homebrew: 自分で入れたもの(依存で入ったものは除く)と cask
+  first_hit brew
+  if [ -n "$fh" ]; then
+    _bp=${HOMEBREW_PREFIX:-${fh%/bin/brew}}
+    grep -l '"installed_on_request": *true' "$_bp"/Cellar/*/*/INSTALL_RECEIPT.json 2>/dev/null |
+      sed 's|.*/Cellar/\([^/]*\)/.*|\1|' | sort -u | list_line "$C_os" "Homebrew"
+    names_in "$_bp"/Caskroom/* | list_line "$C_os" "Homebrew cask"
+  fi
+  # apt は OS の初期パッケージも manual に入るので、数だけ出す
+  if command -v apt-mark >/dev/null 2>&1; then
+    _n=$(apt-mark showmanual 2>/dev/null | awk 'END { print NR }')
+    if [ "$_n" -gt 0 ]; then
+      printf '  %s%-14s%s %s%3s%s  %s\n' "$C_os" "apt" "$R" "$D" "$_n" "$R" "manual 指定のパッケージ(OS の初期分を含む。一覧: apt-mark showmanual)"
+    fi
+  fi
+  if command -v snap >/dev/null 2>&1; then
+    snap list 2>/dev/null | awk 'NR > 1 { print $1 }' | list_line "$C_os" "snap"
+  fi
+  if command -v flatpak >/dev/null 2>&1; then
+    flatpak list --app --columns=application 2>/dev/null | list_line "$C_os" "flatpak"
+  fi
+  nix_profile_extra | list_line "$C_ind" "nix profile"
+  npm_globals | list_line "$C_ind" "npm -g"
+  pnpm_globals | list_line "$C_ind" "pnpm -g"
+  names_in "${UV_TOOL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools}"/* | list_line "$C_ind" "uv tool"
+  names_in "${PIPX_HOME:-$HOME/.local/share/pipx}"/venvs/* "$HOME"/.local/pipx/venvs/* | sort -u | list_line "$C_ind" "pipx"
+  if [ -f "$cargo_home/.crates.toml" ]; then
+    sed -n 's/^"\([^ "]*\) .*/\1/p' "$cargo_home/.crates.toml" | sort -u | list_line "$C_ind" "cargo install"
+  fi
+  names_in "$gobin"/* | list_line "$C_ind" "go install"
+  names_in "${BUN_INSTALL:-$HOME/.bun}"/install/global/node_modules/* | list_line "$C_ind" "bun -g"
+  # shellcheck disable=SC2088  # 表示用のラベル(展開させない)
+  local_bin_manual | list_line "$C_ind" "~/.local/bin"
+}
+
+if [ "$#" -gt 0 ]; then
+  status=0
+  for name in "$@"; do
+    show_one "$name" || status=1
+  done
+  exit "$status"
+fi
+
+report_tools
+echo ""
+report_nix
+echo ""
+printf '%sdotfiles の外で入れたもの%s  %sdotfiles を入れ直しても戻らない。消すのは各ツールで%s\n' "$B" "$R" "$D" "$R"
+outside=$(report_outside)
+if [ -n "$outside" ]; then
+  printf '%s\n' "$outside"
+else
+  printf '  %s(見つかりませんでした)%s\n' "$D" "$R"
+fi
+echo ""
+printf '%s1つずつ調べる: pkgwhere <コマンド名>(PATH 上のすべての場所と、使われるものが分かる)%s\n' "$D" "$R"
