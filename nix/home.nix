@@ -79,6 +79,15 @@ let
       pkgs.nodejs
     else
       pkgs.callPackage ./nodejs-bin.nix { pin = nodejsPin; };
+
+  # pnpm の入口。nixpkgs の corepack は pnpm・pnpx・yarn の入口をまとめて置くが、yarn は使わない
+  # ので corepack 本体と pnpm の分だけを出す(判断根拠は docs/decisions/js-package-managers.md)。
+  corepackPnpm = pkgs.runCommand "corepack-pnpm-${pkgs.corepack.version}" { } ''
+    mkdir -p $out/bin
+    for c in corepack pnpm pnpx; do
+      ln -s ${pkgs.corepack}/bin/$c $out/bin/$c
+    done
+  '';
 in
 {
   # 実際のユーザー名・ホームディレクトリはハードコードしない(プライベートなパスをコミットしないという方針のため)。
@@ -306,6 +315,10 @@ in
   # uv は Python のパッケージ・プロジェクト管理ツール。公式インストーラ(`curl | sh`)を使わず、
   # 他のツールと同じく nixpkgs から入れて Dependabot の flake.lock 更新に乗せる
   # (docs/decisions/dependency-tooling-scope.md の履歴参照)。設定は home/.config/uv/uv.toml。
+  # corepackPnpm は pnpm の入口(`pnpm`・`pnpx`、上の let 参照)。プロジェクトの package.json の
+  # `packageManager` に書かれた版を取ってきて使う(外では npm の最新版)。pnpm の版を
+  # グローバルに1つ固定して入れない(判断根拠は docs/decisions/js-package-managers.md)。
+  # Node.js 本体にも bin/corepack があってぶつかるため、単体のこちらを優先する。npm には触れない。
   home.packages = with pkgs; [
     tmux
     fzf
@@ -326,6 +339,7 @@ in
     zsh-syntax-highlighting
     wezterm
     nodejsRuntime
+    (lib.hiPrio corepackPnpm)
     mdgrid
     uv
   ];

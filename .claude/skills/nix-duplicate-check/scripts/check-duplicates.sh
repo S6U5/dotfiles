@@ -23,6 +23,12 @@ cmd_for_pkg() {
   case "$1" in
     ripgrep) echo rg ;;
     neovim) echo nvim ;;
+    # nix/home.nix の let で nixpkgs の nodejs か公式バイナリを選ぶ変数
+    nodejsRuntime) echo node ;;
+    # 同じく let で corepack の pnpm の入口だけを出したもの
+    corepackPnpm) echo pnpm ;;
+    # zsh のプラグイン(実行コマンドを持たない)
+    zsh-autosuggestions | zsh-syntax-highlighting) echo - ;;
     *) echo "$1" ;;
   esac
 }
@@ -45,7 +51,7 @@ while IFS= read -r line; do
   packages+=("$line")
 done < <(
   awk '/home\.packages[[:space:]]*=/{flag=1; next} flag && /\]/{flag=0} flag' "$HOME_NIX" |
-    sed -E 's/#.*//' |
+    sed -E 's/#.*//; s/\(lib\.(hi|low)Prio[[:space:]]+([^)[:space:]]+)\)/\2/' |
     tr -d ' \t' |
     grep -v '^$'
 )
@@ -67,10 +73,14 @@ for pkg in "${packages[@]}"; do
   esac
 
   cmd=$(cmd_for_pkg "$pkg")
+  if [ "$cmd" = - ]; then
+    printf '%-22s %-10s %-45s %-24s %s\n' "$pkg" "-" "-" "スキップ" "実行コマンドを持たない(zsh のプラグイン等)"
+    continue
+  fi
   nix_path="$nix_profile/$cmd"
 
   if [ ! -e "$nix_path" ]; then
-    printf '%-22s %-10s %-45s %-24s %s\n' "$pkg" "$cmd" "-" "要手動確認" "$nix_profile側にコマンドが無い(コマンド名推測ミスの可能性)"
+    printf '%-22s %-10s %-45s %-24s %s\n' "$pkg" "$cmd" "-" "要手動確認" "${nix_profile}側にコマンドが無い(コマンド名推測ミスの可能性)"
     continue
   fi
 

@@ -41,6 +41,8 @@ cp -R home/.config/bash "$FAKE_HOME/.config/bash"
 cp -R home/.config/zsh "$FAKE_HOME/.config/zsh"
 cp -R home/.local "$FAKE_HOME/.local"
 cp home/.zshenv "$FAKE_HOME/.zshenv"
+# Nix のプロファイルの bin(中身は空でよい。PATH の並びの確認に使う)
+mkdir -p "$FAKE_HOME/.nix-profile/bin"
 
 # nix/home.nix の home.activation.dotfilesShellBootstrap が生成する管理外ファイルと同じ内容
 # shellcheck disable=SC2016  # $HOME は起動したシェル側で展開させる(意図的なシングルクォート)
@@ -67,6 +69,18 @@ case ":$PATH:" in
   *":$HOME/.local/bin:"*) echo "RESULT path_local_bin yes" ;;
   *) echo "RESULT path_local_bin no" ;;
 esac
+# 入れ子のシェルで path_helper が後ろへ回した ~/.local/bin と Nix を、この順で先頭へ戻すこと(重複させない)。
+# bash 3.2 は $( ) の中のヒアドキュメントにある入れ子の case を読み違えるため、case を重ねない
+_front="$HOME/.local/bin:$HOME/.nix-profile/bin:"
+_rest=${PATH#"$_front"}
+if [ "$_rest" = "$PATH" ]; then
+  echo "RESULT path_front no"
+elif [ "$(printf '%s\n' "$PATH" | tr ':' '\n' | grep -cxF -e "$HOME/.local/bin" -e "$HOME/.nix-profile/bin")" != 2 ]; then
+  echo "RESULT path_front dup"
+else
+  echo "RESULT path_front yes"
+fi
+unset _front _rest
 [ -n "${EDITOR:-}" ] && echo "RESULT editor_set yes" || echo "RESULT editor_set no"
 [ -n "${XDG_CONFIG_HOME:-}" ] && echo "RESULT xdg_config_home yes" || echo "RESULT xdg_config_home no"
 cd "$DOTFILES_TEST_WORK/sub/dir" || exit 97
@@ -130,8 +144,10 @@ run_shell() {
   # 環境は最小限にし、fzf / eza / zoxide / starship 等が無い前提で通ることも確かめる
   # shellcheck disable=SC2016  # $DOTFILES_TEST_OUT / ERR は起動したシェル側で展開させる
   cmd=$cmd' >"$DOTFILES_TEST_OUT" 2>"$DOTFILES_TEST_ERR"'
+  # PATH は、macOS の入れ子のシェルで path_helper が並べ直したあとの形(システムが先、
+  # ~/.local/bin と Nix のプロファイルが後ろ)から始める
   local -a envargs=(
-    env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" TERM=dumb
+    env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin:$FAKE_HOME/.local/bin:$FAKE_HOME/.nix-profile/bin" TERM=dumb
     DOTFILES_TEST_WORK="$WORK_DIR" DOTFILES_TEST_OUT="$out" DOTFILES_TEST_ERR="$err" TMPDIR="${TMPDIR:-/tmp}"
   )
   # 擬似端末(pty)の下で起動する。CI のように制御端末が無い環境では、zsh を -i で起動しても
@@ -179,6 +195,7 @@ run_shell() {
     expect "defined:$f" yes
   done
   expect path_local_bin yes
+  expect path_front yes
   expect editor_set yes
   expect xdg_config_home yes
   expect cdgr_rc 0
