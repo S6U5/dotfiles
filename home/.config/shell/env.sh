@@ -26,9 +26,33 @@ for _brew_prefix in /opt/homebrew /usr/local; do
 done
 unset _brew_prefix
 
-# 自作コマンド置き場(home/.local/bin/)を PATH に通す(重複追加は避ける)
-case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
-  *) PATH="$HOME/.local/bin:$PATH" ;;
-esac
+# PATH の先頭は ~/.local/bin(自作コマンド)→ Nix のプロファイルの順にそろえる。macOS の
+# /etc/zprofile・/etc/profile が呼ぶ path_helper は、入れ子のシェル(tmux・herdr の中など)で
+# /etc/paths と /etc/paths.d/(Homebrew の /etc/paths.d/homebrew を含む)を先頭に並べ直し、
+# Nix の nix-daemon.sh は2回目は何もしない。そのままだと Homebrew や /usr/bin の同名コマンドが
+# Nix で入れたものより先に見つかるため、既にあっても取り除いてから先頭へ置き直す
+# (判断根拠は docs/decisions/path-order.md)。
+_dotfiles_path_front() {
+  _dotfiles_rest=":$PATH:"
+  while :; do
+    case "$_dotfiles_rest" in
+      *":$1:"*) _dotfiles_rest="${_dotfiles_rest%%":$1:"*}:${_dotfiles_rest#*":$1:"}" ;;
+      *) break ;;
+    esac
+  done
+  _dotfiles_rest=${_dotfiles_rest#:}
+  _dotfiles_rest=${_dotfiles_rest%:}
+  PATH="$1${_dotfiles_rest:+:$_dotfiles_rest}"
+  unset _dotfiles_rest
+}
+# Nix のプロファイルは、Nix 自身のスクリプトが PATH に足しているときだけ動かす(ここでは足さない)
+for _dotfiles_nix_bin in /nix/var/nix/profiles/default/bin "$HOME/.nix-profile/bin"; do
+  case ":$PATH:" in
+    *":$_dotfiles_nix_bin:"*) _dotfiles_path_front "$_dotfiles_nix_bin" ;;
+  esac
+done
+unset _dotfiles_nix_bin
+# 自作コマンド置き場(home/.local/bin/)は、無ければ足して一番前に置く
+_dotfiles_path_front "$HOME/.local/bin"
+unset -f _dotfiles_path_front
 export PATH

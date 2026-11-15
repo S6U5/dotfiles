@@ -265,7 +265,7 @@ add_total() {
     [ -e "$_p" ] || continue
     first_time "$_p" || continue
     du -sk -- "$_p" 2>/dev/null >>"$WORK/du" || true
-    _places="${_places:+$_places・}$(short "$_p")"
+    _places="${_places:+${_places}・}$(short "$_p")"
   done
   [ -s "$WORK/du" ] || return 0
   row_id=$((row_id + 1))

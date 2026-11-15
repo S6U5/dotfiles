@@ -1,6 +1,6 @@
 #!/bin/sh
 # パッケージマネージャのサプライチェーン対策設定を、Windows 側の npm / pnpm / uv にもコピーする。
-# WSL 内に home-manager が配布した設定(~/.npmrc / ~/.config/pnpm/rc / ~/.config/uv/uv.toml)を、
+# WSL 内に home-manager が配布した設定(~/.npmrc / ~/.config/pnpm/rc と config.yaml / ~/.config/uv/uv.toml)を、
 # Windows ネイティブ側の npm / pnpm / uv にも効かせるため、Windows 側の標準パスへコピーする。
 # home-manager の配布は WSL 内の $HOME までしか届かないための補完(判断根拠は
 # docs/decisions/windows-supply-chain.md、コピー先の一覧は README「セットアップの詳細」参照)。
@@ -64,6 +64,7 @@ copy_one() {
 
 copy_one "$HOME/.npmrc" "$userprofile\\.npmrc"
 copy_one "$HOME/.config/pnpm/rc" "$localappdata\\pnpm\\config\\rc"
+copy_one "$HOME/.config/pnpm/config.yaml" "$localappdata\\pnpm\\config\\config.yaml"
 copy_one "$HOME/.config/uv/uv.toml" "$appdata\\uv\\uv.toml"
 
 echo "完了: コピー $copied 件 / 変更なし $unchanged 件"

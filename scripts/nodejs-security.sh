@@ -151,17 +151,16 @@ if [ "$mode" = check ]; then
   exit 10
 fi
 
-# 署名の検証に使う gpgv。macOS などで入っていなければ、flake.lock の nixpkgs の gnupg を使う
-if command -v gpgv >/dev/null 2>&1; then
-  gpgv=(gpgv)
-else
-  gpgv=(nix --extra-experimental-features 'nix-command flakes' shell --inputs-from ./nix nixpkgs#gnupg -c gpgv)
-fi
+# 署名の検証に使う gpgv は、PATH 上のもの(Homebrew・OS のもの)ではなく、flake.lock の nixpkgs の
+# gnupg に固定する。検証する道具もほかのツールと同じ経路で入れ、マシンによって版が変わらないようにする
+gpgv=(nix --extra-experimental-features 'nix-command flakes' shell --inputs-from ./nix nixpkgs#gnupg -c gpgv)
 
 curl -fsSL "$KEYRING_URL" -o "$tmp/pubring.kbx"
 curl -fsSL "$DIST_URL/v$target/SHASUMS256.txt.asc" -o "$tmp/SHASUMS256.txt.asc"
-# SHASUMS256.txt.asc はクリア署名なので、検証を通った本文だけを使う
-if ! "${gpgv[@]}" --keyring "$tmp/pubring.kbx" --output "$tmp/verified-sums.txt" "$tmp/SHASUMS256.txt.asc"; then
+# SHASUMS256.txt.asc はクリア署名なので、検証を通った本文だけを使う。
+# 本文は標準出力で受け取る(GnuPG 2.5 の gpgv は --output にファイル名を渡すと
+# <名前>.part に書いたまま改名しないため)。検証に失敗したときは使わずに終わる
+if ! "${gpgv[@]}" --keyring "$tmp/pubring.kbx" --output - "$tmp/SHASUMS256.txt.asc" >"$tmp/verified-sums.txt"; then
   echo "nodejs-security: SHASUMS256.txt の署名を検証できませんでした(何も書き込みません)。" >&2
   exit 1
 fi

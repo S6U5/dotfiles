@@ -532,7 +532,7 @@ report_nix() {
   [ -n "$keep" ] && rule="直近 $keep 世代"
   [ -n "$kdays" ] && rule="${rule:+${rule}と }$kdays 日以内"
   if [ -n "$rule" ]; then
-    echo "  世代の数: $gens(残す範囲: $rule。switch のたびにそれ以外を切り詰める)"
+    echo "  世代の数: $gens(残す範囲: ${rule}。switch のたびにそれ以外を切り詰める)"
   else
     echo "  世代の数: $gens(古い世代は GC で消えない。戻す必要が無くなったら expire-generations)"
   fi

@@ -331,10 +331,11 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 |---|---|
 | `home/.npmrc` | `%USERPROFILE%\.npmrc` |
 | `home/.config/pnpm/rc` | `%LOCALAPPDATA%\pnpm\config\rc` |
+| `home/.config/pnpm/config.yaml` | `%LOCALAPPDATA%\pnpm\config\config.yaml` |
 | `home/.config/uv/uv.toml` | `%APPDATA%\uv\uv.toml` |
 
 - コピーは明示実行のみで、自動では追従しません。リポジトリ側の設定を変えたら再実行(再コピー)してください。
-- バージョン要件: npm の `min-release-age` は npm 11.5.1+、uv の `exclude-newer` の相対期間指定は uv 0.9.17+ が必要です(それ未満では効かないか、設定の解釈でエラーになります)。
+- バージョン要件: npm の `min-release-age` は npm 11.5.1+、pnpm の公開からの待ち時間は pnpm 10.16+(10 までは `rc` の `minimum-release-age`、11 以降は `config.yaml` の `minimumReleaseAge` を読むので両方を置いています)、uv の `exclude-newer` の相対期間指定は uv 0.9.17+ が必要です(それ未満では効かないか、設定の解釈でエラーになります)。
 
 </details>
 
