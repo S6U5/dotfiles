@@ -1,0 +1,426 @@
+#!/bin/sh
+# AI ツールが手元に溜めた会話の記録やキャッシュの量を、ツールとプロファイルごとに一覧にする。
+#   aidata                # 大きい順の一覧 → それぞれの内訳 → 自動で消えるかのメモ、の順に出す
+#   aidata <フォルダ>...  # 自動では見つからない場所のプロファイルも足して出す
+# 見るもの:
+#   Claude Code    ~/.claude と、CLAUDE_CONFIG_DIR で分けたプロファイル。本体の版とキャッシュも
+#   Claude アプリ  デスクトップアプリのデータ(Cowork の仮想マシン、Cowork・Code の会話の記録など)
+#   Codex          ~/.codex と、CODEX_HOME で分けたもの。Codex アプリのデータも
+#   ほか           Gemini CLI・Antigravity・Copilot CLI・Cursor・opencode・VS Code のチャット・
+#                  ChatGPT アプリ・ローカルのモデル(Ollama・LM Studio・Hugging Face)
+# プロファイルの探し方: ホームの隠しフォルダの下を3段まで見て、projects/ と history.jsonl などを持つ
+# フォルダを Claude Code の、sessions/<年> などを持つフォルダを Codex のプロファイルとみなす。
+# いまのシェルの CLAUDE_CONFIG_DIR・CODEX_HOME・COPILOT_HOME・GEMINI_CLI_HOME と、
+# DOTFILES_AI_DIRS(: 区切り。local.sh に書いておく)も見る。
+# 読み取り専用で何も消さない。ファイルの中身は読まず、大きさ・数・更新日だけを見る(会話の内容は出さない)。
+# WSL では Windows 側を数えない(/mnt 越しは遅いため。Windows 側は diskreport windows で数える)。
+set -eu
+
+case "${1:-}" in
+  -h | --help)
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+    exit 0
+    ;;
+esac
+
+tab=$(printf '\t')
+old_days=30 # Claude Code の cleanupPeriodDays と Gemini CLI の sessionRetention の既定
+cache_home=${XDG_CACHE_HOME:-$HOME/.cache}
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+if [ "$(uname -s)" = Darwin ]; then
+  app_dir="$HOME/Library/Application Support"
+  app_cache=$HOME/Library/Caches
+else
+  app_dir=$config_home
+  app_cache=$cache_home
+fi
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  esc=$(printf '\033')
+  B="${esc}[1m" D="${esc}[2m" G="${esc}[32m" R="${esc}[0m"
+else
+  B="" D="" G="" R=""
+fi
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+: >"$WORK/rows" # 一覧の1行: 合計 KiB<TAB>会話の記録 KiB<TAB>番号<TAB>名前<TAB>場所
+: >"$WORK/old"  # 古い会話が残っている Claude Code のプロファイル: 場所<TAB>件数
+: >"$WORK/seen" # 数えたフォルダ(同じものを2回数えないため)
+row_id=0
+tools=" "
+
+# ---------------------------------------------------------------------------
+# 小さな道具
+# ---------------------------------------------------------------------------
+human() { # KiB を 512K・3.4M・1.2G の形に
+  LC_ALL=C awk -v k="$1" 'BEGIN {
+    split("K M G T", u, " "); i = 1
+    while (k >= 1024 && i < 4) { k /= 1024; i++ }
+    printf (i == 1 ? "%d%s" : "%.1f%s"), k, u[i]
+  }'
+}
+
+short() { # $HOME を ~ にして出す(貼り付けたときにユーザー名を出さないため)
+  # shellcheck disable=SC2088  # 表示用の文字としての ~(展開させない)
+  case $1 in
+    "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+exists() { [ -e "$1" ]; } # glob の1つ目が実在するか(合うものが無いと glob は文字のまま残る)
+
+is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
+
+first_time() { # 同じ実体のフォルダを2回数えない。初めてなら 0
+  _real=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  if grep -qxF -- "$_real" "$WORK/seen"; then return 1; fi
+  printf '%s\n' "$_real" >>"$WORK/seen"
+}
+
+# ---------------------------------------------------------------------------
+# 中身の意味(公式の文書にあるものだけ説明を付ける)。出力: 種類<TAB>説明
+# 種類 log は「会話の記録」として一覧の列に足す。入力の履歴も含める(打ったことの記録なので)
+# ---------------------------------------------------------------------------
+describe() { # $1: 道具, $2: 名前
+  case "$1:$2" in
+    claude:projects) printf 'log\t会話の記録\n' ;;
+    claude:history.jsonl) printf 'log\t入力の履歴(↑・Ctrl+R。自動では消えない)\n' ;;
+    claude:file-history) printf '\t編集前の控え(巻き戻し用)\n' ;;
+    claude:jobs | claude:daemon) printf '\tバックグラウンドのセッションの状態(消さない)\n' ;;
+    claude:plugins) printf '\tプラグイン(消さない)\n' ;;
+    claude:skills | claude:agents | claude:commands) printf '\t自作のスキル・エージェント・コマンド\n' ;;
+    claude:tasks | claude:todos) printf '\tタスクの一覧\n' ;;
+    claude:plans) printf '\tプランモードの計画\n' ;;
+    claude:uploads) printf '\tRemote Control で添付したファイル\n' ;;
+    claude:paste-cache) printf '\t長い貼り付け\n' ;;
+    claude:image-cache) printf '\t貼り付けた画像\n' ;;
+    claude:shell-snapshots) printf '\tシェルの状態の控え\n' ;;
+    claude:backups | claude:*.claude.json.backup*) printf '\t.claude.json の控え\n' ;;
+    claude:.claude.json | claude:*/.claude.json) printf '\t設定と状態(消さない)\n' ;;
+    claude:debug) printf '\tデバッグのログ\n' ;;
+    claude:statsig) printf '\t古い版の名残\n' ;;
+    claude:sessions) printf '\t動いているセッションの印\n' ;;
+    claude:agent-memory) printf '\tサブエージェントの記憶\n' ;;
+    claude-bin:versions) printf '\tClaude Code の版\n' ;;
+    claude-app:vm_bundles) printf '\tCowork の仮想マシンと作業領域\n' ;;
+    claude-app:claude-code) printf '\tCode で使う Claude Code の本体\n' ;;
+    claude-app:claude-code-vm) printf '\tCode の仮想マシン用のデータ\n' ;;
+    claude-app:local-agent-mode-sessions) printf 'log\tCowork とチャットの記録\n' ;;
+    claude-app:claude-code-sessions) printf 'log\tCode のセッションの記録(会話は .claude/projects)\n' ;;
+    codex:sessions) printf 'log\t会話の記録\n' ;;
+    codex:archived_sessions) printf 'log\tアーカイブした会話\n' ;;
+    codex:history.jsonl) printf 'log\t入力の履歴\n' ;;
+    codex:packages) printf '\t単体インストール版の本体\n' ;;
+    codex:plugins) printf '\tプラグイン\n' ;;
+    codex:.tmp) printf '\t一時ファイル(プラグインなど)\n' ;;
+    codex:logs_*) printf '\tログ(10 日・64MiB を超えた分は自動で消える)\n' ;;
+    codex:state_* | codex:thread_history_* | codex:memories_* | codex:queue_* | codex:goals_* | codex:sqlite)
+      printf '\tスレッドの状態などのデータベース\n'
+      ;;
+    codex:memories) printf '\t記憶\n' ;;
+    codex:computer-use) printf '\tComputer Use のアプリ\n' ;;
+    codex:generated_images) printf '\t生成した画像\n' ;;
+    codex:attachments) printf '\t添付したファイル\n' ;;
+    gemini:tmp) printf 'log\tGemini CLI の会話など\n' ;;
+    gemini:history) printf '\tGemini CLI のチェックポイント\n' ;;
+    gemini:antigravity | gemini:antigravity-ide) printf '\tAntigravity の会話と作業データ\n' ;;
+    gemini:antigravity-cli) printf '\tagy の会話・本体・ログ\n' ;;
+    gemini:config) printf '\t設定とプラグイン(Antigravity と共通)\n' ;;
+    copilot:session-state) printf 'log\t会話の記録\n' ;;
+    copilot:history-session-state) printf 'log\t古い形式の会話\n' ;;
+    copilot:session-store.db*) printf '\t会話の索引(作り直せる)\n' ;;
+    copilot:command-history-state) printf '\t入力の履歴\n' ;;
+    copilot:installed-plugins | copilot:plugin-data) printf '\tプラグイン\n' ;;
+    cursor:extensions) printf '\t拡張機能\n' ;;
+    opencode:opencode.db*) printf 'log\t会話(データベース)\n' ;;
+    opencode:storage) printf 'log\t古い形式の会話\n' ;;
+    opencode:snapshot) printf '\t元に戻す用の控え\n' ;;
+    opencode:tool-output | opencode:shell) printf '\tツールの出力(7 日で自動で消える)\n' ;;
+    # Electron のアプリ(Claude・Codex・Cursor・Antigravity)に共通の入れ物
+    *:Cache | *:"Code Cache" | *:GPUCache | *:Dawn*Cache | *:GraphiteDawnCache | *:"Shared Dictionary" | *:CachedData | *:CachedProfilesData)
+      printf '\tキャッシュ\n'
+      ;;
+    *:IndexedDB | *:"Local Storage" | *:"Session Storage" | *:WebStorage) printf '\tアプリの保存データ\n' ;;
+    *:CachedExtensionVSIXs) printf '\t拡張機能のダウンロードの控え\n' ;;
+    *:logs | *:log | *:"~/Library/Logs/"*) printf '\tログ\n' ;;
+    *:User) printf '\t設定と状態\n' ;;
+    *:cache) printf '\tキャッシュ\n' ;;
+    *) printf '\t\n' ;;
+  esac
+}
+
+# 会話の記録の件数と、old_days 日より前の分。$1: 古い分を覚えておく場所の名前(空なら覚えない), $2...: find の引数
+log_note() {
+  _key=$1
+  shift
+  _all=$(find "$@" -type f 2>/dev/null | wc -l | tr -d ' ')
+  _old=$(find "$@" -type f -mtime +"$old_days" -exec du -k {} + 2>/dev/null | awk '{ n++; s += $1 } END { printf "%d %d", n, s }')
+  _oldn=${_old% *}
+  if [ "$_oldn" -gt 0 ]; then
+    [ -n "$_key" ] && printf '%s\t%s\n' "$_key" "$_oldn" >>"$WORK/old"
+    echo "$_all 件($old_days 日より前 $_oldn 件・$(human "${_old#* }"))"
+  else
+    echo "$_all 件"
+  fi
+}
+
+count_note() { # $1: 前に付ける語, $2: 後ろに付ける語, $3...: find の引数
+  _pre=$1 _post=$2
+  shift 2
+  _n=$(find "$@" 2>/dev/null | wc -l | tr -d ' ')
+  [ "$_n" -gt 0 ] && echo "$_pre$_n$_post"
+  return 0
+}
+
+note() { # $1: 道具, $2: パス, $3: 名前。件数などの補足(無ければ何も出さない)
+  case "$1:$3" in
+    claude:projects) log_note "$(short "${2%/*}")" "$2" -mindepth 2 -maxdepth 2 -name '*.jsonl' ;;
+    codex:sessions | codex:archived_sessions) log_note "" "$2" \( -name 'rollout-*.jsonl' -o -name 'rollout-*.jsonl.zst' \) ;;
+    gemini:tmp) log_note "" "$2" -path '*/chats/*' \( -name 'session-*.json' -o -name 'session-*.jsonl' \) ;;
+    copilot:session-state | copilot:history-session-state) count_note "" " 件" "$2" -mindepth 1 -maxdepth 1 ;;
+    claude-app:local-agent-mode-sessions) count_note "" " 件" "$2" -type f -name 'local_*.json' ;;
+    gemini:antigravity*) count_note "(会話 " " 件)" "$2" -path '*/conversations/*' -type f ;;
+    claude-bin:versions) count_note "" " 個(新しい 2 つと使っているもの以外は自動で消える)" "$2" -mindepth 1 -maxdepth 1 ;;
+  esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# 数える
+# ---------------------------------------------------------------------------
+label_of() {
+  case $1 in
+    claude) echo "Claude Code" ;;
+    codex) echo "Codex" ;;
+    *) echo "指定したフォルダ" ;;
+  esac
+}
+
+# フォルダの中身を1つずつ数え、内訳と一覧の1行を作る。$1: 道具, $2: 名前, $3: フォルダ, $4...: 一緒に数えるもの
+add_dir() {
+  _tool=$1 _label=$2 _dir=$3
+  shift 3
+  [ -d "$_dir" ] || return 0
+  first_time "$_dir" || return 0
+  row_id=$((row_id + 1))
+  # du は同じ実体を1回だけ数えるので、中身を足すと全体になる
+  du -sk -- "$_dir"/* "$_dir"/.[!.]* "$_dir"/..?* "$@" 2>/dev/null >"$WORK/du" || true
+  : >"$WORK/d$row_id"
+  while IFS="$tab" read -r _kib _path; do
+    case $_path in
+      "$_dir"/*) _name=${_path#"$_dir"/} ;;
+      *) _name=$(short "$_path") ;;
+    esac
+    _info=$(describe "$_tool" "$_name")
+    printf '%s\t%s\t%s\t%s\t%s\n' "$_kib" "${_info%%"$tab"*}" "$_name" "${_info#*"$tab"}" \
+      "$(note "$_tool" "$_path" "$_name")" >>"$WORK/d$row_id"
+  done <"$WORK/du"
+  [ -s "$WORK/d$row_id" ] || return 0
+  tools="$tools$_tool "
+  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$(short "$_dir")" '
+    { t += $1; if ($2 == "log") l += $1 }
+    END { printf "%d\t%d\t%s\t%s\t%s\n", t, l, id, label, place }' "$WORK/d$row_id" >>"$WORK/rows"
+}
+
+# 合計だけを数える(キャッシュやモデルの置き場)。$1: 名前, $2...: 数える場所(あるものだけ)
+add_total() {
+  _label=$1
+  shift
+  : >"$WORK/du"
+  _places=""
+  for _p in "$@"; do
+    [ -e "$_p" ] || continue
+    first_time "$_p" || continue
+    du -sk -- "$_p" 2>/dev/null >>"$WORK/du" || true
+    _places="${_places:+$_places・}$(short "$_p")"
+  done
+  [ -s "$WORK/du" ] || return 0
+  row_id=$((row_id + 1))
+  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$_places" '
+    { t += $1 } END { printf "%d\t0\t%s\t%s\t%s\n", t, id, label, place }' "$WORK/du" >>"$WORK/rows"
+}
+
+# VS Code のチャットは、ワークスペースごとのフォルダに散らばっているので、まとめて1行にする
+add_vscode_chat() { # $1: 名前, $2: ユーザーデータの User フォルダ
+  [ -d "$2" ] || return 0
+  set -- "$1" "$2" "$2"/workspaceStorage/*/chatSessions "$2"/globalStorage/emptyWindowChatSessions \
+    "$2"/globalStorage/transferredChatSessions
+  _label=$1 _user=$2
+  shift 2
+  du -sk -- "$@" 2>/dev/null >"$WORK/du" || true
+  [ -s "$WORK/du" ] || return 0
+  row_id=$((row_id + 1))
+  _n=$(find "$@" -type f \( -name '*.json' -o -name '*.jsonl' \) 2>/dev/null | wc -l | tr -d ' ')
+  _places=$(wc -l <"$WORK/du" | tr -d ' ')
+  awk -F'\t' -v n="$_n" -v places="$_places" '
+    { t += $1 } END { printf "%d\tlog\tchatSessions\t会話の記録\t%d 件(%d か所)\n", t, n, places }' "$WORK/du" >"$WORK/d$row_id"
+  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$(short "$_user")" '
+    { printf "%d\t%d\t%s\t%s\t%s\n", $1, $1, id, label, place }' "$WORK/d$row_id" >>"$WORK/rows"
+}
+
+is_claude() { # Claude Code の設定フォルダか(CLAUDE_CONFIG_DIR で分けたものも同じ形)
+  [ -d "$1/projects" ] || return 1
+  [ -f "$1/history.jsonl" ] || [ -f "$1/.claude.json" ] || [ -d "$1/file-history" ] ||
+    [ -d "$1/shell-snapshots" ] || [ -d "$1/session-env" ] || [ -d "$1/statsig" ] || [ -d "$1/todos" ]
+}
+
+is_codex() { # Codex の置き場か。sessions/ は他の道具にもあるので、Codex に特有の形も見る
+  [ -d "$1/sessions" ] || return 1
+  [ -d "$1/archived_sessions" ] || exists "$1"/sessions/[0-9][0-9][0-9][0-9] ||
+    exists "$1"/state_*.sqlite || exists "$1"/logs_*.sqlite
+}
+
+# プロファイルの候補。出力: 見込み<TAB>フォルダ(見込みが found なら、形で見分けて合わなければ捨てる。
+# タブは read で空の欄が詰められるので、見込みを空にしない)
+candidates() {
+  # set -e の下なので、[ ] && … で終わる書き方をしない(偽のときに処理が止まる)
+  printf 'claude\t%s\n' "$HOME/.claude" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  printf 'codex\t%s\n' "$HOME/.codex" "${CODEX_HOME:-$HOME/.codex}"
+  printf '%s\n' "${DOTFILES_AI_DIRS:-}" | tr ':' '\n' | while IFS= read -r _d; do
+    if [ -n "$_d" ]; then printf 'any\t%s\n' "$_d"; fi
+  done
+  for _d in "$@"; do printf 'any\t%s\n' "$_d"; done
+  # ホームの隠しフォルダの下を3段まで。大きくて関係の無い木は見ない
+  find "$HOME"/.[!.]* "$HOME"/..?* "$config_home/." -maxdepth 3 \
+    \( -name node_modules -o -name .git -o -name .Trash -o -name Trash -o -name _cacache -o -name registry \
+    -o -name toolchains -o -path "$HOME/.cache" -o -path "$HOME/.npm" -o -path "$HOME/.nix-defexpr" \) -prune \
+    -o -type d \( -name projects -o -name sessions \) -print 2>/dev/null |
+    sed "s|/[^/]*\$||; s|/\\./|/|g; s|^|found$tab|"
+  return 0
+}
+
+profiles() { # 出力: 道具<TAB>実体のフォルダ<TAB>見つけたときのフォルダ(同じ実体と、別のプロファイルの中にあるものを除く)
+  candidates "$@" | while IFS="$tab" read -r _hint _d; do
+    [ -n "$_d" ] && [ -d "$_d" ] || continue
+    _real=$(cd "$_d" 2>/dev/null && pwd -P) || continue
+    if is_claude "$_real"; then
+      _t=claude
+    elif is_codex "$_real"; then
+      _t=codex
+    elif [ "$_hint" != found ]; then
+      _t=$_hint
+    else
+      continue
+    fi
+    [ "$_t" = any ] && _t=dir
+    printf '%s\t%s\t%s\n' "$_t" "$_real" "$_d"
+  done | LC_ALL=C sort -t "$tab" -k2,2 | awk -F'\t' '
+    { for (i = 1; i <= n; i++) if ($2 == p[i] || index($2, p[i] "/") == 1) next
+      p[++n] = $2; print }'
+}
+
+profiles "$@" >"$WORK/profiles"
+home_claude=$(cd "$HOME/.claude" 2>/dev/null && pwd -P || true)
+while IFS="$tab" read -r t real d; do
+  if [ "$t" = claude ] && [ "$real" = "$home_claude" ]; then
+    # 既定のプロファイルだけ、設定と状態がホーム直下の ~/.claude.json にある
+    add_dir claude "Claude Code" "$d" "$HOME/.claude.json" "$HOME"/.claude.json.backup*
+  else
+    add_dir "$t" "$(label_of "$t")" "$d"
+  fi
+done <"$WORK/profiles"
+
+add_dir claude-bin "Claude Code の本体" "$HOME/.local/share/claude"
+add_total "Claude Code のキャッシュ" "$app_cache/claude-cli-nodejs"
+for a in Claude Claude-3p; do
+  add_dir claude-app "Claude アプリ" "$app_dir/$a" "$HOME/Library/Logs/$a"
+done
+add_dir app "Codex アプリ" "$app_dir/Codex"
+for g in "$HOME" "${GEMINI_CLI_HOME:-$HOME}"; do # GEMINI_CLI_HOME は .gemini の親を指す
+  add_dir gemini "Gemini CLI・Antigravity" "$g/.gemini"
+done
+add_dir app "Antigravity アプリ" "$app_dir/Antigravity"
+for c in "$HOME/.copilot" "${COPILOT_HOME:-$HOME/.copilot}"; do
+  add_dir copilot "Copilot CLI" "$c"
+done
+add_total "Copilot CLI のキャッシュ" "${COPILOT_CACHE_HOME:-$app_cache/copilot}"
+add_dir cursor "Cursor" "$HOME/.cursor"
+add_dir app "Cursor アプリ" "$app_dir/Cursor"
+add_dir opencode "opencode" "$data_home/opencode"
+add_total "opencode のキャッシュ" "$cache_home/opencode"
+add_vscode_chat "VS Code のチャット" "$app_dir/Code/User"
+add_vscode_chat "VS Code Insiders のチャット" "$app_dir/Code - Insiders/User"
+add_total "ChatGPT アプリ" "$app_dir/com.openai.chat"
+add_total "Ollama のモデル" "${OLLAMA_MODELS:-$HOME/.ollama/models}"
+add_total "LM Studio のモデル" "$HOME/.lmstudio/models" "$HOME/.cache/lm-studio/models"
+add_total "Hugging Face のキャッシュ" "${HF_HOME:-$cache_home/huggingface}"
+
+# ---------------------------------------------------------------------------
+# 出す
+# ---------------------------------------------------------------------------
+memo_lines() {
+  case $tools in *" claude "*)
+    echo "Claude Code は、会話の記録・編集前の控え・計画などを、cleanupPeriodDays(既定 30 日)より古いものから自動で消す。"
+    echo "Claude Code の history.jsonl と jobs は自動では消えない。cleanupPeriodDays はプロファイルごとの settings.json に書く。"
+    ;;
+  esac
+  if [ -s "$WORK/old" ]; then
+    _list=$(awk -F'\t' '{ printf "%s%s %d 件", (NR > 1 ? "、" : ""), $1, $2 }' "$WORK/old")
+    echo "$old_days 日より前の会話が残っている($_list)。cleanupPeriodDays を長くしているか、Claude アプリ・Cowork から使った会話と考えられる。"
+    echo "Claude アプリ・Cowork から使った会話は、desktopSessionCleanupPeriodDays を設定しない限り日数では消えない。"
+  fi
+  case $tools in *" codex "*)
+    echo "Codex は会話を自動では消さない。消すときは codex delete(codex archive は一覧から隠すだけで消さない)。"
+    ;;
+  esac
+  case $tools in *" gemini "*)
+    echo "Gemini CLI は general.sessionRetention(既定 30 日)より古い会話を自動で消す。"
+    ;;
+  esac
+  if is_wsl; then
+    echo "Windows 側(ユーザーフォルダの .claude や Claude アプリなど)は数えていない。Windows 側は diskreport windows で数える。"
+  fi
+  echo "このコマンドは何も消さない。手で消すときは、そのツールを閉じてから消す。"
+}
+
+if [ ! -s "$WORK/rows" ]; then
+  echo "AI ツールのデータは見つかりませんでした。"
+  exit 0
+fi
+
+sort -t "$tab" -k1,1nr "$WORK/rows" >"$WORK/rows.sorted"
+
+# 一覧(数字を先に置いて桁をそろえる。名前は日本語を含むので最後に置く)
+LC_ALL=C awk -F'\t' -v B="$B" -v D="$D" -v G="$G" -v R="$R" '
+  function h(k, i) { i = 1; while (k >= 1024 && i < 4) { k /= 1024; i++ }; return sprintf((i == 1 ? "%d%s" : "%.1f%s"), k, substr("KMGT", i, 1)) }
+  BEGIN { print B "AI ツールが手元に置いているデータ" R; print ""; print D "      合計  会話の記録" R }
+  { t += $1; l += $2
+    printf "  %8s  %s%10s%s  %s  %s%s%s\n", h($1), G, ($2 > 0 ? h($2) : "-"), R, $4, D, $5, R }
+  END { printf "  %8s  %s%10s%s  %s\n", h(t), G, h(l), R, B "合計" R }' "$WORK/rows.sorted"
+
+# 内訳(1M 以上のものだけ。会話の記録はいつも出し、ほかは大きい順に 8 つまで)
+while IFS="$tab" read -r total _logk rid label place; do
+  [ -f "$WORK/d$rid" ] && [ "$total" -ge 1024 ] || continue
+  echo ""
+  printf '%s%s%s  %s%s%s  %s\n' "$B" "$label" "$R" "$D" "$place" "$R" "$(human "$total")"
+  sort -t "$tab" -k1,1nr "$WORK/d$rid" | LC_ALL=C awk -F'\t' -v D="$D" -v G="$G" -v R="$R" '
+    function h(k, i) { i = 1; while (k >= 1024 && i < 4) { k /= 1024; i++ }; return sprintf((i == 1 ? "%d%s" : "%.1f%s"), k, substr("KMGT", i, 1)) }
+    { k[NR] = $1; kind[NR] = $2; nm[NR] = $3; ds[NR] = $4; nt[NR] = $5 }
+    END {
+      w = 4
+      for (i = 1; i <= NR; i++) {
+        show[i] = 0
+        if (kind[i] == "log") show[i] = 1
+        else if (k[i] >= 1024 && shown < 8) { show[i] = 1; shown++ }
+        if (show[i] && length(nm[i]) > w) w = length(nm[i])
+      }
+      if (w > 26) w = 26
+      for (i = 1; i <= NR; i++) {
+        if (!show[i]) { rest++; rk += k[i]; continue }
+        text = ds[i]
+        if (nt[i] != "") text = text (text == "" || substr(nt[i], 1, 1) == "(" ? "" : " ") nt[i]
+        if (text == "") printf "  %8s  %s\n", h(k[i]), nm[i]
+        else printf "  %8s  %-" w "s  %s%s%s\n", h(k[i]), nm[i], (kind[i] == "log" ? G : D), text, R
+      }
+      if (rest > 0) printf "  %8s  %s\n", h(rk), D "そのほか " rest " 個" R
+    }'
+done <"$WORK/rows.sorted"
+
+echo ""
+echo "${B}メモ${R}"
+memo_lines | while IFS= read -r line; do
+  printf '  %s\n' "$line"
+done

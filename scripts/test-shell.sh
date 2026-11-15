@@ -486,6 +486,51 @@ else
   echo "  skip: python3 が無いので疑似端末での確認を飛ばす"
 fi
 
+echo "== 9) aidata が AI ツールのプロファイルをフォルダの形で見つけ、数えるか"
+AI_TEST=$WORK_DIR/aidata
+AH=$AI_TEST/home
+mk_claude() { # $1: プロファイルのフォルダ, $2: 会話の記録の大きさ(バイト)
+  mkdir -p "$1/projects/-work-p1" "$1/file-history"
+  head -c "$2" /dev/zero >"$1/projects/-work-p1/s1.jsonl"
+  : >"$1/projects/-work-p1/s2.jsonl"
+  : >"$1/history.jsonl"
+}
+mk_claude "$AH/.claude" 1200000
+touch -t 202001010000 "$AH/.claude/projects/-work-p1/s1.jsonl"
+mkdir -p "$AH/.claude/jobs"
+head -c 1100000 /dev/zero >"$AH/.claude/jobs/state"
+: >"$AH/.claude.json"
+mk_claude "$AH/.claude-work" 1000
+: >"$AH/.claude-work/.claude.json"
+mk_claude "$AH/.ccs/instances/team" 1000
+mk_claude "$AI_TEST/elsewhere/claude-x" 1000
+mkdir -p "$AH/.codex-alt/sessions/2026/03/04" "$AH/.config/herdr/sessions" "$AH/.gemini/config/projects" \
+  "$AH/.gemini/config/plugins" "$AH/notes"
+: >"$AH/.codex-alt/sessions/2026/03/04/rollout-2026-03-04T00-00-00-x.jsonl"
+: >"$AH/.config/herdr/config.toml"
+head -c 3000 /dev/zero >"$AH/notes/a.txt"
+run_aidata() {
+  env -i HOME="$AH" PATH="/usr/bin:/bin" DOTFILES_AI_DIRS="$AI_TEST/elsewhere/claude-x" \
+    "$DOTFILES_DIR/home/.local/bin/aidata" "$@" </dev/null 2>&1
+}
+out=$(run_aidata "$AH/notes") || ng "aidata が非0で終了"
+expect_line "$out" '^ +[0-9.]+[KMG] +[0-9.]+[KMG]  Claude Code  ~/\.claude$' "aidata: 既定のプロファイル ~/.claude を出す"
+expect_line "$out" 'Claude Code  ~/\.claude-work$' "aidata: 隠しフォルダの別のプロファイルを形で見つける"
+expect_line "$out" 'Claude Code  ~/\.ccs/instances/team$' "aidata: 3 段下のプロファイルも見つける"
+expect_in "$out" "elsewhere/claude-x" "aidata: DOTFILES_AI_DIRS のプロファイルも数える"
+expect_line "$out" 'Codex  ~/\.codex-alt$' "aidata: sessions/<年> を持つフォルダを Codex と見分ける"
+expect_line "$out" '指定したフォルダ  ~/notes$' "aidata: 引数のフォルダも数える"
+expect_not_in "$out" "herdr" "aidata: sessions/ があるだけのフォルダを Codex とみなさない"
+expect_not_in "$out" ".gemini/config" "aidata: projects/ があるだけのフォルダを Claude Code とみなさない"
+expect_line "$out" '^ +[0-9.]+M  projects +会話の記録 2 件\(30 日より前 1 件・[0-9.]+M\)$' "aidata: 会話の件数と 30 日より前の分を出す"
+expect_line "$out" '^ +[0-9.]+M  jobs +バックグラウンドのセッションの状態' "aidata: 中身に公式の説明を添える"
+expect_in "$out" "30 日より前の会話が残っている(~/.claude 1 件)" "aidata: 古い会話が残っているプロファイルをメモに出す"
+expect_not_in "$out" "$AH" "aidata: \$HOME は ~ にして出す"
+expect_not_in "$out" $'\e[' "aidata: パイプでは色を付けない"
+out=$(env -i HOME="$AI_TEST/empty" PATH="/usr/bin:/bin" "$DOTFILES_DIR/home/.local/bin/aidata" 2>&1) ||
+  ng "aidata が非0で終了(何も無いとき)"
+expect_in "$out" "見つかりませんでした" "aidata: 何も無ければそう出す"
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

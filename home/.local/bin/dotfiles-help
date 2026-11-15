@@ -87,7 +87,7 @@ fi
 group_of() {
   case $1 in
     dotfiles-update | dotfiles-switch | agent-plugins-setup | nix-gc-setup) echo 1 ;;
-    diskreport | cachesweep | pkgwhere | git-branch-sweep) echo 2 ;;
+    diskreport | cachesweep | aidata | pkgwhere | git-branch-sweep) echo 2 ;;
     extract | clipcopy | clippaste | explorer | notify) echo 3 ;;
     word | excel | powerpoint | outlook | onenote | teams | arduino | fusion360) echo 4 ;;
     wsl-* | wincred) echo 5 ;;
