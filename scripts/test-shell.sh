@@ -356,6 +356,136 @@ expect_in "$out" "読めなかったフォルダ: 3 個" "diskreport windows: �
 expect_in "$out" "docker" "diskreport windows: アプリ別に出す"
 expect_not_in "$out" "not a size line" "diskreport windows: 数字で始まらない行は索引に入れない"
 
+echo "== 7) pkgwhere が出どころ(dotfiles の Nix・自作・Homebrew・それ以外)を見分けるか"
+# 偽の Nix ストア・home-manager の世代・Homebrew の置き場を作業用ディレクトリの下に作る
+# (判定はパスの形と、リンクが同じファイルを指すかだけで行うので、本物の /nix/store は要らない)
+PKG_TEST=$WORK_DIR/pkgwhere
+PH=$PKG_TEST/home
+STORE=$PKG_TEST/nix/store
+BREW=$PKG_TEST/brew
+HM_GEN=$PH/.local/state/nix/profiles/home-manager
+mk_exe() {
+  mkdir -p "$(dirname "$1")"
+  printf '#!/bin/sh\n' >"$1"
+  chmod +x "$1"
+}
+RG_PKG=$STORE/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ripgrep-15.2.0
+UV_PKG=$STORE/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-uv-0.13.5
+CARGO_PKG=$STORE/cccccccccccccccccccccccccccccccc-cargo-1.98.1
+mk_exe "$RG_PKG/bin/rg"
+mk_exe "$UV_PKG/bin/uv"
+mk_exe "$CARGO_PKG/bin/cargo"
+mkdir -p "$HM_GEN/home-path/bin" "$PH/.nix-profile/bin" "$PH/.local/bin"
+ln -s "$RG_PKG/bin/rg" "$HM_GEN/home-path/bin/rg"
+ln -s "$UV_PKG/bin/uv" "$HM_GEN/home-path/bin/uv"
+ln -s "$HM_GEN/home-path/bin/rg" "$PH/.nix-profile/bin/rg"
+ln -s "$HM_GEN/home-path/bin/uv" "$PH/.nix-profile/bin/uv"
+# dotfiles の外で nix profile install したもの
+ln -s "$CARGO_PKG/bin/cargo" "$PH/.nix-profile/bin/cargo"
+# Homebrew: 自分で入れた ripgrep(PATH で Nix の rg より先に来る)と、依存で入った libfoo
+mk_exe "$BREW/bin/brew"
+mk_exe "$BREW/Cellar/ripgrep/14.0.0/bin/rg"
+ln -s ../Cellar/ripgrep/14.0.0/bin/rg "$BREW/bin/rg"
+printf '{\n  "installed_on_request": true\n}\n' >"$BREW/Cellar/ripgrep/14.0.0/INSTALL_RECEIPT.json"
+mkdir -p "$BREW/Cellar/libfoo/1.0"
+printf '{\n  "installed_on_request": false\n}\n' >"$BREW/Cellar/libfoo/1.0/INSTALL_RECEIPT.json"
+# uv tool、~/.local/bin に手で置いたもの、dotfiles の自作コマンドへのリンク、cargo install
+mk_exe "$PH/.local/share/uv/tools/ruff/bin/ruff"
+ln -s "$PH/.local/share/uv/tools/ruff/bin/ruff" "$PH/.local/bin/ruff"
+mk_exe "$PH/.local/bin/mytool"
+ln -s "$DOTFILES_DIR/home/.local/bin/diskreport" "$PH/.local/bin/diskreport"
+mk_exe "$PH/.cargo/bin/mdgrid"
+printf '[v1]\n"mdgrid 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = ["mdgrid"]\n' >"$PH/.cargo/.crates.toml"
+run_pkgwhere() {
+  env -i HOME="$PH" PATH="$BREW/bin:$PH/.local/bin:$PH/.nix-profile/bin:$PH/.cargo/bin:/usr/bin:/bin" \
+    "$DOTFILES_DIR/home/.local/bin/pkgwhere" "$@" </dev/null 2>&1
+}
+expect_line() { # $1: 出力, $2: 行全体に合う拡張正規表現, $3: 説明
+  if grep -qE -- "$2" <<<"$1"; then ok "$3"; else ng "$3(/$2/ に合う行が無い)"; fi
+}
+out=$(run_pkgwhere) || ng "pkgwhere が非0で終了"
+expect_line "$out" '^  uv +dotfiles · Nix\(uv 0\.13\.5\)$' "pkgwhere: home-manager で入れたものを dotfiles · Nix と出す"
+expect_line "$out" '^  brew +OS · Homebrew\(本体\)$' "pkgwhere: brew 本体を Homebrew と出す"
+expect_line "$out" '^  cargo +個別 · nix profile\(cargo 1\.98\.1\)$' "pkgwhere: nix profile で入れたものを dotfiles の外と出す"
+expect_in "$out" "ripgrep 15.2.0" "pkgwhere: home-manager の世代のパッケージを名前とバージョンで並べる"
+expect_in "$out" "要らなければ: brew uninstall ripgrep" "pkgwhere: Nix の rg を隠す Homebrew の消し方を案内する"
+expect_line "$out" '^  Homebrew +1  ripgrep$' "pkgwhere: Homebrew は自分で入れたものだけを出す"
+expect_not_in "$out" "libfoo" "pkgwhere: Homebrew の依存で入ったものは出さない"
+expect_line "$out" '^  nix profile +1  cargo$' "pkgwhere: nix profile の分を home-manager の分と分ける"
+expect_line "$out" '^  uv tool +1  ruff$' "pkgwhere: uv tool を出す"
+expect_line "$out" '^  cargo install +1  mdgrid$' "pkgwhere: cargo install を出す"
+expect_line "$out" '^  ~/\.local/bin +1  mytool$' "pkgwhere: ~/.local/bin は手で置いたものだけを出す(uv tool と自作は除く)"
+expect_not_in "$out" "$PH" "pkgwhere: \$HOME は ~ にして出す"
+out=$(run_pkgwhere rg) || ng "pkgwhere rg が非0で終了"
+expect_line "$out" "^  ✓ $BREW/bin/rg +OS · Homebrew\(ripgrep\)$" "pkgwhere rg: PATH で先のものに ✓ を付ける"
+expect_line "$out" '^    ~/\.nix-profile/bin/rg +dotfiles · Nix\(ripgrep 15\.2\.0\)$' "pkgwhere rg: 隠れている Nix の版も出す"
+out=$(run_pkgwhere diskreport cdgr) || ng "pkgwhere diskreport cdgr が非0で終了"
+expect_line "$out" '^  ✓ ~/\.local/bin/diskreport +dotfiles · 自作$' "pkgwhere: dotfiles の自作コマンドを見分ける"
+expect_in "$out" "home/.config/shell/functions.sh のシェル関数" "pkgwhere: dotfiles のシェル関数を見分ける"
+if out=$(run_pkgwhere no-such-command-x); then
+  ng "pkgwhere: 見つからないのに 0 で終了"
+else
+  expect_in "$out" "見つかりません" "pkgwhere: 見つからなければ非0で、そう出す"
+fi
+
+echo "== 8) dotfiles-help が用途ごとに分けて出し、端末の幅で説明を切るか"
+run_help() { # 引数は env に渡す追加の環境変数
+  env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" "$@" "$DOTFILES_DIR/home/.local/bin/dotfiles-help" </dev/null 2>&1
+}
+out=$(run_help) || ng "dotfiles-help が非0で終了"
+expect_in "$out" "調べる・片付ける" "dotfiles-help: 用途ごとの見出しを出す"
+expect_in "$out" "diskreport" "dotfiles-help: 見出しの下にコマンドを出す"
+expect_not_in "$out" "office-open" "dotfiles-help: 共通実体は出さない"
+expect_in "$out" "読み取り専用。何も消さない)" "dotfiles-help: 括弧の中の「。」で説明を切らない"
+expect_not_in "$out" $'\e[' "dotfiles-help: パイプでは色を付けない"
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  expect_in "$out" "WSL でだけ使う: " "dotfiles-help: WSL 以外では WSL 専用のコマンドを名前だけにする"
+  expect_not_in "$out" "仮想ディスク" "dotfiles-help: WSL 以外では WSL 専用のコマンドの説明を出さない"
+fi
+out=$(run_help WSL_DISTRO_NAME=test) || ng "dotfiles-help が非0で終了(WSL)"
+expect_in "$out" "仮想ディスク" "dotfiles-help: WSL では WSL 専用のコマンドも説明つきで出す"
+out=$(env -i HOME="$FAKE_HOME" PATH="/usr/bin:/bin" "$DOTFILES_DIR/home/.local/bin/dotfiles-help" cdgr 2>&1) ||
+  ng "dotfiles-help cdgr が非0で終了"
+expect_in "$out" "git リポジトリのルートへ移動する" "dotfiles-help <関数名>: シェル関数のコメントを出す"
+if command -v python3 >/dev/null 2>&1; then
+  # 幅 60 の疑似端末で動かし、どの行も 60 桁に収まり、色が付くかを見る(桁は East Asian Width で数える)
+  out=$(
+    python3 -I - "$DOTFILES_DIR/home/.local/bin/dotfiles-help" <<'PY'
+import fcntl, os, pty, re, struct, sys, termios, unicodedata
+pid, fd = pty.fork()
+if pid == 0:
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    os.environ["TERM"] = "xterm"
+    os.environ.pop("NO_COLOR", None)
+    os.execv(sys.argv[1], [sys.argv[1]])
+data = b""
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    data += chunk
+os.waitpid(pid, 0)
+text = data.decode("utf-8", "replace")
+colored = "\x1b[" in text
+plain = re.sub(r"\x1b\[[0-9;]*m", "", text).replace("\r", "")
+width = max(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in line) for line in plain.split("\n"))
+print(f"colored={colored} width={width} ellipsis={'…' in plain}")
+PY
+  ) || ng "疑似端末での dotfiles-help の実行に失敗"
+  expect_in "$out" "colored=True" "dotfiles-help: 端末では色を付ける"
+  expect_in "$out" "ellipsis=True" "dotfiles-help: 幅に収まらない説明を … で切る"
+  if [[ $out =~ width=([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -le 60 ]; then
+    ok "dotfiles-help: どの行も端末の幅(60 桁)に収まる"
+  else
+    ng "dotfiles-help: 端末の幅を超える行がある($out)"
+  fi
+else
+  echo "  skip: python3 が無いので疑似端末での確認を飛ばす"
+fi
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

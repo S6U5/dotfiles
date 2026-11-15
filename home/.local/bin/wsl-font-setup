@@ -1,6 +1,6 @@
 #!/bin/sh
-# WSL 内に home-manager が導入した Nerd Font(JetBrainsMono Nerd Font)のうち、
-# この dotfiles が実際に使うファミリーだけを Windows 側にユーザーフォントとして
+# Nerd Font(JetBrainsMono Nerd Font)を Windows 側にユーザーフォントとして入れる。
+# WSL 内に home-manager が導入したもののうち、この dotfiles が実際に使うファミリーだけを
 # インストールする。Windows Terminal 等の Windows ネイティブアプリは WSL 内の
 # フォントを参照できないため(README「Nerd Font をターミナルで有効にする」参照)、
 # 従来は nerdfonts.com から手動ダウンロードが必要だった手順を1コマンド化する。

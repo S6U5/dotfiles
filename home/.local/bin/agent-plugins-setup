@@ -1,5 +1,6 @@
 #!/bin/sh
-# このリポジトリのプラグインを Claude Code / Codex / Copilot CLI(VS Code)/ Antigravity / Cursor に登録・導入する。
+# このリポジトリのプラグインを、入っているエージェントに登録・導入する。
+# 対象は Claude Code / Codex / Copilot CLI(VS Code)/ Antigravity / Cursor。
 #
 # 明示実行のみ。home-manager switch では走らない(プラグインはエージェントの挙動を
 # 変えるため、意図しないタイミングで増減しないようにしている)。
