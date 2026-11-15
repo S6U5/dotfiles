@@ -456,6 +456,22 @@ if (cd / && env -u DOTFILES_DIR FAKE_ARGS="$FAKE_BIN/args" FAKE_ENV="$FAKE_BIN/e
 else
   ng "update.sh --no-switch: switch.sh が呼ばれた、または失敗した"
 fi
+# 作業ブランチにいるとき: 既定では main に切り替えて pull し、--current では今のブランチのまま pull する
+("${GIT_T[@]}" -C "$UPD_ROOT/clone" switch -q -c work && "${GIT_T[@]}" -C "$UPD_ROOT/clone" push -q -u origin work &&
+  "${GIT_T[@]}" -C "$UPD_ROOT/origin" commit -q --allow-empty -m next) >/dev/null 2>&1
+if (cd / && env -u DOTFILES_DIR PATH="$FAKE_BIN:$PATH" "$UPD_ROOT/clone/update.sh" --current --no-switch >/dev/null 2>&1) &&
+  [ "$(git -C "$UPD_ROOT/clone" branch --show-current)" = work ]; then
+  ok "update.sh --current: 今のブランチのまま pull する"
+else
+  ng "update.sh --current: 今のブランチのまま pull できない (branch: $(git -C "$UPD_ROOT/clone" branch --show-current))"
+fi
+if (cd / && env -u DOTFILES_DIR PATH="$FAKE_BIN:$PATH" "$UPD_ROOT/clone/update.sh" --no-switch >/dev/null 2>&1) &&
+  [ "$(git -C "$UPD_ROOT/clone" branch --show-current)" = main ] &&
+  [ "$(git -C "$UPD_ROOT/clone" rev-parse HEAD)" = "$(git -C "$UPD_ROOT/origin" rev-parse main)" ]; then
+  ok "update.sh: 作業ブランチにいても main に切り替えて pull する"
+else
+  ng "update.sh: main に切り替えて pull できない (branch: $(git -C "$UPD_ROOT/clone" branch --show-current))"
+fi
 
 echo "== 12b) Node.js の公式バイナリ(nix/nodejs-bin.nix)への切り替え"
 # 実リポジトリの nix/nodejs-bin.local.json(マシン固有の値)には触れず、DOTFILES_DIR を

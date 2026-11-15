@@ -374,7 +374,7 @@ Windows 側に別内容の既存ファイル(認証トークン入りの `.npmrc
 |---|---|
 | `dotfiles-help [名前]` | 自作コマンド・シェル関数の一覧を用途ごとに表示(説明は各スクリプトの先頭コメントから生成。端末では色付きで、幅に収まらない説明は … で切る。WSL 専用のコマンドは WSL 以外では名前だけ並べる。名前を付けるとそのコマンドのヘッダ全文、シェル関数なら定義の直上のコメント) |
 | `pkgwhere [名前...]` | コマンドの出どころを表示(読み取り専用)。引数なしでは、パッケージツール(npm・uv・brew など)がどこから入ったか(**dotfiles · Nix** / dotfiles · 自作 / **OS**: Homebrew・apt・macOS 標準など / **個別**: nix profile・npm -g・uv tool・cargo など / Windows 側)、dotfiles が Nix で入れたパッケージとバージョン、PATH で別のものに隠れている Nix のコマンドと消し方、dotfiles の外で入れたもの(dotfiles を入れ直しても戻らないもの)をまとめて出す。`pkgwhere rg` のように名前を付けると、PATH 上のすべての場所と出どころを出し、使われるものに ✓ を付ける(dotfiles のシェル関数・エイリアスも見分ける)。判断根拠は [`docs/decisions/command-origin.md`](docs/decisions/command-origin.md) |
-| `dotfiles-update [--no-switch]` | どこからでもこのリポジトリを更新して反映(`git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--no-switch` で pull だけ)。**`dotfiles-update` = pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
+| `dotfiles-update [--current] [--no-switch]` | どこからでもこのリポジトリを更新して反映(main に切り替えて `git pull --ff-only` → `dotfiles-switch` 相当。更新が無くても反映は実行する。`--current` で今のブランチのまま、`--no-switch` で pull だけ)。**`dotfiles-update` = main の pull + `dotfiles-switch`**。手元で編集した内容を反映するだけなら `dotfiles-switch` |
 | `dotfiles-switch [引数...]` | どこからでも `home-manager switch` を実行して反映(`DOTFILES_DIR` / `<system>` / `--impure` を自動で揃え、実行するコマンドを表示してから走らせる。引数は `-b bak` のようにそのまま `home-manager switch` に渡す。カレントディレクトリが dotfiles のクローン内ならそのクローンを、そうでなければ配布済みのクローンを対象にする。配布済みと違うクローンでは端末で y/N を聞き、端末が無ければ実行しない(そのクローンの `./switch.sh` を直接実行する)。別のユーザーのクローンは使わず、配布済みのクローンを対象にする。リポジトリ内の `./switch.sh` と同じ。反映後に Nix の世代数と自動 GC の有無を数行表示する) |
 | `extract <ファイル...>` | アーカイブを形式を気にせず展開(tar 系 / zip / gz・bz2・xz・zst 単体 / 7z / rar)。中身がばらまかれないよう、最上位が複数ならアーカイブ名のフォルダにまとめる。既存のファイルは上書きしない。zip は unzip が無ければ bsdtar → python3 で代用、7z / rar は各ツールがあるときだけ |
 | `git-branch-sweep [--delete] [--no-fetch]` | マージ済み(merged)・リモートで削除済み(gone。スカッシュマージした PR もこちらで拾う)のローカルブランチを一覧表示。`--delete` で確認してから削除し、マージの形跡が無い gone のブランチは1本ずつ聞いてから強制削除する。現在・既定・他の worktree で使用中のブランチは対象外。`git branch-sweep` でも呼べる |
@@ -541,7 +541,7 @@ scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテ�
 dotfiles-update
 ```
 
-`dotfiles-update` はどこからでも `git pull --ff-only` を実行し、続けて `dotfiles-switch` 相当の反映(`home-manager switch`)まで行います。未コミットのローカル変更がある場合は安全のため pull の前に中断します。pull だけで止めたいときは `--no-switch`、反映だけをやり直したいときは `dotfiles-switch` を使います(pull の時点で `home/` 配下の既存ファイルの変更はシンボリックリンク越しに反映済みになるため、新規ファイル・パッケージ・activation だけが取り残されないよう既定で続けて反映します。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。反映はこのコマンドを自分で実行したときだけ走り、シェル起動時などに勝手に走ることはありません。
+`dotfiles-update` はどこからでも main に切り替えて `git pull --ff-only` を実行し、続けて `dotfiles-switch` 相当の反映(`home-manager switch`)まで行います。作業ブランチにいても main に切り替えるので、マシンはいつも main の状態になります(元のブランチに戻るコマンドを表示します)。作業ブランチの内容を試したいときは `dotfiles-update --current` で、今のブランチのまま更新します(判断根拠は [`docs/decisions/update-branch.md`](docs/decisions/update-branch.md))。未コミットのローカル変更がある場合は安全のため pull の前に中断します。pull だけで止めたいときは `--no-switch`、反映だけをやり直したいときは `dotfiles-switch` を使います(pull の時点で `home/` 配下の既存ファイルの変更はシンボリックリンク越しに反映済みになるため、新規ファイル・パッケージ・activation だけが取り残されないよう既定で続けて反映します。判断根拠は [`docs/decisions/home-manager-switch-invocation.md`](docs/decisions/home-manager-switch-invocation.md))。反映はこのコマンドを自分で実行したときだけ走り、シェル起動時などに勝手に走ることはありません。
 
 ### Node.js のセキュリティリリース
 
