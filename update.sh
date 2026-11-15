@@ -5,14 +5,17 @@
 # リポジトリを最新化(git pull)し、続けて home-manager switch(switch.sh)でパッケージ導入と
 # home/ 配下の配布を反映する。「リポジトリの状態にこのマシンを揃える」コマンド。
 #
-#   ./update.sh              # pull → 反映(更新が無くても反映は実行する。冪等)
+#   ./update.sh              # main に切り替えて pull → 反映(更新が無くても反映は実行する。冪等)
+#   ./update.sh --current    # 今のブランチのまま pull → 反映(作業ブランチを試すとき)
 #   ./update.sh --no-switch  # pull だけ(反映はあとで dotfiles-switch)
-#   ./update.sh --dry-run    # pull も反映もせず状態表示のみ
+#   ./update.sh --dry-run    # pull も反映もせず、どのブランチで更新するかを表示するだけ
 #
 # pull と反映のあいだで、Node.js のセキュリティリリースに nixpkgs が遅れていないかを調べ、
 # 遅れていれば公式バイナリを取り込む(scripts/nodejs-security.sh。git 管理外のファイルに書くだけ)。
 #
 # 安全設計:
+#   - 既定では main(origin の既定のブランチ)に切り替えてから pull する。作業ブランチのまま反映して、
+#     途中の状態をそのまま使い続けないため(判断根拠は docs/decisions/update-branch.md)。
 #   - 未コミットのローカル変更(未追跡ファイル含む)があれば中断する(上書き事故防止)。
 #   - pull は fast-forward のみ(--ff-only)。勝手にマージコミットを作らない。
 #   - 反映はこのコマンドを明示実行したときだけ走る(シェル起動時やタイマーで勝手に走る
@@ -32,10 +35,12 @@ warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 DRY_RUN=0
 NO_SWITCH=0
+CURRENT=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --no-switch) NO_SWITCH=1 ;;
+    --current) CURRENT=1 ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
       exit 0
@@ -77,13 +82,38 @@ sync_nodejs_security() {
   fi
 }
 
+# 更新に使うブランチ。既定は origin の既定のブランチ(clone したときの origin/HEAD。無ければ main)
+current=$(git -C "$DOTFILES_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [ "$CURRENT" -eq 1 ]; then
+  if [ -z "$current" ]; then
+    warn "ブランチの上にいない(detached HEAD)ため、--current では更新できません。--current を外すと main で更新します。"
+    exit 1
+  fi
+  branch=$current
+else
+  branch=$(git -C "$DOTFILES_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  branch=${branch#origin/}
+  branch=${branch:-main}
+fi
+
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "[dry-run] git pull と反映(switch.sh)はスキップします。"
+  if [ "$branch" = "$current" ]; then
+    log "[dry-run] $branch を pull して反映します。git pull と反映(switch.sh)はスキップします。"
+  else
+    log "[dry-run] ${current:-(ブランチなし)} から $branch に切り替えて pull し、反映します。git pull と反映(switch.sh)はスキップします。"
+  fi
   sync_nodejs_security
   exit 0
 fi
 
 old_head=$(git -C "$DOTFILES_DIR" rev-parse HEAD)
+if [ "$branch" != "$current" ]; then
+  log "${current:-(ブランチなし)} から $branch に切り替えて更新します(今のブランチのまま更新するには --current)。"
+  git -C "$DOTFILES_DIR" switch "$branch"
+  if [ -n "$current" ]; then
+    log "元のブランチに戻るには: git -C $DOTFILES_DIR switch $current"
+  fi
+fi
 git -C "$DOTFILES_DIR" pull --ff-only
 new_head=$(git -C "$DOTFILES_DIR" rev-parse HEAD)
 

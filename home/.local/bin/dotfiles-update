@@ -1,5 +1,8 @@
 #!/bin/sh
-# リポジトリを pull して反映する(git pull --ff-only のあと dotfiles-switch と同じ反映)。
+# main に切り替えて pull し、反映する(git pull --ff-only のあと dotfiles-switch と同じ反映)。
+#   dotfiles-update              # main で更新する(作業ブランチにいても main に切り替える)
+#   dotfiles-update --current    # 今のブランチのまま更新する
+#   dotfiles-update --no-switch  # pull だけ(--current と一緒に使える)
 # update.sh をどこからでも呼べるようにするラッパー。インストール後の実体はリポジトリへのシンボリックリンクなので、
 # 自身のリンクをたどってリポジトリの場所を割り出す(パスのハードコードを避ける)。
 set -eu
