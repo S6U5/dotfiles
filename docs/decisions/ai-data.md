@@ -32,9 +32,21 @@ Claude Code・Codex・Claude アプリなどの会話の記録、本体の版、
 - 自動で消えるかのメモも、文書にあるものだけ書く(Claude Code の `cleanupPeriodDays` と `desktopSessionCleanupPeriodDays`、Codex の `codex delete`、Gemini CLI の `general.sessionRetention`)。「30 日より前」の数は、Claude Code と Gemini CLI の既定に合わせた固定の日数で数える(実際の設定値を読むには `settings.json` を開く必要があるため)。
 - 何も消さない。消し方は各ツールの設定とコマンドを案内するだけにする(`diskreport` と同じ方針)。
 
+## WSL の Windows 側
+
+| 観点 | `/mnt/c` 越しに `du` する | `aidata windows` のような語を足す | 普段の `aidata` で Windows 側の PowerShell に数えさせる(採用) |
+|---|---|---|---|
+| 速さ | ×(9P 越しで桁違いに遅い) | ○ | ○(数える場所が決まっているので数十秒以内。上限 100 秒) |
+| 覚える語を増やさない | ○ | × | ○ |
+| WSL と Windows の両方で使う AI ツールが一度に見える | ○ | △ | ○ |
+
+- Windows 側でも、ユーザーフォルダの隠しフォルダの下(3段まで)と Windows の環境変数 `CLAUDE_CONFIG_DIR`・`CODEX_HOME` から、同じ形でプロファイルを探す。Claude アプリは `%APPDATA%\Claude` と、ストアアプリの `Packages\Claude_*` を見る。
+- PowerShell には数字と名前だけを返させ、日本語の名前と説明は WSL 側で付ける(文字コードの食い違いで化けないように)。場所は `%USERPROFILE%`・`%APPDATA%`・`%LOCALAPPDATA%` に置き換えて出す(貼り付けたときにユーザー名を出さないため)。
+- スクリプトは `cachesweep` と同じく1行にして `-Command` で渡す(ファイルを Windows 側に置かずに済む)。
+
 ## トレードオフ
 
 - フォルダの形はツールの版で変わりうる。形が変わると、プロファイルを見落とすか、内訳の説明が付かなくなる。
 - Cursor と Antigravity は会話の置き場が文書に無いので、アプリのフォルダの大きさだけを出す。
-- WSL では Windows 側(ユーザーフォルダの `.claude` や Claude アプリ)を数えない。`/mnt` 越しの `du` は遅いため。Windows 側は `diskreport windows` で数える。
-- 隠しフォルダの外に置いたプロファイルは、`DOTFILES_AI_DIRS` か引数で足さないと出ない。
+- Windows 側は PowerShell の起動と数える時間だけ遅くなる(WSL のときだけ)。上限を超えたら途中までの数を出し、打ち切ったことをメモに書く。テストは偽の `powershell.exe` での表示と、`pwsh`(PowerShell 7)で動かしたスクリプトで確かめていて、Windows の PowerShell 5.1 では CI で動かしていない。
+- 隠しフォルダの外に置いたプロファイルは、`DOTFILES_AI_DIRS` か引数で足さないと出ない(Windows 側は環境変数だけ)。

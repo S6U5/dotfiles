@@ -530,6 +530,78 @@ expect_not_in "$out" $'\e[' "aidata: パイプでは色を付けない"
 out=$(env -i HOME="$AI_TEST/empty" PATH="/usr/bin:/bin" "$DOTFILES_DIR/home/.local/bin/aidata" 2>&1) ||
   ng "aidata が非0で終了(何も無いとき)"
 expect_in "$out" "見つかりませんでした" "aidata: 何も無ければそう出す"
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+  expect_not_in "$(run_aidata)" "(Windows)" "aidata: WSL 以外では Windows 側を数えない"
+fi
+# WSL の Windows 側: 偽の powershell.exe が返す行の表示と、渡したスクリプトの形を確かめる
+mkdir -p "$AI_TEST/bin"
+cat >"$AI_TEST/bin/powershell.exe" <<'EOF'
+#!/bin/sh
+printf '%s' "$4" >"$(dirname "$0")/ps-script.txt"
+if [ -n "${FAKE_PS_CUT:-}" ]; then
+  printf 'D\tclaude\t%%USERPROFILE%%\\.claude\r\n#cut\r\n#done\r\n'
+  exit 0
+fi
+awk '{ gsub(/\|/, "\t"); printf "%s\r\n", $0 }' <<'OUT'
+D|claude|%USERPROFILE%\.claude
+E|2048|projects|5|2|1024
+E|1100|jobs|-|-|-
+E|4|%USERPROFILE%\.claude.json|-|-|-
+D|claude-app|%APPDATA%\Claude
+E|3145728|vm_bundles|-|-|-
+T|ollama|1048576|%USERPROFILE%\.ollama\models
+#done
+OUT
+EOF
+chmod +x "$AI_TEST/bin/powershell.exe"
+run_aidata_wsl() { # 引数は env に渡す追加の環境変数
+  env -i HOME="$AI_TEST/empty" PATH="$AI_TEST/bin:/usr/bin:/bin" WSL_DISTRO_NAME=test "$@" \
+    "$DOTFILES_DIR/home/.local/bin/aidata" </dev/null 2>&1
+}
+out=$(run_aidata_wsl) || ng "aidata が非0で終了(WSL)"
+expect_in "$out" 'Claude アプリ(Windows)  %APPDATA%\Claude' "aidata: WSL では Windows 側も (Windows) を付けて一覧に出す"
+expect_line "$out" '^ +2\.0M  projects +会話の記録 5 件\(30 日より前 2 件・1\.0M\)$' "aidata: Windows 側の件数も同じ形で出す"
+expect_line "$out" '^ +3\.0G  vm_bundles +Cowork の仮想マシン' "aidata: Windows 側の中身にも説明を添える"
+expect_in "$out" 'Ollama のモデル(Windows)' "aidata: Windows 側の合計だけのものも出す"
+expect_in "$out" '30 日より前の会話が残っている(%USERPROFILE%\.claude 2 件)' "aidata: Windows 側の古い会話もメモに出す"
+script=$(cat "$AI_TEST/bin/ps-script.txt" 2>/dev/null || true)
+if [ -n "$script" ] && ! grep -q '"' <<<"$script" && ! grep -q '__[A-Z]*__' <<<"$script"; then
+  ok "aidata: PowerShell には ' だけを使い、上限時間と日数を埋めたスクリプトを渡す"
+else
+  ng "aidata: PowerShell に渡すスクリプトに \" か埋め忘れがある"
+fi
+out=$(run_aidata_wsl FAKE_PS_CUT=1) || ng "aidata が非0で終了(WSL・打ち切り)"
+expect_in "$out" "上限時間(100 秒)で打ち切った" "aidata: Windows 側を打ち切ったことを出す"
+if command -v pwsh >/dev/null 2>&1; then
+  # 本物の PowerShell(7)で Windows 側のスクリプトを動かし、架空のユーザーフォルダのプロファイルを見つけるか
+  WH=$AI_TEST/winhome
+  mk_claude "$WH/.claude" 1000
+  mk_claude "$WH/.claude-work" 1000
+  mk_claude "$WH/.ccs/instances/team" 1000
+  mkdir -p "$WH/.codex/sessions/2026/01/02" "$WH/.config/herdr/sessions" "$WH/AppData/Roaming/Claude/vm_bundles" \
+    "$WH/AppData/Local"
+  : >"$WH/.codex/sessions/2026/01/02/rollout-2026-01-02T00-00-00-x.jsonl"
+  : >"$WH/.config/herdr/config.toml"
+  mkdir -p "$AI_TEST/pwbin"
+  cat >"$AI_TEST/pwbin/powershell.exe" <<EOF
+#!/bin/sh
+USERPROFILE="$WH" APPDATA="$WH/AppData/Roaming" LOCALAPPDATA="$WH/AppData/Local" POWERSHELL_TELEMETRY_OPTOUT=1 \\
+  exec "$(command -v pwsh)" -NoProfile -NonInteractive -Command "\$4"
+EOF
+  chmod +x "$AI_TEST/pwbin/powershell.exe"
+  out=$(env -i HOME="$AI_TEST/empty" PATH="$AI_TEST/pwbin:/usr/bin:/bin" WSL_DISTRO_NAME=test \
+    "$DOTFILES_DIR/home/.local/bin/aidata" </dev/null 2>&1) || ng "aidata が非0で終了(pwsh)"
+  expect_not_in "$out" "数えられなかった" "aidata(pwsh): Windows 側のスクリプトが最後まで動く"
+  expect_line "$out" 'Claude Code\(Windows\)  %USERPROFILE%[/\\]\.claude$' "aidata(pwsh): Windows 側の既定のプロファイルを出す"
+  expect_line "$out" 'Claude Code\(Windows\)  %USERPROFILE%[/\\]\.claude-work$' "aidata(pwsh): Windows 側の別のプロファイルを形で見つける"
+  expect_line "$out" 'Claude Code\(Windows\)  %USERPROFILE%[/\\]\.ccs[/\\]instances[/\\]team$' "aidata(pwsh): Windows 側の 3 段下のプロファイルも見つける"
+  expect_line "$out" 'Codex\(Windows\)  %USERPROFILE%[/\\]\.codex$' "aidata(pwsh): Windows 側の Codex を出す"
+  expect_line "$out" 'Claude アプリ\(Windows\)  %APPDATA%[/\\]Claude$' "aidata(pwsh): Windows 側の Claude アプリを出す"
+  expect_not_in "$out" "herdr" "aidata(pwsh): sessions/ があるだけのフォルダを Codex とみなさない"
+  expect_not_in "$out" "$WH" "aidata(pwsh): ユーザーフォルダを %USERPROFILE% にして出す"
+else
+  echo "  skip: pwsh が無いので、Windows 側のスクリプトを本物の PowerShell で動かす確認を飛ばす"
+fi
 
 echo ""
 echo "結果: ok=$pass NG=$fail"

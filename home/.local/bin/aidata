@@ -12,8 +12,11 @@
 # フォルダを Claude Code の、sessions/<年> などを持つフォルダを Codex のプロファイルとみなす。
 # いまのシェルの CLAUDE_CONFIG_DIR・CODEX_HOME・COPILOT_HOME・GEMINI_CLI_HOME と、
 # DOTFILES_AI_DIRS(: 区切り。local.sh に書いておく)も見る。
+# WSL では Windows 側(ユーザーフォルダの .claude、Claude アプリ、Packages の中のストアアプリなど)も、
+# Windows 側の PowerShell で数えて「(Windows)」を付けて一緒に出す(/mnt 越しの du は遅いため。最長 100 秒)。
+# Windows 側のプロファイルは、Windows の環境変数 CLAUDE_CONFIG_DIR・CODEX_HOME とユーザーフォルダの
+# 隠しフォルダの下(3段まで)から、同じ形で探す。
 # 読み取り専用で何も消さない。ファイルの中身は読まず、大きさ・数・更新日だけを見る(会話の内容は出さない)。
-# WSL では Windows 側を数えない(/mnt 越しは遅いため。Windows 側は diskreport windows で数える)。
 set -eu
 
 case "${1:-}" in
@@ -99,7 +102,7 @@ describe() { # $1: 道具, $2: 名前
     claude:image-cache) printf '\t貼り付けた画像\n' ;;
     claude:shell-snapshots) printf '\tシェルの状態の控え\n' ;;
     claude:backups | claude:*.claude.json.backup*) printf '\t.claude.json の控え\n' ;;
-    claude:.claude.json | claude:*/.claude.json) printf '\t設定と状態(消さない)\n' ;;
+    claude:*.claude.json) printf '\t設定と状態(消さない)\n' ;;
     claude:debug) printf '\tデバッグのログ\n' ;;
     claude:statsig) printf '\t古い版の名残\n' ;;
     claude:sessions) printf '\t動いているセッションの印\n' ;;
@@ -110,6 +113,8 @@ describe() { # $1: 道具, $2: 名前
     claude-app:claude-code-vm) printf '\tCode の仮想マシン用のデータ\n' ;;
     claude-app:local-agent-mode-sessions) printf 'log\tCowork とチャットの記録\n' ;;
     claude-app:claude-code-sessions) printf 'log\tCode のセッションの記録(会話は .claude/projects)\n' ;;
+    claude-app:*AnthropicClaude) printf '\tアプリの本体\n' ;;
+    vscode-chat:chatSessions) printf 'log\t会話の記録\n' ;;
     codex:sessions) printf 'log\t会話の記録\n' ;;
     codex:archived_sessions) printf 'log\tアーカイブした会話\n' ;;
     codex:history.jsonl) printf 'log\t入力の履歴\n' ;;
@@ -152,40 +157,60 @@ describe() { # $1: 道具, $2: 名前
   esac
 }
 
-# 会話の記録の件数と、old_days 日より前の分。$1: 古い分を覚えておく場所の名前(空なら覚えない), $2...: find の引数
-log_note() {
-  _key=$1
+# 件数を数える。$1: old なら old_days 日より前の分も数える, $2...: find の引数
+# 出力: 件数<TAB>古い件数<TAB>古い KiB(数えない欄は -)。Windows 側は PowerShell が同じ形で返す
+count_files() {
+  _o=$1
   shift
-  _all=$(find "$@" -type f 2>/dev/null | wc -l | tr -d ' ')
-  _old=$(find "$@" -type f -mtime +"$old_days" -exec du -k {} + 2>/dev/null | awk '{ n++; s += $1 } END { printf "%d %d", n, s }')
-  _oldn=${_old% *}
-  if [ "$_oldn" -gt 0 ]; then
-    [ -n "$_key" ] && printf '%s\t%s\n' "$_key" "$_oldn" >>"$WORK/old"
-    echo "$_all 件($old_days 日より前 $_oldn 件・$(human "${_old#* }"))"
-  else
-    echo "$_all 件"
-  fi
-}
-
-count_note() { # $1: 前に付ける語, $2: 後ろに付ける語, $3...: find の引数
-  _pre=$1 _post=$2
-  shift 2
   _n=$(find "$@" 2>/dev/null | wc -l | tr -d ' ')
-  [ "$_n" -gt 0 ] && echo "$_pre$_n$_post"
-  return 0
+  if [ "$_o" = old ]; then
+    _old=$(find "$@" -mtime +"$old_days" -exec du -k {} + 2>/dev/null | awk '{ n++; s += $1 } END { printf "%d\t%d", n, s }')
+  else
+    _old="-$tab-"
+  fi
+  printf '%s\t%s\n' "$_n" "$_old"
 }
 
-note() { # $1: 道具, $2: パス, $3: 名前。件数などの補足(無ければ何も出さない)
+count_entry() { # $1: 道具, $2: パス, $3: 名前。数えないものは「-<TAB>-<TAB>-」
   case "$1:$3" in
-    claude:projects) log_note "$(short "${2%/*}")" "$2" -mindepth 2 -maxdepth 2 -name '*.jsonl' ;;
-    codex:sessions | codex:archived_sessions) log_note "" "$2" \( -name 'rollout-*.jsonl' -o -name 'rollout-*.jsonl.zst' \) ;;
-    gemini:tmp) log_note "" "$2" -path '*/chats/*' \( -name 'session-*.json' -o -name 'session-*.jsonl' \) ;;
-    copilot:session-state | copilot:history-session-state) count_note "" " 件" "$2" -mindepth 1 -maxdepth 1 ;;
-    claude-app:local-agent-mode-sessions) count_note "" " 件" "$2" -type f -name 'local_*.json' ;;
-    gemini:antigravity*) count_note "(会話 " " 件)" "$2" -path '*/conversations/*' -type f ;;
-    claude-bin:versions) count_note "" " 個(新しい 2 つと使っているもの以外は自動で消える)" "$2" -mindepth 1 -maxdepth 1 ;;
+    claude:projects) count_files old "$2" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' ;;
+    codex:sessions | codex:archived_sessions) count_files old "$2" -type f \( -name 'rollout-*.jsonl' -o -name 'rollout-*.jsonl.zst' \) ;;
+    gemini:tmp) count_files old "$2" -type f -path '*/chats/*' \( -name 'session-*.json' -o -name 'session-*.jsonl' \) ;;
+    copilot:session-state | copilot:history-session-state | claude-bin:versions) count_files "" "$2" -mindepth 1 -maxdepth 1 ;;
+    claude-app:local-agent-mode-sessions) count_files "" "$2" -type f -name 'local_*.json' ;;
+    gemini:antigravity*) count_files "" "$2" -type f -path '*/conversations/*' ;;
+    *) printf -- '-\t-\t-\n' ;;
+  esac
+}
+
+# 件数の書き方。$1: 道具, $2: 名前, $3: 件数, $4: 古い件数, $5: 古い KiB, $6: 古い会話を覚えておく場所(空なら覚えない)
+format_note() {
+  [ "$3" != - ] && [ -n "$3" ] || return 0
+  case "$1:$2" in
+    claude:projects | codex:sessions | codex:archived_sessions | gemini:tmp)
+      if [ "$4" != - ] && [ "${4:-0}" -gt 0 ]; then
+        if [ "$1" = claude ] && [ -n "${6:-}" ]; then printf '%s\t%s\n' "$6" "$4" >>"$WORK/old"; fi
+        echo "$3 件($old_days 日より前 $4 件・$(human "$5"))"
+      else
+        echo "$3 件"
+      fi
+      ;;
+    *)
+      [ "$3" -gt 0 ] || return 0
+      case "$1:$2" in
+        gemini:antigravity*) echo "(会話 $3 件)" ;;
+        claude-bin:versions) echo "$3 個(新しい 2 つと使っているもの以外は自動で消える)" ;;
+        *) echo "$3 件" ;;
+      esac
+      ;;
   esac
   return 0
+}
+
+note() { # $1: 道具, $2: パス, $3: 名前, $4: 古い会話を覚えておく場所。件数などの補足(無ければ何も出さない)
+  _c=$(count_entry "$1" "$2" "$3")
+  _r=${_c#*"$tab"}
+  format_note "$1" "$3" "${_c%%"$tab"*}" "${_r%%"$tab"*}" "${_r#*"$tab"}" "${4:-}"
 }
 
 # ---------------------------------------------------------------------------
@@ -216,13 +241,18 @@ add_dir() {
     esac
     _info=$(describe "$_tool" "$_name")
     printf '%s\t%s\t%s\t%s\t%s\n' "$_kib" "${_info%%"$tab"*}" "$_name" "${_info#*"$tab"}" \
-      "$(note "$_tool" "$_path" "$_name")" >>"$WORK/d$row_id"
+      "$(note "$_tool" "$_path" "$_name" "$(short "$_dir")")" >>"$WORK/d$row_id"
   done <"$WORK/du"
   [ -s "$WORK/d$row_id" ] || return 0
   tools="$tools$_tool "
-  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$(short "$_dir")" '
-    { t += $1; if ($2 == "log") l += $1 }
-    END { printf "%d\t%d\t%s\t%s\t%s\n", t, l, id, label, place }' "$WORK/d$row_id" >>"$WORK/rows"
+  put_row "$_label" "$(short "$_dir")"
+}
+
+# 内訳(KiB<TAB>種類<TAB>…)の合計から、一覧に1行足す。$1: 名前, $2: 場所
+# 名前と場所は awk の -v に渡さない(\ が消えるため。Windows のパスに \ が入る)
+put_row() {
+  _sum=$(awk -F'\t' '{ t += $1; if ($2 == "log") l += $1 } END { printf "%d\t%d", t, l }' "$WORK/d$row_id")
+  printf '%s\t%s\t%s\t%s\n' "$_sum" "$row_id" "$1" "$2" >>"$WORK/rows"
 }
 
 # 合計だけを数える(キャッシュやモデルの置き場)。$1: 名前, $2...: 数える場所(あるものだけ)
@@ -239,8 +269,7 @@ add_total() {
   done
   [ -s "$WORK/du" ] || return 0
   row_id=$((row_id + 1))
-  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$_places" '
-    { t += $1 } END { printf "%d\t0\t%s\t%s\t%s\n", t, id, label, place }' "$WORK/du" >>"$WORK/rows"
+  printf '%s\t0\t%s\t%s\t%s\n' "$(awk '{ t += $1 } END { printf "%d", t }' "$WORK/du")" "$row_id" "$_label" "$_places" >>"$WORK/rows"
 }
 
 # VS Code のチャットは、ワークスペースごとのフォルダに散らばっているので、まとめて1行にする
@@ -257,8 +286,250 @@ add_vscode_chat() { # $1: 名前, $2: ユーザーデータの User フォルダ
   _places=$(wc -l <"$WORK/du" | tr -d ' ')
   awk -F'\t' -v n="$_n" -v places="$_places" '
     { t += $1 } END { printf "%d\tlog\tchatSessions\t会話の記録\t%d 件(%d か所)\n", t, n, places }' "$WORK/du" >"$WORK/d$row_id"
-  awk -F'\t' -v id="$row_id" -v label="$_label" -v place="$(short "$_user")" '
-    { printf "%d\t%d\t%s\t%s\t%s\n", $1, $1, id, label, place }' "$WORK/d$row_id" >>"$WORK/rows"
+  put_row "$_label" "$(short "$_user")"
+}
+
+# ---------------------------------------------------------------------------
+# Windows 側(WSL のときだけ)。/mnt 越しの du は遅いので、Windows 側の PowerShell に数えさせる。
+# 改行を除いて1行にして渡すので、文の区切りは ; で書き、引用符は ' だけを使う(cachesweep と同じ)。
+# 1行になるので # のコメントは書かない(後ろが全部コメントになる)。PowerShell の変数名は大文字と
+# 小文字を区別しないので、同じ綴りの変数を別の意味で使わない(タブの $sep と種類の $kind など)。
+# 出力(タブ区切り。日本語を通さないよう、名前はこちらで付ける):
+#   D 道具 場所            … フォルダの始まり(場所は %USERPROFILE% などに置き換えて、ユーザー名を出さない)
+#   E KiB 名前 件数 古い件数 古いKiB … その中身(数えない欄は -)
+#   T 道具 KiB 場所        … 合計だけのもの
+#   #cut(上限時間で打ち切り)/ #done(最後まで数えた)
+# プロファイルの見つけ方と件数の数え方は、この上の Linux・macOS 側と同じにする。
+# ---------------------------------------------------------------------------
+win_limit=100
+
+windows_script() {
+  tr -d '\n' <<'PS'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8;
+$limit = __LIMIT__;
+$days = __DAYS__;
+$clock = [Diagnostics.Stopwatch]::StartNew();
+$sep = [string][char]9;
+$seen = @{};
+$profs = New-Object System.Collections.ArrayList;
+$h = $env:USERPROFILE;
+$la = $env:LOCALAPPDATA;
+$ra = $env:APPDATA;
+function W([string]$s) { [Console]::Out.WriteLine($s) };
+function Show([string]$p) {
+  foreach ($v in @('LOCALAPPDATA', 'APPDATA', 'USERPROFILE')) {
+    $b = [Environment]::GetEnvironmentVariable($v);
+    if ($b -and $p.StartsWith($b, [StringComparison]::OrdinalIgnoreCase)) { return '%' + $v + '%' + $p.Substring($b.Length) };
+  };
+  return $p;
+};
+function Size([string]$p) {
+  $s = [long]0;
+  $i = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue;
+  if (-not $i) { return $s };
+  if (-not $i.PSIsContainer) { return [long]$i.Length };
+  $st = New-Object System.Collections.Stack;
+  $st.Push($i.FullName);
+  while ($st.Count -gt 0) {
+    if ($clock.Elapsed.TotalSeconds -gt $limit) { throw 'limit' };
+    $d = $st.Pop();
+    $es = @();
+    try { $es = ([IO.DirectoryInfo]$d).GetFileSystemInfos() } catch { };
+    foreach ($e in $es) {
+      $a = [int]$e.Attributes;
+      if ($a -band 16) { if (-not ($a -band 1024)) { $st.Push($e.FullName) } } elseif (-not ($a -band 4460544)) { $s += $e.Length };
+    };
+  };
+  return $s;
+};
+function Has([string]$d, [string]$n) { return (Test-Path -LiteralPath (Join-Path $d $n)) };
+function IsClaude([string]$d) {
+  if (-not (Test-Path -LiteralPath (Join-Path $d 'projects') -PathType Container)) { return $false };
+  foreach ($n in @('history.jsonl', '.claude.json', 'file-history', 'shell-snapshots', 'session-env', 'statsig', 'todos')) { if (Has $d $n) { return $true } };
+  return $false;
+};
+function IsCodex([string]$d) {
+  $s = Join-Path $d 'sessions';
+  if (-not (Test-Path -LiteralPath $s -PathType Container)) { return $false };
+  if (Has $d 'archived_sessions') { return $true };
+  if (@(Get-ChildItem -LiteralPath $s -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[0-9]{4}$' }).Count -gt 0) { return $true };
+  return (@(Get-ChildItem -LiteralPath $d -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'state_*.sqlite' -or $_.Name -like 'logs_*.sqlite' }).Count -gt 0);
+};
+function Cnt([string]$k, [string]$p) {
+  $f = $null;
+  $old = $false;
+  if ($k -eq 'claude:projects') { $f = Get-ChildItem -LiteralPath $p -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Force -Filter '*.jsonl' -ErrorAction SilentlyContinue }; $old = $true }
+  elseif (($k -eq 'codex:sessions') -or ($k -eq 'codex:archived_sessions')) { $f = Get-ChildItem -LiteralPath $p -File -Force -Recurse -Filter 'rollout-*.jsonl*' -ErrorAction SilentlyContinue; $old = $true }
+  elseif ($k -eq 'gemini:tmp') { $f = Get-ChildItem -LiteralPath $p -File -Force -Recurse -Filter 'session-*.json*' -ErrorAction SilentlyContinue | Where-Object { $_.Directory.Name -eq 'chats' }; $old = $true }
+  elseif (($k -eq 'copilot:session-state') -or ($k -eq 'copilot:history-session-state') -or ($k -eq 'claude-bin:versions')) { $f = Get-ChildItem -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+  elseif ($k -eq 'claude-app:local-agent-mode-sessions') { $f = Get-ChildItem -LiteralPath $p -File -Force -Recurse -Filter 'local_*.json' -ErrorAction SilentlyContinue }
+  elseif ($k -like 'gemini:antigravity*') { $f = Get-ChildItem -LiteralPath $p -File -Force -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*\conversations\*' } }
+  else { return '-' + $sep + '-' + $sep + '-' };
+  $f = @($f);
+  if (-not $old) { return [string]$f.Count + $sep + '-' + $sep + '-' };
+  $cut = (Get-Date).AddDays(-$days);
+  $o = @($f | Where-Object { $_.LastWriteTime -lt $cut });
+  $ok = [long](($o | Measure-Object -Property Length -Sum).Sum / 1024);
+  return [string]$f.Count + $sep + [string]$o.Count + $sep + [string]$ok;
+};
+function Emit([string]$tool, [string]$dir, $extra) {
+  if ((-not $dir) -or (-not (Test-Path -LiteralPath $dir -PathType Container))) { return };
+  $key = (Get-Item -LiteralPath $dir -Force).FullName.TrimEnd('\').ToLower();
+  if ($seen.ContainsKey($key)) { return };
+  $seen[$key] = 1;
+  W ('D' + $sep + $tool + $sep + (Show $dir));
+  foreach ($e in @(Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
+    W ('E' + $sep + [long]((Size $e.FullName) / 1024) + $sep + $e.Name + $sep + (Cnt ($tool + ':' + $e.Name) $e.FullName));
+  };
+  foreach ($x in @($extra)) {
+    if ($x -and (Test-Path -LiteralPath $x)) { W ('E' + $sep + [long]((Size $x) / 1024) + $sep + (Show $x) + $sep + '-' + $sep + '-' + $sep + '-') };
+  };
+};
+function Tot([string]$tool, [string]$p) {
+  if ((-not $p) -or (-not (Test-Path -LiteralPath $p))) { return };
+  W ('T' + $sep + $tool + $sep + [long]((Size $p) / 1024) + $sep + (Show $p));
+};
+try {
+  $cand = New-Object System.Collections.ArrayList;
+  [void]$cand.Add(@('claude', (Join-Path $h '.claude')));
+  if ($env:CLAUDE_CONFIG_DIR) { [void]$cand.Add(@('claude', $env:CLAUDE_CONFIG_DIR)) };
+  [void]$cand.Add(@('codex', (Join-Path $h '.codex')));
+  if ($env:CODEX_HOME) { [void]$cand.Add(@('codex', $env:CODEX_HOME)) };
+  $skip = @('.cache', '.npm', '.nuget', '.cargo', '.rustup', '.gradle', '.m2', '.vscode', '.vscode-server', '.android');
+  foreach ($top in @(Get-ChildItem -LiteralPath $h -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith('.') })) {
+    if ($skip -contains $top.Name) { continue };
+    foreach ($m in @(Get-ChildItem -LiteralPath $top.FullName -Directory -Force -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { ($_.Name -eq 'projects') -or ($_.Name -eq 'sessions') })) { [void]$cand.Add(@('found', $m.Parent.FullName)) };
+  };
+  foreach ($c in $cand) {
+    $d = [string]$c[1];
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue };
+    if (IsClaude $d) { $kind = 'claude' } elseif (IsCodex $d) { $kind = 'codex' } elseif ($c[0] -ne 'found') { $kind = $c[0] } else { continue };
+    $inside = $false;
+    foreach ($q in $profs) { if ($d.StartsWith($q + '\', [StringComparison]::OrdinalIgnoreCase)) { $inside = $true } };
+    if ($inside) { continue };
+    [void]$profs.Add($d.TrimEnd('\'));
+    if (($kind -eq 'claude') -and ($d -eq (Join-Path $h '.claude'))) { Emit 'claude' $d @((Join-Path $h '.claude.json')) } else { Emit $kind $d @() };
+  };
+  Emit 'claude-bin' (Join-Path $h '.local\share\claude') @();
+  Tot 'claude-cache' (Join-Path $la 'claude-cli-nodejs');
+  Emit 'claude-app' (Join-Path $ra 'Claude') @((Join-Path $la 'AnthropicClaude'));
+  Emit 'claude-app' (Join-Path $la 'Claude-3p') @();
+  foreach ($pk in @(Get-ChildItem -LiteralPath (Join-Path $la 'Packages') -Directory -Force -Filter 'Claude_*' -ErrorAction SilentlyContinue)) {
+    $r = Join-Path $pk.FullName 'LocalCache\Roaming\Claude';
+    if (Test-Path -LiteralPath $r) { Emit 'claude-app' $r @() } else { Emit 'claude-app' $pk.FullName @() };
+  };
+  Emit 'gemini' (Join-Path $h '.gemini') @();
+  if ($env:GEMINI_CLI_HOME) { Emit 'gemini' (Join-Path $env:GEMINI_CLI_HOME '.gemini') @() };
+  Emit 'copilot' (Join-Path $h '.copilot') @();
+  if ($env:COPILOT_HOME) { Emit 'copilot' $env:COPILOT_HOME @() };
+  Emit 'cursor' (Join-Path $h '.cursor') @();
+  Emit 'app-cursor' (Join-Path $ra 'Cursor') @();
+  Emit 'app-antigravity' (Join-Path $ra 'Antigravity') @();
+  foreach ($pk in @(Get-ChildItem -LiteralPath (Join-Path $la 'Packages') -Directory -Force -Filter 'OpenAI.*' -ErrorAction SilentlyContinue)) { Tot 'openai-app' $pk.FullName };
+  $u = Join-Path $ra 'Code\User';
+  $cs = @(Get-ChildItem -LiteralPath (Join-Path $u 'workspaceStorage') -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'chatSessions' }) + @((Join-Path $u 'globalStorage\emptyWindowChatSessions'), (Join-Path $u 'globalStorage\transferredChatSessions'));
+  $cs = @($cs | Where-Object { Test-Path -LiteralPath $_ });
+  if ($cs.Count -gt 0) {
+    $s = [long]0;
+    $n = 0;
+    foreach ($x in $cs) { $s += Size $x; $n += @(Get-ChildItem -LiteralPath $x -File -Force -Recurse -ErrorAction SilentlyContinue).Count };
+    W ('D' + $sep + 'vscode-chat' + $sep + (Show $u));
+    W ('E' + $sep + [long]($s / 1024) + $sep + 'chatSessions' + $sep + $n + $sep + '-' + $sep + '-');
+  };
+  $x = $env:OLLAMA_MODELS;
+  if (-not $x) { $x = Join-Path $h '.ollama\models' };
+  Tot 'ollama' $x;
+  Tot 'lmstudio' (Join-Path $h '.lmstudio\models');
+  $x = $env:HF_HOME;
+  if (-not $x) { $x = Join-Path $h '.cache\huggingface' };
+  Tot 'hf' $x;
+} catch { W '#cut' };
+W '#done';
+PS
+}
+
+win_label() {
+  case $1 in
+    claude) echo "Claude Code(Windows)" ;;
+    claude-bin) echo "Claude Code の本体(Windows)" ;;
+    claude-cache) echo "Claude Code のキャッシュ(Windows)" ;;
+    claude-app) echo "Claude アプリ(Windows)" ;;
+    codex) echo "Codex(Windows)" ;;
+    gemini) echo "Gemini CLI・Antigravity(Windows)" ;;
+    copilot) echo "Copilot CLI(Windows)" ;;
+    cursor) echo "Cursor(Windows)" ;;
+    app-cursor) echo "Cursor アプリ(Windows)" ;;
+    app-antigravity) echo "Antigravity アプリ(Windows)" ;;
+    openai-app) echo "OpenAI のアプリ(Windows)" ;;
+    vscode-chat) echo "VS Code のチャット(Windows)" ;;
+    ollama) echo "Ollama のモデル(Windows)" ;;
+    lmstudio) echo "LM Studio のモデル(Windows)" ;;
+    hf) echo "Hugging Face のキャッシュ(Windows)" ;;
+    *) echo "$1(Windows)" ;;
+  esac
+}
+
+win_flush() { # 組み立て中の内訳を、一覧の1行にする
+  if [ -z "$w_tool" ] || [ ! -s "$WORK/d$row_id" ]; then
+    w_tool=""
+    return 0
+  fi
+  tools="$tools$w_tool "
+  put_row "$(win_label "$w_tool")" "$w_place"
+  w_tool=""
+}
+
+parse_windows() { # $1: PowerShell の出力のファイル
+  w_tool="" w_place=""
+  while IFS="$tab" read -r _k _a _b _c _d _e; do
+    case $_k in
+      D)
+        win_flush
+        w_tool=$_a w_place=$_b
+        row_id=$((row_id + 1))
+        : >"$WORK/d$row_id"
+        ;;
+      E)
+        if [ -z "$w_tool" ]; then continue; fi
+        case $_a in '' | *[!0-9]*) continue ;; esac
+        _info=$(describe "$w_tool" "$_b")
+        printf '%s\t%s\t%s\t%s\t%s\n' "$_a" "${_info%%"$tab"*}" "$_b" "${_info#*"$tab"}" \
+          "$(format_note "$w_tool" "$_b" "$_c" "$_d" "$_e" "$w_place")" >>"$WORK/d$row_id"
+        ;;
+      T)
+        win_flush
+        case $_b in '' | *[!0-9]*) continue ;; esac
+        row_id=$((row_id + 1))
+        printf '%s\t0\t%s\t%s\t%s\n' "$_b" "$row_id" "$(win_label "$_a")" "$_c" >>"$WORK/rows"
+        ;;
+    esac
+  done <"$1"
+  win_flush
+}
+
+win_note=""
+add_windows() {
+  is_wsl || return 0
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    win_note="Windows 側は数えていない(powershell.exe が見つからない。Windows 連携が無効?)。"
+    return 0
+  fi
+  if [ -t 2 ]; then echo "Windows 側を PowerShell で数えています(最長 $win_limit 秒)…" >&2; fi
+  _script=$(windows_script | sed "s/__LIMIT__/$win_limit/; s/__DAYS__/$old_days/")
+  _limiter=""
+  if command -v timeout >/dev/null 2>&1; then _limiter="timeout $((win_limit + 30))"; fi
+  # 上限は PowerShell の中を先に効かせる(外側の timeout では Windows 側のプロセスまで止まるとは限らないため)
+  # shellcheck disable=SC2086  # _limiter は「timeout 秒」を2語に分けて渡す意図
+  (
+    cd /mnt/c 2>/dev/null || cd /
+    $_limiter powershell.exe -NoProfile -NonInteractive -Command "$_script" 2>/dev/null
+  ) | tr -d '\r' >"$WORK/win" || true
+  if grep -q '^#cut' "$WORK/win"; then
+    win_note="Windows 側は上限時間($win_limit 秒)で打ち切った。途中までの数を出している。"
+  elif ! grep -q '^#done' "$WORK/win"; then
+    win_note="Windows 側は数えられなかった(PowerShell の実行に失敗したか、上限時間を超えた)。"
+  fi
+  parse_windows "$WORK/win"
 }
 
 is_claude() { # Claude Code の設定フォルダか(CLAUDE_CONFIG_DIR で分けたものも同じ形)
@@ -347,6 +618,7 @@ add_total "ChatGPT アプリ" "$app_dir/com.openai.chat"
 add_total "Ollama のモデル" "${OLLAMA_MODELS:-$HOME/.ollama/models}"
 add_total "LM Studio のモデル" "$HOME/.lmstudio/models" "$HOME/.cache/lm-studio/models"
 add_total "Hugging Face のキャッシュ" "${HF_HOME:-$cache_home/huggingface}"
+add_windows
 
 # ---------------------------------------------------------------------------
 # 出す
@@ -370,14 +642,13 @@ memo_lines() {
     echo "Gemini CLI は general.sessionRetention(既定 30 日)より古い会話を自動で消す。"
     ;;
   esac
-  if is_wsl; then
-    echo "Windows 側(ユーザーフォルダの .claude や Claude アプリなど)は数えていない。Windows 側は diskreport windows で数える。"
-  fi
+  if [ -n "$win_note" ]; then echo "$win_note"; fi
   echo "このコマンドは何も消さない。手で消すときは、そのツールを閉じてから消す。"
 }
 
 if [ ! -s "$WORK/rows" ]; then
   echo "AI ツールのデータは見つかりませんでした。"
+  if [ -n "$win_note" ]; then echo "$win_note"; fi
   exit 0
 fi
 
