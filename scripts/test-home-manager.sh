@@ -113,7 +113,7 @@ else
 fi
 
 echo "== 4) 実行可能属性が維持されているか"
-for f in .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch .local/bin/diskreport .local/bin/nix-gc-setup .local/bin/dotfiles-help .local/bin/pkgwhere; do
+for f in .local/bin/word .local/bin/dotfiles-update .local/bin/dotfiles-switch .local/bin/diskreport .local/bin/nix-gc-setup .local/bin/dotfiles-help .local/bin/pkgwhere .local/bin/aidata; do
   if [ -x "$RESULT/home-files/$f" ]; then
     ok "実行可能: $f"
   else
