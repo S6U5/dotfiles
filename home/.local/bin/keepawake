@@ -1,0 +1,204 @@
+#!/bin/sh
+# PC がスリープしないようにする(コマンドが終わるまで・指定した時間・Ctrl-C まで)。
+#   keepawake                  # Ctrl-C まで
+#   keepawake <コマンド...>    # コマンドが終わるまで。終了コードはコマンドのものを返す
+#   keepawake -t 2h            # 時間で区切る(単位は s / m / h。数字だけなら秒)
+#   keepawake -d ...           # 画面も消さない(既定は「画面は消えてよいが、本体は眠らない」)
+# 手段: macOS は caffeinate、WSL は Windows の SetThreadExecutionState(powershell.exe から呼ぶ)、
+# Linux は systemd-inhibit。どれもこのコマンドが終われば(打ち切られても)自動で外れ、
+# OS の電源設定は書き換えない。蓋を閉じたときと手動のスリープは防げない。
+# スリープを止められない環境では、コマンドを渡したときは警告してそのまま実行し、
+# 渡さないときは非0で終わる。判断根拠は docs/decisions/keep-awake.md。
+set -eu
+
+usage() {
+  echo "使い方: keepawake [-d] [-t 時間] [コマンド...]  (詳しくは dotfiles-help keepawake)" >&2
+  exit 2
+}
+
+# 2h / 30m / 90s / 90 を秒に直す(0 や形の違うものは失敗)
+to_seconds() {
+  n=${1%[smh]}
+  unit=${1#"$n"}
+  case $n in '' | *[!0-9]*) return 1 ;; esac
+  # 先頭の 0 を落とす(算術式で8進数と読まれないように)。0 だけなら空になって失敗
+  n=${n#"${n%%[!0]*}"}
+  [ -n "$n" ] || return 1
+  case $unit in
+    m) echo $((n * 60)) ;;
+    h) echo $((n * 3600)) ;;
+    *) echo "$n" ;;
+  esac
+}
+
+display=0
+secs=
+span=
+while [ $# -gt 0 ]; do
+  case $1 in
+    -d) display=1 ;;
+    -t)
+      [ $# -ge 2 ] || usage
+      span=$2
+      secs=$(to_seconds "$2") || {
+        echo "keepawake: 時間は 30s / 30m / 2h のように書きます: $2" >&2
+        exit 2
+      }
+      shift
+      ;;
+    -h | --help)
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*) usage ;;
+    *) break ;;
+  esac
+  shift
+done
+if [ -n "$secs" ] && [ $# -gt 0 ]; then
+  echo "keepawake: -t とコマンドは一緒に使えません" >&2
+  exit 2
+fi
+
+# 止められないとき: コマンドがあれば警告して実行、無ければ非0で終わる
+cannot() {
+  if [ $# -gt 1 ]; then
+    echo "keepawake: $1。スリープを止めずにコマンドを実行します" >&2
+    shift
+    exec "$@"
+  fi
+  echo "keepawake: $1" >&2
+  exit 1
+}
+
+# コマンドが無いときだけ、何をしているかを知らせる
+announce() {
+  [ $# -eq 0 ] || return 0
+  if [ -n "$secs" ]; then
+    case $span in
+      *h) span="${span%h} 時間" ;;
+      *m) span="${span%m} 分" ;;
+      *) span="${span%s} 秒" ;;
+    esac
+    echo "keepawake: ${span}のあいだスリープを止めます(Ctrl-C でやめる)" >&2
+  else
+    echo "keepawake: スリープを止めています(Ctrl-C でやめる)" >&2
+  fi
+}
+
+run_macos() {
+  command -v caffeinate >/dev/null 2>&1 || cannot "caffeinate が見つかりません" "$@"
+  flags=-i
+  [ "$display" = 1 ] && flags=-di
+  announce "$@"
+  if [ $# -gt 0 ]; then
+    exec caffeinate "$flags" -- "$@"
+  elif [ -n "$secs" ]; then
+    exec caffeinate "$flags" -t "$secs"
+  else
+    exec caffeinate "$flags"
+  fi
+}
+
+run_linux() {
+  # logind に届かない環境(コンテナなど)では systemd-inhibit がコマンドを走らせずに失敗するので先に確かめる
+  if ! command -v systemd-inhibit >/dev/null 2>&1 || ! systemd-inhibit --list >/dev/null 2>&1; then
+    cannot "systemd-inhibit が使えません(systemd の無い環境?)" "$@"
+  fi
+  what='sleep'
+  [ "$display" = 1 ] && what=sleep:idle
+  announce "$@"
+  if [ $# -eq 0 ]; then
+    if [ -n "$secs" ]; then
+      set -- sleep "$secs"
+    else
+      set -- sh -c 'while :; do sleep 3600; done'
+    fi
+  fi
+  exec systemd-inhibit --what="$what" --who=keepawake --why="keepawake で実行中" --mode=block -- "$@"
+}
+
+# WSL: スリープするのは Windows なので、Windows 側の powershell.exe に頼む。
+# powershell.exe は標準入力が閉じるまで待つ。標準入力はこのシェルが握っているので、
+# このシェルが終われば(kill -9 でも)閉じ、powershell.exe も終わって Windows が頼みを外す
+run_wsl() {
+  command -v powershell.exe >/dev/null 2>&1 || cannot "powershell.exe が見つかりません(Windows 連携が無効?)" "$@"
+  for dep in iconv base64; do
+    command -v "$dep" >/dev/null 2>&1 || cannot "$dep が見つかりません(powershell.exe にスクリプトを渡すのに必要)" "$@"
+  done
+  # ES_CONTINUOUS(0x80000000) | ES_SYSTEM_REQUIRED(0x1)、-d なら | ES_DISPLAY_REQUIRED(0x2)。
+  # Windows PowerShell 5.1 は 0x80000000 を負の Int32 と読むので10進で書く
+  flags=2147483649
+  [ "$display" = 1 ] && flags=2147483651
+  # 頼めたら ok を1行返し、あとは標準入力が閉じるまで待つ(頼みはこのスレッドが終わるまで続く)
+  ps=$(
+    cat <<'EOF'
+$ErrorActionPreference = 'Stop'
+Add-Type -Namespace DotfilesKeepAwake -Name Native -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);'
+if ([DotfilesKeepAwake.Native]::SetThreadExecutionState([uint32]__FLAGS__) -eq 0) { exit 1 }
+$out = [Console]::OpenStandardOutput()
+$out.Write([byte[]](111, 107, 10), 0, 3)
+$out.Flush()
+[Console]::OpenStandardInput().CopyTo([System.IO.Stream]::Null)
+exit 0
+EOF
+  )
+  # スクリプトは UTF-16LE + Base64 の -EncodedCommand で渡す(クオート事故を避ける。wincred と同じ)
+  enc=$(printf '%s' "$ps" | sed "s/__FLAGS__/$flags/" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
+
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/keepawake.XXXXXX")
+  mkfifo "$tmp/in" "$tmp/out"
+  # 非対話のシェルの & は SIGINT を無視させるので、Ctrl-C ではなく標準入力の終わりで止まる。
+  # powershell.exe は WSL 内のパスを作業ディレクトリにできないため /mnt/c に移る
+  (
+    cd /mnt/c 2>/dev/null || cd /
+    exec powershell.exe -NoProfile -NonInteractive -EncodedCommand "$enc"
+  ) <"$tmp/in" >"$tmp/out" 2>/dev/null &
+  pid=$!
+  # 立ち上げの途中で打ち切られたら、FIFO を開くのを待っている子を残さない
+  trap 'kill "$pid" 2>/dev/null; rm -rf "$tmp"; exit 1' HUP INT TERM
+  exec 3>"$tmp/in"
+  ready=
+  read -r ready <"$tmp/out" || :
+  # 両端が開いたので FIFO の名前はもう要らない
+  rm -rf "$tmp"
+  trap - HUP INT TERM
+  case $ready in
+    ok*) ;;
+    *)
+      exec 3>&-
+      wait "$pid" 2>/dev/null || :
+      cannot "Windows にスリープ止めを頼めませんでした" "$@"
+      ;;
+  esac
+
+  announce "$@"
+  if [ $# -gt 0 ]; then
+    status=0
+    "$@" 3>&- || status=$?
+    exit "$status"
+  elif [ -n "$secs" ]; then
+    sleep "$secs" 3>&-
+  else
+    # powershell.exe が自分で終わる(= 頼みが外れる)のは異常のときだけ
+    wait "$pid" 2>/dev/null || :
+    echo "keepawake: Windows 側のスリープ止めが途中で外れました" >&2
+    exit 1
+  fi
+}
+
+case "$(uname -s)" in
+  Darwin) run_macos "$@" ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+      run_wsl "$@"
+    else
+      run_linux "$@"
+    fi
+    ;;
+  *) cannot "この OS には対応していません" "$@" ;;
+esac
