@@ -1179,6 +1179,9 @@ save_history "$WORK/save"
 
 echo "== 次の一手(このコマンドは何も消しません)"
 echo "  cachesweep                                  # 開発キャッシュのサイズ。--clean で削除"
+if [ -d "$HOME/.claude" ] || [ -d "$HOME/.codex" ] || [ -d "$HOME/.gemini" ] || [ -d "$HOME/.copilot" ]; then
+  echo "  aidata                                      # AI ツールの会話の記録・本体・キャッシュの内訳(プロファイルごと)"
+fi
 printf '%s\n' "$hints" | sed '/^$/d'
 if [ ! -f "$INDEX_HOME" ]; then
   echo "  diskreport scan                             # 索引を作る(1回だけ時間をかけて数え、以後の詳細・アプリ別は一瞬)"
