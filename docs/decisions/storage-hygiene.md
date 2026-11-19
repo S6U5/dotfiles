@@ -95,7 +95,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | 上限(予防) | `nix-gc-setup`(`min-free` / `max-free`)、各ツールの設定(`cleanupPeriodDays` 等)。システム側(journald、Docker daemon)は README に書くだけ |
 | 通知 | `switch.sh` の末尾で `diskreport --nix-brief`(表示だけ)。続けて、世代が 10 を超え 30 日より前のものがあれば、端末で対話中に限り「消して GC しますか?」と聞く(`y` で `expire-generations "-30 days"` と `nix-collect-garbage`) |
 | 分析 | `diskreport`(読み取り専用。既定は 1〜4 の手段だけで数秒。全走査・成果物探索・Windows 側の道具は明示指定) |
-| 削除 | `cachesweep` / `nix-collect-garbage` / `home-manager expire-generations` / `wsl-compact`、OS の道具(Storage Sense 等)。分析コマンドは案内するだけ |
+| 削除 | `cachesweep` / `nix-collect-garbage` / `home-manager expire-generations` / `wsl-compact` / `git-gc-sweep`([`git-gc.md`](git-gc.md))、OS の道具(Storage Sense 等)。分析コマンドは案内するだけ |
 
 ## 検討した代替
 
@@ -136,6 +136,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 
 ## 履歴
 
+- (2026-11: 複数のリポジトリの `git gc` を、溜まったものだけ拾って明示実行する `git-gc-sweep` を足した。判断根拠は [`git-gc.md`](git-gc.md))
 - (2026-11: Windows 側の詳細を WizTree から Windows 側の PowerShell での集計に置き換え、`diskreport windows` で表示するようにした。WizTree は個人利用のみ無料で、商用利用できないツールは入れない方針にしたため。ファイルを1つずつ数えるので MFT 読みより遅いが、`diskreport scan` / `windows` の中だけの処理なので上限時間を付けて受け入れる。管理者権限が要らなくなり、確認ダイアログも出ない。読めないフォルダは数えられないので個数を表示する)
 - (2026-11: `cachesweep` のサイズ表示に、WSL での Windows 側の開発キャッシュと、そのほかのパッケージツールの検出を足した。WizTree が無くても Windows 側のキャッシュの量が分かるようにするため。Windows 側の中身は Windows の道具で見る原則どおり、`/mnt` 越しの `du` ではなく Windows 側の PowerShell に決まった場所だけを数えさせ、上限時間を付けた。新しいコマンドは足さず、表示だけにして `--clean` は Windows 側に触れない。ツールは起動せず場所で検出する。corepack などは起動すると取得を始めることがあるため)
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)

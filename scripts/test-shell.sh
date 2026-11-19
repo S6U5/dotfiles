@@ -620,6 +620,62 @@ else
   echo "  skip: pwsh が無いので、Windows 側のスクリプトを本物の PowerShell で動かす確認を飛ばす"
 fi
 
+echo "== 10) git-gc-sweep が溜まったリポジトリだけを拾い、共有しているものを避けるか"
+if command -v git >/dev/null 2>&1; then
+  GC_TEST=$WORK_DIR/git-gc-sweep
+  mkdir -p "$GC_TEST/home" "$GC_TEST/src/.hidden"
+  gc_git() { env -i HOME="$GC_TEST/home" PATH="/usr/bin:/bin" git -c gc.auto=0 -c init.defaultBranch=main \
+    -c user.name=t -c user.email=t@example.invalid "$@"; }
+  run_gc_sweep() {
+    env -i HOME="$GC_TEST/home" PATH="/usr/bin:/bin" "$DOTFILES_DIR/home/.local/bin/git-gc-sweep" "$@" </dev/null 2>&1
+  }
+  # big: 圧縮できない 11M をばらのオブジェクトにする / small: ほぼ空 / lender と borrower: alternates で共有
+  for r in big small lender .hidden/tool; do
+    gc_git init -q "$GC_TEST/src/$r"
+  done
+  for r in big lender .hidden/tool; do
+    head -c 11534336 /dev/urandom >"$GC_TEST/src/$r/blob"
+    gc_git -C "$GC_TEST/src/$r" add blob
+  done
+  gc_git -C "$GC_TEST/src/lender" commit -q -m init
+  gc_git clone -q --shared "$GC_TEST/src/lender" "$GC_TEST/src/borrower"
+
+  out=$(run_gc_sweep "$GC_TEST/src") || ng "git-gc-sweep が非0で終了"
+  expect_in "$out" "$GC_TEST/src/big" "git-gc-sweep: ばらのオブジェクトが溜まったリポジトリを拾う"
+  expect_not_in "$out" "$GC_TEST/src/small" "git-gc-sweep: 溜まっていないリポジトリは出さない"
+  expect_not_in "$out" "$GC_TEST/src/lender" "git-gc-sweep: alternates で貸している側は候補にしない"
+  expect_not_in "$out" ".hidden" "git-gc-sweep: 隠しフォルダの下は探さない"
+  expect_in "$out" "共有している 2 件" "git-gc-sweep: 共有しているリポジトリの数を出す"
+  expect_in "$out" "調べた 4 件のうち 1 件" "git-gc-sweep: 調べた数と候補の数を出す"
+  if [ "$(gc_git -C "$GC_TEST/src/big" count-objects | cut -d' ' -f1)" -gt 0 ]; then
+    ok "git-gc-sweep: --clean なしでは何も変えない"
+  else
+    ng "git-gc-sweep: --clean なしで gc された"
+  fi
+
+  out=$(run_gc_sweep --clean "$GC_TEST/src") || ng "git-gc-sweep --clean が非0で終了"
+  expect_in "$out" "gc: $GC_TEST/src/big" "git-gc-sweep --clean: 候補に gc をかける"
+  if [ "$(gc_git -C "$GC_TEST/src/big" count-objects | cut -d' ' -f1)" -eq 0 ]; then
+    ok "git-gc-sweep --clean: ばらのオブジェクトが pack にまとまる"
+  else
+    ng "git-gc-sweep --clean: ばらが残った"
+  fi
+  if gc_git -C "$GC_TEST/src/borrower" fsck --no-progress >/dev/null 2>&1; then
+    ok "git-gc-sweep --clean: 借りている側が壊れていない"
+  else
+    ng "git-gc-sweep --clean: 借りている側が壊れた"
+  fi
+
+  out=$(cd "$GC_TEST/src/small" && run_gc_sweep) || ng "git-gc-sweep が非0で終了(引数なし)"
+  expect_in "$out" "ありません(調べた 1 件)" "git-gc-sweep: 引数なしでは今いる場所の下を探す"
+  out=$(env -i HOME="$GC_TEST/home" PATH="/usr/bin:/bin" DOTFILES_GIT_GC_SWEEP_DIRS="$GC_TEST/src:$GC_TEST/none" \
+    "$DOTFILES_DIR/home/.local/bin/git-gc-sweep" </dev/null 2>&1) || ng "git-gc-sweep が非0で終了(環境変数)"
+  expect_in "$out" "ありません(調べた 4 件)" "git-gc-sweep: DOTFILES_GIT_GC_SWEEP_DIRS の下を探す"
+  expect_in "$out" "フォルダがありません: $GC_TEST/none" "git-gc-sweep: 無いフォルダは知らせて続ける"
+else
+  echo "  skip: git が無いので git-gc-sweep の確認を飛ばす"
+fi
+
 echo ""
 echo "結果: ok=$pass NG=$fail"
 [ "$fail" -eq 0 ] || exit 1

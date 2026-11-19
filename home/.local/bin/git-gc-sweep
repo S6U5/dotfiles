@@ -1,0 +1,188 @@
+#!/bin/sh
+# git gc で減らせそうなリポジトリを探して一覧にする(--clean で git gc を実行)。
+# 使い方: git-gc-sweep [--clean] [ディレクトリ...]   (git gc-sweep でも呼べる)
+#   git-gc-sweep ~/src           # ~/src の下のリポジトリを調べて、候補だけ表示(何も変えない)
+#   git-gc-sweep --clean ~/src   # 候補にだけ git gc をかけ、減った量を表示
+# ディレクトリを省くと DOTFILES_GIT_GC_SWEEP_DIRS(: 区切り)、それも無ければ今いる場所の下を探す。
+# 候補にする条件(どちらか):
+#   ばらのオブジェクトとごみ(git count-objects の size + size-garbage)が 10M 以上
+#   pack が 20 個以上
+# git は普段のコマンドの中で自動的に gc している(ばら 6700 個・pack 50 個が目安)ので、
+# ほとんどのリポジトリは候補にならない。全部に一斉にかけず、溜まったものだけを拾う。
+# 表示する「ばら」は gc が pack にまとめ直す量で、そのまま減る量ではない(差分で圧縮できる分と、
+# 到達できなくなって2週間より古い分だけ減る。どれだけ減ったかは --clean が実行後に出す)。
+# 実行するのはオプションなしの git gc だけ(--aggressive / --prune=now は使わない)。
+# 対象外にするもの:
+#   - オブジェクトを他のリポジトリと共有しているもの(git clone --shared / --reference の alternates。
+#     貸している側を gc すると、借りている側が壊れることがある)。貸している側は、
+#     借りている側が同じ探索範囲にあるときだけ見分けられる
+#   - 隠しフォルダと node_modules の下(cargo・エディタのプラグインなど、ツールが管理するリポジトリ)
+#   - WSL の /mnt/<ドライブ> の下(9P 経由で桁違いに遅い)
+#   - サブモジュールの中身(.git/modules の下)と bare リポジトリ
+set -eu
+
+MIN_LOOSE_K=10240 # ばら + ごみがこれ以上なら候補(KiB)
+MIN_PACKS=20      # pack がこれ以上なら候補
+
+unset GIT_DIR GIT_WORK_TREE
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/git-gc-sweep.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+: >"$work/roots"
+
+clean=0
+for arg in "$@"; do
+  case "$arg" in
+    --clean) clean=1 ;;
+    -h | --help)
+      sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*)
+      echo "git-gc-sweep: 不明な引数です: $arg" >&2
+      exit 1
+      ;;
+    *) printf '%s\n' "$arg" >>"$work/roots" ;;
+  esac
+done
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "git-gc-sweep: git が見つかりません" >&2
+  exit 1
+fi
+
+if [ ! -s "$work/roots" ]; then
+  if [ -n "${DOTFILES_GIT_GC_SWEEP_DIRS:-}" ]; then
+    printf '%s\n' "$DOTFILES_GIT_GC_SWEEP_DIRS" | tr ':' '\n' | sed '/^$/d' >"$work/roots"
+  else
+    echo . >"$work/roots"
+  fi
+fi
+
+is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
+
+human() { # $1: KiB
+  awk -v k="$1" 'BEGIN {
+    if (k >= 1048576) printf "%.1fG", k / 1048576
+    else if (k >= 1024) printf "%.0fM", k / 1024
+    else printf "%dK", k
+  }'
+}
+
+# 1) .git フォルダを集める(.git の中と、隠しフォルダ・node_modules の下へは降りない)
+: >"$work/gitdirs.raw"
+while IFS= read -r root; do
+  if ! real=$(cd "$root" 2>/dev/null && pwd -P); then
+    echo "git-gc-sweep: フォルダがありません: $root" >&2
+    continue
+  fi
+  if is_wsl; then
+    case "$real" in
+      /mnt/[a-z] | /mnt/[a-z]/*)
+        echo "git-gc-sweep: Windows 側(/mnt)は遅いので調べません: $root" >&2
+        continue
+        ;;
+    esac
+  fi
+  find "$real" -mindepth 1 \
+    \( -name .git -type d -print -prune \) -o \
+    \( -type d \( -name '.?*' -o -name node_modules \) -prune \) \
+    2>/dev/null >>"$work/gitdirs.raw" || true
+done <"$work/roots"
+sort -u "$work/gitdirs.raw" >"$work/gitdirs"
+
+# 2) alternates で貸している側のオブジェクト置き場を控える
+: >"$work/lenders"
+while IFS= read -r gitdir; do
+  alt=$gitdir/objects/info/alternates
+  [ -s "$alt" ] || continue
+  while IFS= read -r line; do
+    case "$line" in '' | '#'*) continue ;; esac
+    # 相対パスはオブジェクト置き場からの相対
+    (cd "$gitdir/objects" 2>/dev/null && cd "$line" 2>/dev/null && pwd -P) >>"$work/lenders" || true
+  done <"$alt"
+done <"$work/gitdirs"
+
+# 3) 帳簿(git count-objects)で量を見る。1行1件: ばら+ごみ(KiB)<TAB>pack 数<TAB>全体(KiB)<TAB>場所
+stats() { # $1: リポジトリ → "ばら+ごみ pack数 全体"(KiB)
+  git -C "$1" count-objects -v 2>/dev/null | awk '
+    $1 == "size:" { loose = $2 }
+    $1 == "size-garbage:" { garbage = $2 }
+    $1 == "packs:" { packs = $2 }
+    $1 == "size-pack:" { pack = $2 }
+    END { if (NR == 0) exit 1; print loose + garbage, packs + 0, loose + garbage + pack }
+  '
+}
+
+total=0
+shared=0
+unreadable=0
+: >"$work/candidates"
+while IFS= read -r gitdir; do
+  repo=${gitdir%/.git}
+  total=$((total + 1))
+  objdir=$(cd "$gitdir/objects" 2>/dev/null && pwd -P) || objdir=
+  if [ -s "$gitdir/objects/info/alternates" ] ||
+    { [ -n "$objdir" ] && grep -qxF -- "$objdir" "$work/lenders"; }; then
+    shared=$((shared + 1))
+    continue
+  fi
+  if ! s=$(stats "$repo"); then
+    unreadable=$((unreadable + 1))
+    continue
+  fi
+  # shellcheck disable=SC2086  # 数値3つに分ける
+  set -- $s
+  if [ "$1" -ge "$MIN_LOOSE_K" ] || [ "$2" -ge "$MIN_PACKS" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$repo" >>"$work/candidates"
+  fi
+done <"$work/gitdirs"
+
+skipped() {
+  if [ "$shared" -gt 0 ]; then
+    echo "対象外: オブジェクトを他のリポジトリと共有している ${shared} 件(alternates)"
+  fi
+  if [ "$unreadable" -gt 0 ]; then
+    echo "対象外: git が読めなかった ${unreadable} 件(壊れている・持ち主が違うなど)"
+  fi
+}
+
+if [ ! -s "$work/candidates" ]; then
+  echo "git gc で減らせそうなリポジトリはありません(調べた ${total} 件)"
+  skipped
+  exit 0
+fi
+
+sort -t "$(printf '\t')" -k1,1nr "$work/candidates" >"$work/sorted"
+echo "git gc で減らせそうなリポジトリ(調べた ${total} 件のうち $(wc -l <"$work/sorted" | tr -d ' ') 件):"
+# 見出しは幅をそろえた文字列で書く(printf の幅は sh によって日本語をバイトで数えるため)
+echo "    ばら   pack     .git  場所"
+while IFS="$(printf '\t')" read -r loose packs all repo; do
+  printf '  %6s %6s %8s  %s\n' "$(human "$loose")" "$packs" "$(human "$all")" "$repo"
+done <"$work/sorted"
+skipped
+
+if [ "$clean" -eq 0 ]; then
+  echo
+  echo "実行するには: git-gc-sweep --clean [ディレクトリ...]"
+  exit 0
+fi
+
+echo
+rc=0
+saved=0
+while IFS="$(printf '\t')" read -r _ _ before repo; do
+  if git -C "$repo" gc --quiet </dev/null; then
+    s=$(stats "$repo") || s="0 0 $before"
+    after=${s##* }
+    diff=$((before - after))
+    [ "$diff" -lt 0 ] && diff=0
+    saved=$((saved + diff))
+    echo "gc: $repo  $(human "$before") → $(human "$after")"
+  else
+    echo "git-gc-sweep: gc に失敗しました: $repo" >&2
+    rc=1
+  fi
+done <"$work/sorted"
+echo "合計で $(human "$saved") 減りました"
+exit "$rc"
