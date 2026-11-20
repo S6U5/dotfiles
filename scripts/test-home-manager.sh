@@ -10,6 +10,10 @@
 #
 #   ./scripts/test-home-manager.sh
 #   DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh   # CI 専用
+#
+# DOTFILES_TEST_STORE_CACHE=<フォルダ> を付けると、最後に「この実行でソースからビルドしたもの」を
+# そのフォルダへ Nix のバイナリキャッシュの形で書き出す(CI が actions/cache で持ち回り、次回は
+# ビルドせずに取り出す。判断根拠は docs/decisions/ci-store-cache.md)。
 set -euo pipefail
 
 DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -71,8 +75,19 @@ else
 fi
 
 echo "== 2) home-manager build(実 HOME には触れない)"
+build_started=$SECONDS
 if (cd "$BUILD_DIR" && "${HOME_MANAGER[@]}" build --flake "$DOTFILES_DIR/nix#$SYSTEM" --impure >"$BUILD_DIR/build.log" 2>&1); then
-  ok "build 成功"
+  ok "build 成功($((SECONDS - build_started)) 秒)"
+  # 時間がかかったときに原因がログから分かるよう、公式のバイナリキャッシュ(cache.nixos.org)の
+  # 署名が無いもの = ソースからビルドしたものを出す(home/ の各ファイルなど、この構成自身の
+  # 小さな生成物は数だけ)
+  local_paths=()
+  while IFS= read -r p; do
+    local_paths+=("$p")
+  done < <(nix path-info --recursive --sigs "$BUILD_DIR/result" | grep -v 'cache\.nixos\.org-1:' | awk '{print $1}')
+  echo "  公式のバイナリキャッシュに無いもの: ${#local_paths[@]} 件"
+  printf '%s\n' "${local_paths[@]}" | sed 's|^/nix/store/[a-z0-9]*-||' |
+    grep -vE '^(hm[_-]|home-manager|source$|activation-script$)' | sed 's/^/    /' || true
 else
   ng "build 失敗"
   show_log_tail "$BUILD_DIR/build.log"
@@ -544,6 +559,22 @@ if [ "${DOTFILES_TEST_SWITCH:-0}" = "1" ]; then
       ng "switch後に存在しない: $f"
     fi
   done
+fi
+
+if [ -n "${DOTFILES_TEST_STORE_CACHE:-}" ] && [ "$fail" -eq 0 ]; then
+  echo "== 14) ソースからビルドしたものをバイナリキャッシュの形で書き出す"
+  # cache.nixos.org の署名が無いもの = 公式のバイナリキャッシュから取れなかったもの。
+  # 古い版が溜まらないよう、毎回作り直す(取り出し済みのものはストアにあるので書き直せる)
+  rm -rf "$DOTFILES_TEST_STORE_CACHE"
+  mkdir -p "$DOTFILES_TEST_STORE_CACHE"
+  if [ "${#local_paths[@]}" -eq 0 ]; then
+    ok "書き出すものは無い(すべて公式のバイナリキャッシュから取れた)"
+  elif nix copy --to "file://$DOTFILES_TEST_STORE_CACHE?compression=zstd" "${local_paths[@]}" >"$BUILD_DIR/copy.log" 2>&1; then
+    ok "${#local_paths[@]} 件を書き出した($(du -sh "$DOTFILES_TEST_STORE_CACHE" | cut -f1))"
+  else
+    ng "書き出しに失敗"
+    show_log_tail "$BUILD_DIR/copy.log"
+  fi
 fi
 
 echo ""

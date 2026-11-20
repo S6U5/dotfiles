@@ -22,11 +22,32 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install shellcheck, shfmt and zsh
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck shfmt zsh
-      - name: Lint shell scripts
-        run: ./scripts/lint.sh
+      - name: Install Nix
+        # lint のツールは apt ではなく nix/flake.lock の nixpkgs から入れる(手元の nix/home.nix と同じ版。
+        # 版がずれると、フォーマッターの差分が手元と CI で食い違う。docs/decisions/lint-tools.md)
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          extra-conf: experimental-features = nix-command flakes
+      - name: Lint (shell / Lua / Nix / workflows)
+        # ツールが1つでも無ければ lint.sh が失敗にする(CI では環境変数 CI がある)
+        run: |
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          nix shell --inputs-from ./nix \
+            nixpkgs#shellcheck nixpkgs#shfmt nixpkgs#stylua nixpkgs#nixfmt nixpkgs#actionlint \
+            -c ./scripts/lint.sh
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y zsh
       - name: Load shell config in dash / bash / zsh
         # 静的検査では分からない「実際に読み込めるか」「関数が定義されるか」「cd 系の終了コード」を
         # 確かめる(Nix 不要。home-manager-test とは独立に、速いこちらで落とす)
+        run: ./scripts/test-shell.sh
+
+  # シェル設定と自作コマンドを macOS でも実際に動かす(macOS の bash・zsh・BSD 系のコマンドでの
+  # 違いは Ubuntu では分からない。Nix は要らないので、重い home-manager-test とは分けて速く落とす)
+  shell-test-macos:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load shell config in bash / zsh
         run: ./scripts/test-shell.sh

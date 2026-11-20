@@ -532,7 +532,7 @@ templates/         機密を含みうる単一設定ファイルの雛形($HOME 
                    Claude Code / Codex CLI のローカル Marketplace(このリポジトリ自身を
                    プラグイン配布元にする。自作スキルの置き場。導入は「同梱プラグイン」、
                    詳細な手順は plugins/README.md)
-scripts/           lint(shellcheck / shfmt)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック・Node.js のセキュリティリリース追従
+scripts/           lint(shellcheck / shfmt / stylua / nixfmt / actionlint)・シェル設定の読み込みテスト・home-manager 経由の配布テスト・push ロック・Node.js のセキュリティリリース追従
 .githooks/         pre-commit フック(機密情報のコミットを自動ブロック)
 ```
 

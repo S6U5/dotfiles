@@ -168,7 +168,9 @@ run_shell() {
   fi
   # bash は端末(tty)無しで -i 起動すると、設定を読む前にジョブ制御の警告を2行出す。
   # これは起動方法によるもので設定の問題ではないため、この2行だけは無視する
-  sed -i -e '/^bash: cannot set terminal process group/d' -e '/^bash: no job control in this shell$/d' "$err"
+  # (sed -i は GNU と BSD(macOS)で書き方が違うため、別のファイルへ書いてから置き換える)
+  sed -e '/^bash: cannot set terminal process group/d' -e '/^bash: no job control in this shell$/d' "$err" >"$err.filtered"
+  mv "$err.filtered" "$err"
   if [ -s "$err" ]; then
     ng "$label: 読み込み中に標準エラー出力があった:"
     sed 's/^/      /' "$err" >&2

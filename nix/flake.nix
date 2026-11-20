@@ -19,7 +19,12 @@
   };
 
   outputs =
-    { nixpkgs, home-manager, mdgrid, ... }:
+    {
+      nixpkgs,
+      home-manager,
+      mdgrid,
+      ...
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -34,7 +39,9 @@
         home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [ ./home.nix ];
-          extraSpecialArgs = { mdgrid = mdgrid.packages.${system}.default; };
+          extraSpecialArgs = {
+            mdgrid = mdgrid.packages.${system}.default;
+          };
         }
       );
 

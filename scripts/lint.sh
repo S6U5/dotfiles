@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 #
-# シェルスクリプトの lint(shellcheck)とフォーマットチェック(shfmt)。
-# CI と pre-commit フックの両方から使う。
+# lint とフォーマットチェック。CI と pre-commit フックの両方から使う。
+#
+#   シェル            shellcheck(lint)/ shfmt(フォーマット)
+#   Lua               stylua(フォーマット)
+#   Nix               nixfmt(フォーマット)
+#   GitHub Actions    actionlint(lint)
 #
 #   ./scripts/lint.sh        # チェックのみ(問題があれば非0で終了)
-#   ./scripts/lint.sh --fix  # shfmt でフォーマットを自動修正
+#   ./scripts/lint.sh --fix  # フォーマットを自動修正(shfmt / stylua / nixfmt)
 #
-# ツールが無い環境では警告してスキップする(CI 側では必ずインストールする)。
+# ツールが無い環境では警告してスキップする。CI(環境変数 CI がある)では、ツールが無いことも
+# 失敗にする(入れ忘れで検査が黙って飛ばされないようにするため)。ツールはどれも nix/home.nix で
+# 入るもので、CI も nix/flake.lock の同じ版を使う(判断根拠は docs/decisions/lint-tools.md)。
 set -euo pipefail
 
 DOTFILES_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -28,12 +34,22 @@ fi
 
 status=0
 
-if command -v shellcheck >/dev/null 2>&1; then
+# ツールがあれば 0。無ければ警告して非0を返す(CI ではさらに、全体を失敗にする)
+have() {
+  command -v "$1" >/dev/null 2>&1 && return 0
+  if [ -n "${CI:-}" ]; then
+    echo "NG: $1 が見つかりません(CI では lint のツールをすべて入れてください)。" >&2
+    status=1
+  else
+    echo "WARN: $1 が見つからないためスキップします。" >&2
+  fi
+  return 1
+}
+
+if have shellcheck; then
   if ! shellcheck "${files[@]}"; then
     status=1
   fi
-else
-  echo "WARN: shellcheck が見つからないためスキップします。" >&2
 fi
 
 # `$名前` のすぐ後ろに日本語などの ASCII 以外の文字が続くと、macOS の bash 3.2(/bin/sh も)と zsh は
@@ -51,15 +67,54 @@ if mb_hits=$(LC_ALL=C grep -nE "$mb_pattern" "${mb_files[@]}" | LC_ALL=C grep -v
   status=1
 fi
 
-if command -v shfmt >/dev/null 2>&1; then
+if have shfmt; then
   if [ "$FIX" -eq 1 ]; then
     shfmt -w -i 2 -ci "${files[@]}"
   elif ! shfmt -d -i 2 -ci "${files[@]}"; then
     echo "HINT: ./scripts/lint.sh --fix で自動修正できます。" >&2
     status=1
   fi
-else
-  echo "WARN: shfmt が見つからないためスキップします。" >&2
+fi
+
+# git 管理下のファイルを、パターンで配列 list に集める
+collect() {
+  list=()
+  while IFS= read -r f; do
+    list+=("$f")
+  done < <(git ls-files -- "$@")
+}
+
+# Lua(Neovim / WezTerm の設定)。書式は Neovim 側の stylua.toml に揃える
+# (stylua は実行した場所から設定を探すため、どこで動かしても同じになるよう明示して渡す)
+collect '*.lua'
+if [ "${#list[@]}" -gt 0 ] && have stylua; then
+  stylua_args=(--config-path home/.config/nvim/stylua.toml)
+  if [ "$FIX" -eq 1 ]; then
+    stylua "${stylua_args[@]}" "${list[@]}"
+  elif ! stylua --check "${stylua_args[@]}" "${list[@]}"; then
+    echo "HINT: ./scripts/lint.sh --fix で自動修正できます。" >&2
+    status=1
+  fi
+fi
+
+# Nix
+collect '*.nix'
+if [ "${#list[@]}" -gt 0 ] && have nixfmt; then
+  if [ "$FIX" -eq 1 ]; then
+    nixfmt "${list[@]}"
+  elif ! nixfmt --check "${list[@]}"; then
+    echo "HINT: ./scripts/lint.sh --fix で自動修正できます。" >&2
+    status=1
+  fi
+fi
+
+# GitHub Actions のワークフロー(式・キーの誤り。run: の中のシェルは、shellcheck があれば
+# actionlint がそれも通す)
+collect '.github/workflows/*.yml' '.github/workflows/*.yaml'
+if [ "${#list[@]}" -gt 0 ] && have actionlint; then
+  if ! actionlint "${list[@]}"; then
+    status=1
+  fi
 fi
 
 exit "$status"

@@ -26,17 +26,40 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore locally built store paths
+        # 公式のバイナリキャッシュに無く、ソースからビルドしたもの(mdgrid と、nixpkgs の更新直後の
+        # macOS 向け WezTerm など)だけを持ち回る。ビルドそのものは飛ばさない: flake.lock が変わって
+        # 中身が変われば、そのときはビルドし直す(docs/decisions/ci-store-cache.md)
+        id: store-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/nix-built
+          key: nix-built-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nix/flake.lock') }}
+          restore-keys: nix-built-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Nix
         # nix-installer を未固定の curl|sh で取得する代わりに、SHA 固定した公式 action を使う。
         # この action 自体が dependabot.yml の github-actions エコシステムで追跡され、
         # actions/checkout と同様に SHA が自動更新される(固定しても更新は止まらない)。
         uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
-          extra-conf: experimental-features = nix-command flakes
+          # 上で取り出したフォルダを、追加の取得元にする。このジョブ自身が書き出したもので署名が
+          # 無いため trusted=1 を付ける(フォルダが無くても Nix は失敗しない)
+          extra-conf: |
+            experimental-features = nix-command flakes
+            extra-substituters = file://${{ runner.temp }}/nix-built?trusted=1
       - name: Run home-manager test
         # CI ランナーは使い捨てなので、DOTFILES_TEST_SWITCH=1 で実際の switch(activate)まで検証する。
         # nix-installer 導入直後は同一シェルにまだ nix コマンドが乗っていないため、
         # nix-daemon のプロファイルスクリプトを明示的に source してから実行する。
+        env:
+          DOTFILES_TEST_STORE_CACHE: ${{ runner.temp }}/nix-built
         run: |
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
           DOTFILES_TEST_SWITCH=1 ./scripts/test-home-manager.sh
+      - name: Save locally built store paths
+        # 同じ flake.lock のものが既にあれば保存し直さない
+        if: steps.store-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/nix-built
+          key: ${{ steps.store-cache.outputs.cache-primary-key }}

@@ -95,9 +95,12 @@ Obsidian などのアプリを操作するコマンドも追加予定。
 ## lint・フォーマット
 
 - シェルスクリプトは shellcheck(lint)と shfmt(フォーマット、`-i 2 -ci`)に準拠する。
+- Lua は stylua(書式は `home/.config/nvim/stylua.toml`)、Nix は nixfmt、GitHub Actions のワークフローは actionlint に準拠する。ツールはどれも `nix/home.nix` で入り、CI も `nix/flake.lock` の同じ版を使う(apt の版は使わない。フォーマッターは版で出力が変わるため)。CI ではツールが無いことも失敗にする。lint のツールは公式のものか広く使われているものに限る(判断根拠は `docs/decisions/lint-tools.md`)。
 - チェックは `./scripts/lint.sh`、自動修正は `./scripts/lint.sh --fix`。
 - CI(`.github/workflows/lint.yml`)で必ず実行。ローカルの pre-commit フックでもツールがあれば実行される(無ければスキップ)。
 - shellcheck は静的検査なので、`home/.config/shell/` の共通設定や bash / zsh の設定本体を変えたら `./scripts/test-shell.sh` も実行する(dash / bash / zsh で実際に読み込み、関数の定義と cd 系の終了コードの決まりを確かめる。CI の lint ジョブでも実行される)。
+- `./scripts/test-shell.sh` は CI で macOS でも実行する(`shell-test-macos`。macOS の bash・zsh・BSD 系コマンドでの違いは Ubuntu では分からないため)。テストの中では GNU だけの書き方(`sed -i` など)を使わない。
+- CI の `home-manager-test` はビルドを飛ばさず、公式のバイナリキャッシュに無くてソースからビルドしたもの(mdgrid、nixpkgs の更新直後の macOS 向け WezTerm など)だけを `actions/cache` で持ち回る(判断根拠は `docs/decisions/ci-store-cache.md`)。
 - CI のジョブ名(`lint` / `home-manager-test` / `gitleaks`)は main の required status check として参照されているため変えない(`docs/decisions/oss-publish-plan.md`)。ジョブを足すのは自由だが、required にするには GitHub 側の設定も要る。
 
 ## ツール設定を dotfiles に入れるかの判断基準

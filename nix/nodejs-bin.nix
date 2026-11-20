@@ -3,7 +3,12 @@
 # 判断根拠は docs/decisions/nodejs-security-releases.md)。
 # バージョンとハッシュは nix/nodejs-bin.local.json に置き、scripts/nodejs-security.sh update が
 # 署名を検証したうえで書き換える(git 管理外。マシンごとに持つ)。
-{ lib, stdenv, fetchurl, pin }:
+{
+  lib,
+  stdenv,
+  fetchurl,
+  pin,
+}:
 let
   # nodejs.org の配布ファイル名との対応(scripts/nodejs-security.sh と揃える)
   platforms = {
@@ -34,14 +39,16 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out
     cp -R bin include lib share $out/
-  '' + lib.optionalString stdenv.hostPlatform.isLinux ''
+  ''
+  + lib.optionalString stdenv.hostPlatform.isLinux ''
     # Linux 版は一般的な FHS 環境向けにリンクされているため、Nix の libc / libstdc++ を向かせる。
     # autoPatchelfHook は使わない: patchelf 0.19.2 では interpreter を書き換えたあとに RUNPATH を
     # 書き換えると node が起動時に segfault する(RUNPATH が先なら動く。実測)。順番を固定するため
     # 自前で2回に分けて呼ぶ。壊れたら scripts/test-home-manager.sh の 12b が検知する。
     patchelf --set-rpath "${lib.makeLibraryPath [ stdenv.cc.cc.lib ]}" $out/bin/node
     patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" $out/bin/node
-  '' + ''
+  ''
+  + ''
     # 同梱の npm / npx / corepack の `#!/usr/bin/env node` を、このパッケージの node に向ける
     export HOST_PATH="$out/bin:$HOST_PATH"
     runHook postInstall

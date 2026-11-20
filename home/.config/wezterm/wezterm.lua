@@ -1,11 +1,11 @@
-local wezterm = require 'wezterm'
+local wezterm = require("wezterm")
 local config = wezterm.config_builder()
 
-config.font = wezterm.font 'JetBrainsMono Nerd Font'
+config.font = wezterm.font("JetBrainsMono Nerd Font")
 config.font_size = 13.0
 
 config.enable_tab_bar = true
-config.window_close_confirmation = 'NeverPrompt'
+config.window_close_confirmation = "NeverPrompt"
 config.scrollback_lines = 5000
 
 -- アクティブタブに色をつけて現在のタブを判別しやすくする。fancy tab bar(デフォルト)でも
@@ -14,8 +14,8 @@ config.scrollback_lines = 5000
 config.colors = {
   tab_bar = {
     active_tab = {
-      bg_color = '#2b6cb0',
-      fg_color = '#ffffff',
+      bg_color = "#2b6cb0",
+      fg_color = "#ffffff",
     },
   },
 }
@@ -33,10 +33,10 @@ config.check_for_updates = false
 -- 未指定のままだと WSL ディストリのデフォルトシェル(多くの場合 bash)が起動してしまう)。
 -- 採用したドメイン名は下の gui-startup でも参照するため local に控える。
 local wsl_default_domain
-if wezterm.target_triple:find 'windows' then
+if wezterm.target_triple:find("windows") then
   local wsl_domains = wezterm.default_wsl_domains()
   if wsl_domains and #wsl_domains > 0 then
-    wsl_domains[1].default_prog = { 'zsh' }
+    wsl_domains[1].default_prog = { "zsh" }
     config.wsl_domains = wsl_domains
     config.default_domain = wsl_domains[1].name
     wsl_default_domain = wsl_domains[1].name
@@ -49,7 +49,7 @@ end
 -- set_inner_size は装飾(タイトルバー等)を除いた内側のサイズ指定なので、中央配置は厳密ではなく
 -- 数十px ずれうるが実用上問題ない。
 local screen_ratio = 0.5
-wezterm.on('gui-startup', function(cmd)
+wezterm.on("gui-startup", function(cmd)
   local screen = wezterm.gui.screens().active
   local width = math.floor(screen.width * screen_ratio)
   local height = math.floor(screen.height * screen_ratio)
@@ -81,15 +81,15 @@ end)
 -- 局所的に残って文字が読みにくくなることがあるため、上に半透明の黒レイヤーを重ねて均一に暗くする
 -- (background のレイヤーは配列の後ろのものほど上に重なる。公式ドキュメント記載の手法)。
 local wallpaper_path
-local wallpaper_local_ok, wallpaper_local = pcall(dofile, wezterm.config_dir .. '/wallpaper.local.lua')
+local wallpaper_local_ok, wallpaper_local = pcall(dofile, wezterm.config_dir .. "/wallpaper.local.lua")
 if wallpaper_local_ok then
   -- local ファイルがある場合はその指定を最優先(文字列なら差し替え、false 等なら壁紙なし)
-  if type(wallpaper_local) == 'string' and wallpaper_local ~= '' then
+  if type(wallpaper_local) == "string" and wallpaper_local ~= "" then
     wallpaper_path = wallpaper_local
   end
 else
-  local default_wallpaper = wezterm.config_dir .. '/wallpaper.png'
-  local f = io.open(default_wallpaper, 'rb')
+  local default_wallpaper = wezterm.config_dir .. "/wallpaper.png"
+  local f = io.open(default_wallpaper, "rb")
   if f then
     f:close()
     wallpaper_path = default_wallpaper
@@ -105,15 +105,15 @@ local function wallpaper_background(image_opacity)
   return {
     {
       source = { File = wallpaper_path },
-      width = 'Cover',
-      height = 'Cover',
+      width = "Cover",
+      height = "Cover",
       opacity = image_opacity,
       hsb = { brightness = 0.3, hue = 1.0, saturation = 1.0 },
     },
     {
-      source = { Color = '#000000' },
-      width = '100%',
-      height = '100%',
+      source = { Color = "#000000" },
+      width = "100%",
+      height = "100%",
       opacity = 0.78,
     },
   }
@@ -127,8 +127,8 @@ if wallpaper_enabled then
 
   config.keys = config.keys or {}
   table.insert(config.keys, {
-    key = 'O',
-    mods = 'CTRL|SHIFT',
+    key = "O",
+    mods = "CTRL|SHIFT",
     action = wezterm.action_callback(function(window, _pane)
       local overrides = window:get_config_overrides() or {}
       if overrides.window_background_opacity == 0.4 then
