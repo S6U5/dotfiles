@@ -1,4 +1,4 @@
-{ config, pkgs, lib, mdgridSrc, ... }:
+{ config, pkgs, lib, mdgrid, ... }:
 let
   # dotfiles リポジトリのルート絶対パス。home/ 配下を home.file として配布するために必要
   # (判断根拠は docs/decisions/dotfiles-distribution.md 参照)。`builtins.getEnv` は flake の
@@ -36,25 +36,6 @@ let
           { ${rel} = { source = outOfStore rel; }; }
       )
       (builtins.readDir dir);
-
-  # mdgrid(Markdown の frontmatter を表で見る TUI)。nixpkgs に無いため、flake の入力 mdgrid
-  # (nix/flake.nix)のソースからビルドする。取得するコミットと中身のハッシュは flake.lock が固定し、
-  # 依存のクレートは mdgrid 自身の Cargo.lock のハッシュで固定される(cargoHash を手で持たない)。
-  # 試験は mdgrid 側の CI で回っており、疑似端末を使う試験はビルドの隔離環境で動かないため省く。
-  # 判断根拠は docs/decisions/mdgrid.md 参照。
-  mdgrid = pkgs.rustPlatform.buildRustPackage {
-    pname = "mdgrid";
-    version = (lib.importTOML "${mdgridSrc}/Cargo.toml").package.version;
-    src = mdgridSrc;
-    cargoLock.lockFile = "${mdgridSrc}/Cargo.lock";
-    doCheck = false;
-    meta = {
-      description = "Browse and edit Markdown frontmatter as a table in the terminal";
-      homepage = "https://github.com/S6U5/mdgrid";
-      license = with lib.licenses; [ mit asl20 ];
-      mainProgram = "mdgrid";
-    };
-  };
 
   # Node.js ランタイム。nixpkgs の nodejs が Node.js のセキュリティリリースに遅れているあいだだけ、
   # nodejs.org の公式バイナリ(nix/nodejs-bin.nix)で補う(判断根拠は
@@ -310,8 +291,9 @@ in
   # あいだだけ、上の let の nodejsRuntime が公式バイナリに差し替える)。プロジェクトごとのバージョン切り替えツール
   # (mise/asdf/nvm 等)は導入しない方針(docs/decisions/dependency-tooling-scope.md 参照。
   # 切り替えの具体的なニーズが生じたら同 ADR を再検討する)。
-  # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、上の let で flake の
-  # 入力からビルドしたものを入れる。
+  # mdgrid は Markdown の frontmatter を表で見る TUI。nixpkgs に無いため、flake の入力 mdgrid
+  # (nix/flake.nix。リリースのタグを指す)のパッケージを入れる。ソースからのビルドの手順・man・
+  # シェルの補完は mdgrid 側の flake が持つ(判断根拠は docs/decisions/mdgrid.md 参照)。
   # uv は Python のパッケージ・プロジェクト管理ツール。公式インストーラ(`curl | sh`)を使わず、
   # 他のツールと同じく nixpkgs から入れて Dependabot の flake.lock 更新に乗せる
   # (docs/decisions/dependency-tooling-scope.md の履歴参照)。設定は home/.config/uv/uv.toml。
