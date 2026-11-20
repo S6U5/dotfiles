@@ -21,17 +21,22 @@
       }
     },
     "mdgrid": {
-      "flake": false,
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
       "locked": {
-        "lastModified": 1793584256,
-        "narHash": "sha256-twwCVfT8aGSoiwmkmPKlHdEfL7lC27QH/WlsljpQ0r8=",
+        "lastModified": 1795162431,
+        "narHash": "sha256-MyBmV65TparUEbx5Qx8uXcALp4aClZDwIK4geYiG92Q=",
         "owner": "S6U5",
         "repo": "mdgrid",
-        "rev": "41b7a84d2bce1464f591daff4ecf37b5ebd1f20b",
+        "rev": "eb7f75eb68a4786364b1a06df6bd4bf6787535ff",
         "type": "github"
       },
       "original": {
         "owner": "S6U5",
+        "ref": "v0.4.0",
         "repo": "mdgrid",
         "type": "github"
       }
