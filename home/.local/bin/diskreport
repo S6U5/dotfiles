@@ -1,7 +1,7 @@
 #!/bin/sh
 # 何がストレージを食っているかを、全走査せずに数秒で報告する(読み取り専用。何も消さない)。
 #   diskreport            # これだけ覚えればよい。器 → 会計(カテゴリ別と残差、前回比)→ いますぐ戻せる見込み
-#                         # → 内訳 → 索引があれば詳細・アプリ別・開発成果物・大きいファイル → Nix → 案内
+#                         # → 内訳 → 索引があれば詳細・アプリ別・開発成果物 → Docker の内訳 → 大きいファイル → Nix → 案内
 #                         # 索引が無い/古い(30 日超)ときは、端末なら「今作りますか?」と聞く
 #   diskreport scan       # 索引を作り直す(時間がかかる作業をここに隔離。既定 15 分で打ち切り)
 #   diskreport windows    # WSL のみ: Windows 側を PowerShell で数えて、大きい順とアプリ別を出す(数分かかることがある)
@@ -323,7 +323,7 @@ collect_ledgers() {
   # 仮想ディスク・コンテナ(Docker Engine は docker system df の集計)
   DOCKER_RECLAIM=0
   if command -v docker >/dev/null 2>&1; then
-    with_timeout docker system df --format '{{.Size}}\t{{.Reclaimable}}' 2>/dev/null >"$WORK/docker" || true
+    with_timeout docker system df --format '{{.Size}}\t{{.Reclaimable}}\t{{.Type}}' 2>/dev/null >"$WORK/docker" || true
     dsum=$(cut -f1 "$WORK/docker" | while read -r sz; do to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
     # Reclaimable は「1.2GB (80%)」の形なので先頭の数値部分だけ使う
     DOCKER_RECLAIM=$(cut -f2 "$WORK/docker" | sed 's/ (.*//' | while read -r sz; do [ -n "$sz" ] && to_kib "$sz"; done | awk '{ s += $1 } END { printf "%d", s }')
@@ -566,6 +566,129 @@ report_projects() {
     echo "  うち 90 日以上触っていないもの: ${stale%%"$TAB"*} 件、合計 $(human "${stale#*"$TAB"}")"
   fi
   echo "  選んで消すには: cachesweep --projects(戻し方も出ます)"
+  echo ""
+  return 0
+}
+
+# Docker の候補の一覧を大きい順に上位 10 件。$1: 「KiB<TAB>日数<TAB>名前…」の一覧, $2: 見出し
+show_docker_rows() {
+  [ -s "$1" ] || return 0
+  echo "  $2:"
+  sort -t"$TAB" -k1,1nr "$1" | head -n 10 | while IFS="$TAB" read -r k a rest; do printf '  %8s  %s  %s\n' "$(human "$k")" "$a" "$rest"; done
+  n=$(wc -l <"$1" | tr -d ' ')
+  if [ "$n" -gt 10 ]; then echo "    (ほか $((n - 10)) 件)"; fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Docker の内訳(回収忘れの候補)。docker system df -v を1回だけ引き、イメージ・コンテナ・ボリューム・
+# ビルドキャッシュを「使われているか」で分けて数え、使われていないものを大きい順に出す。消すのは案内だけ。
+# 戻せる量の数え方は docker system df と同じ(イメージは固有の層、ビルドキャッシュは使用中でも共有でもないもの)
+# ---------------------------------------------------------------------------
+report_docker() {
+  command -v docker >/dev/null 2>&1 || return 0
+  # 種別<TAB>…の行にする。docker の CLI は書式の中の \t と \n を自分で置き換える
+  fmt='{{range .Images}}I\t{{.Containers}}\t{{.UniqueSize}}\t{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}\t{{.ID}}\n{{end}}'
+  fmt="$fmt"'{{range .Containers}}C\t{{.State}}\t{{.Size}}\t{{.CreatedAt}}\t{{.Names}}\t{{.Image}}\n{{end}}'
+  fmt="$fmt"'{{range .Volumes}}V\t{{.Links}}\t{{.Size}}\t{{.Labels}}\t{{.Name}}\n{{end}}'
+  fmt="$fmt"'{{range .BuildCache}}B\t{{.InUse}}\t{{.Size}}\t{{.LastUsedAt}}\t{{.Shared}}\n{{end}}'
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 30 docker system df -v --format "$fmt" 2>/dev/null >"$WORK/dockerv" || true
+  else
+    docker system df -v --format "$fmt" 2>/dev/null >"$WORK/dockerv" || true
+  fi
+  grep -q '^[ICVB]	' "$WORK/dockerv" 2>/dev/null || return 0
+  echo "== Docker の内訳(docker system df -v から。使われていないもの=回収忘れの候補を大きい順に)"
+  [ -f "$WORK/docker" ] || : >"$WORK/docker"
+  # 合計と戻せる量は docker system df の値をそのまま使う(イメージは層を共有するので、1つずつの和では出せない)。
+  # 単位は diskreport の他の場所と同じく、10進(GB)と2進(G)を区別しない目安として扱う
+  awk -F'\t' -v today="$(date +%Y-%m-%d)" -v work="$WORK" '
+    function kib(s, n, u) {
+      n = s + 0; u = s; gsub(/[^A-Za-z]/, "", u); u = toupper(u)
+      if (u ~ /^K/) return int(n); if (u ~ /^M/) return int(n * 1024); if (u ~ /^G/) return int(n * 1048576)
+      if (u ~ /^T/) return int(n * 1073741824); return int(n / 1024)
+    }
+    function human(k, i, u) {
+      split("K M G T", u, " "); i = 1
+      while (k >= 1024 && i < 4) { k /= 1024; i++ }
+      return sprintf((i == 1 ? "%d%s" : "%.1f%s"), k, u[i])
+    }
+    # 年月日から通し日数(タイムゾーンは無視する目安)
+    function civil(y, m, d, era, yoe, doy) {
+      y -= (m <= 2); era = int((y >= 0 ? y : y - 399) / 400); yoe = y - era * 400
+      doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+      return era * 146097 + yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy - 719468
+    }
+    function days(s) {
+      if (s !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) return -1
+      return now - civil(substr(s, 1, 4) + 0, substr(s, 6, 2) + 0, substr(s, 9, 2) + 0)
+    }
+    function age(s, n) {
+      n = days(s)
+      if (n < 0) return "      不明"
+      return (n == 0) ? "      今日" : sprintf("%5d 日前", n)
+    }
+    function label(s, key, i, n, kv) {
+      n = split(s, kv, ",")
+      for (i = 1; i <= n; i++) if (index(kv[i], key "=") == 1) return substr(kv[i], length(key) + 2)
+      return ""
+    }
+    function shortid(s) { if (s ~ /^sha256:/) return substr(s, 8, 12); return s }
+    function state(s) {
+      if (s == "exited") return "終了"; if (s == "created") return "未起動"; if (s == "paused") return "一時停止"
+      if (s == "dead") return "異常"; return s
+    }
+    # 合計の行。$1: 種別, n: 個数, sum: 1つずつの和(docker system df の値が無いときに使う)
+    function total(type, n, unit, sum) {
+      if (type in size) return sprintf("%4d %s  %8s(戻せる %s)", n, unit, human(kib(size[type])), human(kib(rec[type])))
+      return sprintf("%4d %s  %8s", n, unit, human(sum))
+    }
+    BEGIN { now = civil(substr(today, 1, 4) + 0, substr(today, 6, 2) + 0, substr(today, 9, 2) + 0) }
+    FILENAME == ARGV[1] { if (NF >= 3) { size[$3] = $1; r = $2; sub(/ .*/, "", r); rec[$3] = r }; next }
+    $1 == "I" {
+      ni++; k = kib($3); ti += k
+      if ($2 + 0 == 0) {
+        ui++
+        name = $5; if (name == "<none>:<none>") { dang++; name = "(名前なし) " shortid($6) }
+        printf "%d\t%s\t%s\n", k, age($4), name > (work "/d-img")
+      }
+    }
+    $1 == "C" {
+      nc++; k = kib($3); tc += k
+      if ($2 != "running") {
+        sc++; name = ($5 == "") ? "(名前なし)" : $5
+        printf "%d\t%s\t%s(%s。%s)\n", k, age($4), name, shortid($6), state($2) > (work "/d-ctr")
+      }
+    }
+    $1 == "V" {
+      nv++; k = kib($3); tv += k
+      if ($2 + 0 == 0) {
+        uv++
+        if ($4 ~ /(^|,)com\.docker\.volume\.anonymous=/) { anon++; kind = "名前なし"; name = substr($5, 1, 12) }
+        else { proj = label($4, "com.docker.compose.project"); kind = (proj != "") ? "compose: " proj : "名前付き"; name = $5 }
+        printf "%d\t%s\t%s\n", k, kind, name > (work "/d-vol")
+      }
+    }
+    $1 == "B" {
+      nb++; k = kib($3); tb += k
+      if ($2 == "false" && $5 == "false") { bn++; bk += k; if (days($4) > 30) { ob++; obk += k } }
+    }
+    END {
+      printf "  イメージ       %s  コンテナが使っていないもの %d 個(名前なし %d 個)\n", total("Images", ni, "個", ti), ui, dang
+      printf "  コンテナ       %s  止まっているもの %d 個\n", total("Containers", nc, "個", tc), sc
+      printf "  ボリューム     %s  どのコンテナにもつながっていないもの %d 個(名前なし %d 個)\n", total("Local Volumes", nv, "個", tv), uv, anon
+      printf "  ビルドキャッシュ %s  使っていないもの %d 件(最後に使ってから 30 日より前: %d 件、%s)\n", total("Build Cache", nb, "件", tb), bn, ob, human(obk)
+      printf "%d\t%d\t%d\t%d\n", ui, sc, uv, bn > (work "/d-sum")
+    }' "$WORK/docker" "$WORK/dockerv"
+  show_docker_rows "$WORK/d-ctr" "止まっているコンテナ(書き込み層・作った日・名前(イメージ。状態))"
+  show_docker_rows "$WORK/d-img" "コンテナが使っていないイメージ(固有の層・イメージが作られた日。取ってきた日ではない・名前)"
+  show_docker_rows "$WORK/d-vol" "どのコンテナにもつながっていないボリューム(大きさ・種類・名前。中身はデータのことがある)"
+  # shellcheck disable=SC2046  # 「イメージ コンテナ ボリューム ビルドキャッシュ」の4つの数に分ける
+  set -- $(cat "$WORK/d-sum" 2>/dev/null || echo "0 0 0 0")
+  if [ "${2:-0}" -gt 0 ]; then add_hint "docker container prune                      # 止まっているコンテナを消す"; fi
+  if [ "${1:-0}" -gt 0 ]; then add_hint "docker image prune -a                       # コンテナが使っていないイメージを消す(次に使うときは取り直し)"; fi
+  if [ "${3:-0}" -gt 0 ]; then add_hint "docker volume prune                         # つながっていない名前なしのボリュームを消す(名前付きも消すなら -a。中のデータは戻らない)"; fi
+  if [ "${4:-0}" -gt 0 ]; then add_hint "docker builder prune --filter until=720h    # 30 日より前から使っていないビルドキャッシュを消す"; fi
   echo ""
   return 0
 }
@@ -1234,6 +1357,7 @@ report_breakdown
 report_index_home
 report_apps_home
 report_projects
+report_docker
 report_bigfiles
 report_nix
 report_windows_ledger

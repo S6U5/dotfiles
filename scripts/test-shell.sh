@@ -252,12 +252,29 @@ DISK_STATE=$DISK_TEST/home/.local/state/dotfiles
 mkdir -p "$DISK_TEST/bin" "$DISK_STATE" "$DISK_TEST/home/Library/Containers/com.docker.docker" "$DISK_TEST/home/Library/Containers/other.app"
 head -c 3145728 /dev/urandom >"$DISK_TEST/home/Library/Containers/com.docker.docker/disk"
 head -c 1048576 /dev/urandom >"$DISK_TEST/home/Library/Containers/other.app/data"
-# docker system df の実際の形式(最後の行だけ割合が付かない)
+# docker system df の実際の形式(最後の行だけ割合が付かない)。-v には diskreport が書式で指定する
+# 「種別<TAB>…」の行を返す(I: イメージ、C: コンテナ、V: ボリューム、B: ビルドキャッシュ)
 cat >"$DISK_TEST/bin/docker" <<'EOF'
 #!/bin/sh
+old='2020-01-01 00:00:00 +0000 UTC'
 case "$1" in
   info) printf '%s\n' "$FAKE_DOCKER_OS" ;;
-  system) printf '1.5GB\t1GB (66%%)\n100MB\t0B (0%%)\n2GB\t1GB (50%%)\n500MB\t500MB\n' ;;
+  system)
+    if [ "$3" = "-v" ]; then
+      printf 'I\t0\t1.2GB\t%s\told/app:1\tsha256:aaaa\n' "$old"
+      printf 'I\t1\t300MB\t%s\tused/app:2\tsha256:bbbb\n' "$old"
+      printf 'I\t0\t10MB\t%s\t<none>:<none>\tsha256:0123456789abcdef\n' "$old"
+      printf 'C\texited\t20MB\t%s\tleft-behind\tsha256:0123456789abcdef0000\n' "$old"
+      printf 'C\trunning\t1MB\t%s\tlive\tused/app:2\n' "$old"
+      printf 'V\t0\t50MB\tcom.docker.volume.anonymous=\t0123456789abcdef0123\n'
+      printf 'V\t0\t40MB\tcom.docker.compose.project=shop,com.docker.compose.volume=db\tshop_db\n'
+      printf 'V\t1\t1MB\t\tlive-data\n'
+      printf 'B\tfalse\t100MB\t%s\tfalse\n' "$old"
+      printf 'B\ttrue\t5MB\t%s\tfalse\n' "$old"
+    else
+      printf '1.5GB\t1GB (66%%)\tImages\n100MB\t0B (0%%)\tContainers\n2GB\t1GB (50%%)\tLocal Volumes\n500MB\t500MB\tBuild Cache\n'
+    fi
+    ;;
 esac
 EOF
 chmod +x "$DISK_TEST/bin/docker"
@@ -278,6 +295,18 @@ out=$(run_diskreport "Ubuntu 24.04") || ng "diskreport が非0で終了(Docker E
 expect_in "$out" "4.1G  vm:docker" "Docker Engine: 全行のサイズが足される"
 expect_in "$out" "Docker の未使用分 2.5G" "Docker Engine: 未使用分も全行が足される"
 expect_not_in "$out" "8589934592" "Docker Engine: 桁あふれしない"
+# Docker の内訳: 合計と戻せる量は docker system df の値、候補は使われていないものだけ
+expect_in "$out" "1.5G(戻せる 1.0G)  コンテナが使っていないもの 2 個(名前なし 1 個)" "Docker の内訳: イメージの合計と使っていないものの数"
+expect_in "$out" "日前  old/app:1" "Docker の内訳: 使っていないイメージを作られた日付きで出す"
+expect_in "$out" "(名前なし) 0123456789ab" "Docker の内訳: 名前の無いイメージは短い ID で出す"
+expect_not_in "$out" "日前  used/app:2" "Docker の内訳: コンテナが使っているイメージは候補に出さない"
+expect_in "$out" "left-behind(0123456789ab。終了)" "Docker の内訳: 止まっているコンテナを出す"
+expect_not_in "$out" "日前  live(" "Docker の内訳: 動いているコンテナは候補に出さない"
+expect_in "$out" "名前なし  0123456789ab" "Docker の内訳: つながっていない名前なしのボリュームを出す"
+expect_in "$out" "compose: shop  shop_db" "Docker の内訳: compose のボリュームはプロジェクト名を添える"
+expect_not_in "$out" "live-data" "Docker の内訳: つながっているボリュームは候補に出さない"
+expect_in "$out" "使っていないもの 1 件(最後に使ってから 30 日より前: 1 件、100.0M)" "Docker の内訳: 古いビルドキャッシュを数える"
+expect_in "$out" "docker volume prune" "Docker の内訳: 消し方を案内する"
 
 # 桁あふれしていた頃の履歴が残っていても、前回比に出さない
 printf '%s\tcat:vm\t9223372036854775807\n' "$(($(date +%s) - 100))" >"$DISK_STATE/diskreport.tsv"
