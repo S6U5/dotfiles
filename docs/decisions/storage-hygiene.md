@@ -98,6 +98,21 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 候補の見方: イメージは使っているコンテナの数が 0 のもの(大きさは固有の層。日付はイメージが作られた日で、取ってきた日ではない。Docker はイメージを最後に使った日を持たない)。コンテナは動いていないもの(書き込み層の大きさ)。ボリュームはどのコンテナにもつながっていないもの(名前なしか、compose のどのプロジェクトのものかを添える。中身はデータのことがあるので、大きさだけで消さない)。ビルドキャッシュは使用中でも共有でもないもの(`docker system df` の戻せる量と同じ数え方)と、そのうち最後に使ってから 30 日より前のもの。
 - 消すのは案内だけ(`docker container prune` / `image prune -a` / `volume prune` / `builder prune --filter until=720h`)。`docker volume prune` は Docker 23 以降、既定では名前なしのボリュームだけを消し、名前付きは `-a` を付けたときだけ消す。
 
+### フォルダの直下を見ても分からないもの(WSL と Windows)
+
+調べた結果(出典は Microsoft Learn を中心に、下の各行に代表を挙げる)、大きさがフォルダの合計に正しく出ないものは次の形に分かれる。会計モデルにとって一番困るのは**数えすぎ**で、帰属の合計が膨らむぶん残差が小さく見え、知らない場所で増えた分を打ち消して隠す。
+
+| 形 | 例 | ずれ方 | 扱い |
+| --- | --- | --- | --- |
+| 疎ファイル・圧縮 | 疎ファイルの vhdx、NTFS の圧縮、CompactOS | 見かけの大きさが実際より大きい | Windows の索引で、その属性のファイルだけ `GetCompressedFileSizeW` で実際の使用量を取る([GetCompressedFileSizeW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getcompressedfilesizew)) |
+| ハードリンク | WinSxS、pnpm の store と node_modules、uv のキャッシュと .venv | 同じ中身を二重に数える | `C:\Windows` は数えない(元から)。pnpm・uv の分は見分けるのにファイルを1つずつ開く必要があり遅すぎるので、索引にその場所があるときに注記するだけ([WinSxS の実際の大きさ](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/determine-the-actual-size-of-the-winsxs-folder)) |
+| フォルダの合計で名前が出ない | ドライブ直下の `pagefile.sys`・`hiberfil.sys`、深い場所の仮想ディスク | 合計には入るが何かが分からない | 索引を作るついでに、ドライブ直下の 256MiB 以上のファイルと、どこにある `.vhdx`・`.vhd`・`.avhdx` も拾って名前を付ける。仮想ディスクは WSL の登録(Lxss の BasePath)と Docker Desktop の置き場に照らし、どこにも登録されていないもの(古い Docker のディスク、`wsl --export --vhd` の書き出し、Hyper-V、Dev Drive など)を見分ける |
+| ファイルとして見えない・読めない | 予約済み記憶域、シャドウコピー、`System Volume Information`、ダンプ類 | 一覧に出ず残差に入る | 管理者権限が要る(`DISM /Online /Get-ReservedStorageState`、`vssadmin list shadowstorage`)ので入れていない。残差の説明として「設定 → ストレージ」を案内する([予約済み記憶域](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism-storage-reserve)、[vssadmin](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/vssadmin-list-shadowstorage)) |
+| 帳簿に出ない | Docker Engine の json-file のログ、snap の止まっている古い版、`~/.cache` の外に溜まる版(`~/.vscode-server`・`~/.nvm`・`~/.pyenv`・`~/.local/share/uv`) | `docker system df` や既知パスに入らない | ログは読めれば測り、読めなければ `sudo du` を案内し、`daemon.json` に `max-size` が無ければ知らせる([json-file](https://docs.docker.com/engine/logging/drivers/json-file/))。snap は止まっている版の数と大きさ([revisions](https://snapcraft.io/docs/revisions))。版の置き場は既知パスに足す |
+
+- Windows 側の開発ツールの大物(Visual Studio の Package Cache、.NET SDK、Android の SDK と AVD)は、場所が決まっているので `cachesweep` の Windows 側の表示に足した。ファイルが多く上限時間に達しやすいので、前からの項目より後に数える。
+- 入れていないもの(管理者権限が要るか、公式で確かめられなかったもの): `C:\Windows` の内訳(WinSxS は `DISM /AnalyzeComponentStore`)、シャドウコピー、予約済み記憶域、`C:\Windows` の下のダンプ、Recall、検索の索引、ハードリンクの重複除き。WSL の疎ファイルの VHD は扱いが版によって変わっていて、公式の文書に今の扱いが載っていないので触れない。
+
 ### 既知パス一覧の持ち方
 
 - 共通の一覧はリポジトリのデータファイル(`home/.config/dotfiles/diskreport.paths`。タブ区切りで「カテゴリ、パス、何のデータか・消してよいか」)に出し、home-manager で配る。
@@ -148,12 +163,14 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 実装済み(索引・アプリ別): `scan`(`$HOME` の `du -xkd 6`、WSL では PowerShell での集計、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`windows`(Windows 側を数えて詳細を出す)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
 - 実装済み(開発成果物と apt): `diskreport` の開発成果物に最後に触った日と 90 日以上触っていないものの合計、`cachesweep --projects`(選んで消す)、`cachesweep` の表示に apt の autoremove の候補(`apt-get -s autoremove` と dpkg の `Installed-Size`)。対話で消す流れは `script` で端末のふりをして確かめた(macOS)。apt の部分は偽の `apt-get` / `dpkg-query` で通しただけで、実機の apt では未実行。
+- 実装済み(フォルダの直下を見ても分からないもの): Windows の索引の疎ファイル・圧縮ファイルの実際の使用量、ドライブ直下の大きいファイルと仮想ディスクの名前付け(仮想ディスクは登録と照らす)、Docker Engine のログ、snap の止まっている古い版、既知パスの版の置き場、`cachesweep` の Windows 側の開発ツール。索引を作る PowerShell は macOS の pwsh で動かして確かめた(`GetCompressedFileSizeW` は Windows にしか無いので、見かけの大きさに戻る道だけ通した)。Windows・WSL の実機では未実行。
 - 実装済み(Docker の内訳): `docker system df -v` からの種別ごとの数・大きさ・戻せる量と、使われていないものの一覧、消し方の案内。macOS の Docker Desktop で `docker system df` と数字が揃うことを確かめた。Docker Engine(WSL・Linux)は偽の `docker` で通しただけ。
 - 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
 - 実機未検証: `cachesweep` の Windows 側(PowerShell の動作は macOS の PowerShell 7 で確かめただけで、Windows PowerShell 5.1 と WSL からの起動は未実行。各ツールの置き場は既定の場所の知識に基づく)。WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に `diskreport windows` の集計(PowerShell)は macOS の PowerShell 7 と仮のフォルダで確かめただけで、Windows PowerShell 5.1 では未実行。実機で1回走らせて確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
+- (2026-11: WSL と Windows で、フォルダの直下を見ても大きさが分からないもの・帳簿に出ないものを調べ、管理者権限の要らないものから入れた。詳しくは本文「フォルダの直下を見ても分からないもの」。あわせて、索引の前回比で Windows のパスを awk の `-v` で渡していたため、バックスラッシュがエスケープとして読まれ、Windows 側の前回比がいつも「新規」になっていたのを直した)
 - (2026-11: `diskreport` に Docker の内訳を足した。`docker system df` の4行の合計だけでは、止まったコンテナ・使わなくなったイメージ・つながっていないボリューム・古いビルドキャッシュのどれが残っているかが分からず、回収を忘れやすいため。詳しくは本文「Docker の内訳」)
 - (2026-11: 開発成果物を消す道として `cachesweep --projects` を足した。`diskreport` は場所と大きさを出すだけで、消すには場所を見て手で消すしかなく、どれを消してよいか(使っているか、戻せるか)も分からなかったため。一覧は `diskreport` の索引から取り、最後に触った日と戻し方を添え、人が選んだものだけを確かめてから消す。あわせて、`cachesweep` の表示に apt の autoremove の候補を出し、案内に `--apt-autoremove` を載せた。`--apt-autoremove` はあったが、案内にも README にも無く、何が消えるかも見えなかったため)
 - (2026-11: Windows 側の詳細を WizTree から Windows 側の PowerShell での集計に置き換え、`diskreport windows` で表示するようにした。WizTree は個人利用のみ無料で、商用利用できないツールは入れない方針にしたため。ファイルを1つずつ数えるので MFT 読みより遅いが、`diskreport scan` / `windows` の中だけの処理なので上限時間を付けて受け入れる。管理者権限が要らなくなり、確認ダイアログも出ない。読めないフォルダは数えられないので個数を表示する)

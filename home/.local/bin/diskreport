@@ -54,6 +54,8 @@ STATE_FILE=$STATE_DIR/diskreport.tsv
 INDEX_HOME=$STATE_DIR/diskindex-home.tsv    # $HOME 配下の索引: KiB<TAB>パス(先頭行は #time)
 INDEX_WIN=$STATE_DIR/diskindex-windows.tsv  # Windows 側ドライブの索引: KiB<TAB>パス(Windows 側の PowerShell で数える)
 INDEX_BIG=$STATE_DIR/diskindex-bigfiles.tsv # $HOME 配下の 512MiB 超のファイル: KiB<TAB>パス(scan のついでに拾う)
+# Windows 側のフォルダの合計では名前が出ないファイル(ドライブ直下の大きいファイルと仮想ディスク): KiB<TAB>パス
+INDEX_WINFILES=$STATE_DIR/diskindex-windows-files.tsv
 CONF_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles
 # ディスクが満杯のときでも動くよう、作業ファイルはまず tmpfs(/dev/shm)に置く(無ければ通常の一時領域)
 WORK=$(mktemp -d /dev/shm/diskreport.XXXXXX 2>/dev/null || mktemp -d)
@@ -580,6 +582,59 @@ show_docker_rows() {
   return 0
 }
 
+# コンテナのログ(Docker Engine。WSL と Linux)。json-file のログは docker system df に出ず、既定では回転も
+# 上限も無い。daemon.json に max-size が無ければ知らせる。ログの置き場が読めれば(rootless など)測り、
+# 読めなければ(root の /var/lib/docker)sudo の測り方を案内する。Docker Desktop はログが VM の中にあるので見ない
+report_docker_logs() {
+  # macOS の Docker Engine(Colima など)もログは VM の中にあり、この OS からは測れない
+  is_macos && return 0
+  info=$(with_timeout docker info --format '{{.OperatingSystem}}\t{{.LoggingDriver}}\t{{.DockerRootDir}}' 2>/dev/null) || return 0
+  case "$info" in *"$TAB"*"$TAB"*) ;; *) return 0 ;; esac
+  d_os=${info%%"$TAB"*}
+  d_rest=${info#*"$TAB"}
+  d_driver=${d_rest%%"$TAB"*}
+  d_root=${d_rest#*"$TAB"}
+  [ "$d_os" != "Docker Desktop" ] && [ "$d_driver" = json-file ] || return 0
+  limited=0
+  for f in /etc/docker/daemon.json "${XDG_CONFIG_HOME:-$HOME/.config}/docker/daemon.json"; do
+    if [ -r "$f" ] && grep -q '"max-size"' "$f"; then limited=1; fi
+  done
+  if [ -n "$d_root" ] && [ -r "$d_root/containers" ] && [ -x "$d_root/containers" ]; then
+    k=$(find "$d_root/containers" -name '*-json.log' -type f -exec du -sk {} + 2>/dev/null | awk '{ s += $1 } END { printf "%d", s }')
+    echo "  コンテナのログ(json-file。docker system df には出ない): $(human "${k:-0}")"
+  elif [ -n "$d_root" ]; then
+    add_hint "sudo du -sh $d_root/containers   # コンテナのログの大きさ(docker system df に出ない。root が要る)"
+  fi
+  if [ -d /var/lib/containerd ] && [ "$d_root" != /var/lib/containerd ]; then
+    add_hint "sudo du -sh /var/lib/containerd   # containerd のイメージの置き場(Docker Engine 29 以降の新規導入の既定。docker の data-root の外)"
+  fi
+  if [ "$limited" -eq 0 ]; then
+    echo "  WARN: コンテナのログに上限がありません(json-file の既定は回転しない)。daemon.json の log-opts に max-size と max-file を書くと、作り直したコンテナから効きます"
+  fi
+  return 0
+}
+
+# snap の止まっている古い版(snap は既定で1つにつき 2 版を残す)。版の数と大きさを出し、消し方を案内する。
+# 大きさは /var/lib/snapd/snaps/<名前>_<版>.snap(stat だけなので root は要らない)
+report_snap() {
+  command -v snap >/dev/null 2>&1 || return 0
+  snap list --all 2>/dev/null | awk 'NR > 1 && $NF ~ /disabled/ { print $1 "\t" $3 }' >"$WORK/snap-old" || true
+  [ -s "$WORK/snap-old" ] || return 0
+  echo "== snap の止まっている古い版(既定で1つにつき 2 版を残す。止まっている版は使われていない)"
+  total=0
+  while IFS="$TAB" read -r name rev; do
+    k=$(du -sk "/var/lib/snapd/snaps/${name}_${rev}.snap" 2>/dev/null | cut -f1)
+    is_kib "${k:-}" || k=0
+    total=$((total + k))
+    printf '  %8s  %s(版 %s)\n' "$(human "$k")" "$name" "$rev"
+  done <"$WORK/snap-old"
+  echo "  合計 $(human "$total")($(wc -l <"$WORK/snap-old" | tr -d ' ') 個)"
+  echo ""
+  add_hint "sudo snap remove <名前> --revision=<版>     # snap の止まっている古い版を消す"
+  add_hint "sudo snap set system refresh.retain=2       # snap が残す版の数を減らす(2〜20)"
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # Docker の内訳(回収忘れの候補)。docker system df -v を1回だけ引き、イメージ・コンテナ・ボリューム・
 # ビルドキャッシュを「使われているか」で分けて数え、使われていないものを大きい順に出す。消すのは案内だけ。
@@ -683,6 +738,7 @@ report_docker() {
   show_docker_rows "$WORK/d-ctr" "止まっているコンテナ(書き込み層・作った日・名前(イメージ。状態))"
   show_docker_rows "$WORK/d-img" "コンテナが使っていないイメージ(固有の層・イメージが作られた日。取ってきた日ではない・名前)"
   show_docker_rows "$WORK/d-vol" "どのコンテナにもつながっていないボリューム(大きさ・種類・名前。中身はデータのことがある)"
+  report_docker_logs
   # shellcheck disable=SC2046  # 「イメージ コンテナ ボリューム ビルドキャッシュ」の4つの数に分ける
   set -- $(cat "$WORK/d-sum" 2>/dev/null || echo "0 0 0 0")
   if [ "${2:-0}" -gt 0 ]; then add_hint "docker container prune                      # 止まっているコンテナを消す"; fi
@@ -946,6 +1002,12 @@ scan_home() {
 #   - C:\Windows は数えない(触らない場所で、ハードリンクの多重計上も大きい)
 #   - ジャンクションとシンボリックリンクはたどらない(二重に数えないため)。OneDrive のフォルダはリンクではないのでたどる
 #   - ローカルに実体の無いクラウドのファイルは 0 と数える(4460544 はオフラインと、読むと取得する属性)
+#   - 疎ファイルと圧縮ファイル(512 と 2048 の属性)は、見かけの大きさではなく実際の使用量
+#     (GetCompressedFileSizeW)で数える。疎ファイルの vhdx などが大きく見えるのを防ぐ。API が使えなければ見かけの大きさ
+#   - ハードリンク(pnpm の store と node_modules、uv のキャッシュと .venv)は見分けられず、二重に数える
+#     (見分けるにはファイルを1つずつ開く必要があり、遅くなりすぎるため)
+#   - フォルダの合計では名前が出ないものを「#file<TAB>KiB<TAB>パス」で出す: ドライブ直下の 256MiB 以上の
+#     ファイル(pagefile.sys・hiberfil.sys など)と、どこにある仮想ディスク(.vhdx・.vhd・.avhdx。1MiB 以上)も
 #   - 読めないフォルダは数えず、最後に #denied の行で個数を出す。上限時間を超えたら #cut を出す
 windows_index_script() {
   tr -d '\n' <<'PS'
@@ -954,6 +1016,17 @@ $root = '__ROOT__';
 $limit = __LIMIT__;
 $clock = [Diagnostics.Stopwatch]::StartNew();
 $script:denied = 0;
+$script:native = 0;
+function Alloc([IO.FileInfo]$f) {
+if ($script:native -eq 0) {
+$q = [char]34;
+try { Add-Type -Namespace DiskReport -Name Native -MemberDefinition ('[DllImport(' + $q + 'kernel32.dll' + $q + ', CharSet = CharSet.Unicode, SetLastError = true)] public static extern uint GetCompressedFileSizeW(string name, out uint high);'); $script:native = 1 } catch { $script:native = -1 };
+};
+if ($script:native -eq 1) {
+try { $high = [uint32]0; $low = [DiskReport.Native]::GetCompressedFileSizeW($f.FullName, [ref]$high); if (($low -ne [uint32]::MaxValue) -or ($high -ne 0)) { return ([long]$high * 4294967296 + [long]$low) } } catch { };
+};
+return $f.Length;
+};
 function Walk([string]$path, [int]$depth) {
 if ($clock.Elapsed.TotalSeconds -gt $limit) { throw 'limit' };
 $sum = [long]0;
@@ -965,7 +1038,10 @@ if (($depth -eq 0) -and ($e.Name -eq 'Windows')) { continue };
 if (($a -band 1024) -and $e.LinkType) { continue };
 $sum += Walk $e.FullName ($depth + 1);
 } elseif (-not ($a -band 4460544)) {
-$sum += $e.Length;
+$len = $e.Length;
+if ($a -band 2560) { $len = Alloc $e };
+$sum += $len;
+if ((($depth -eq 0) -and ($len -ge 268435456)) -or (($e.Extension -match '^\.(vhdx|vhd|avhdx)$') -and ($len -ge 1048576))) { [Console]::Out.WriteLine('#file' + [char]9 + [string][long]($len / 1024) + [char]9 + $e.FullName) };
 };
 };
 if ($depth -le 6) { [Console]::Out.WriteLine([string][long]($sum / 1024) + [char]9 + $path.TrimEnd('\')) };
@@ -1013,8 +1089,13 @@ scan_windows() {
     echo ""
     return 0
   fi
+  {
+    printf '#time\t%s\n' "$NOW"
+    awk -F'\t' '$1 == "#file" && NF >= 3 && $2 ~ /^[0-9]+$/ { print $2 "\t" $3 }' "$WORK/win-raw" | sort -t"$TAB" -k1,1nr
+  } >"$WORK/idx-winfiles"
   rotate_index "$INDEX_WIN"
   mkdir -p "$STATE_DIR" 2>/dev/null || true
+  cp "$WORK/idx-winfiles" "$INDEX_WINFILES" 2>/dev/null || true
   if cp "$WORK/idx-win" "$INDEX_WIN" 2>/dev/null; then
     echo "  完了: $n フォルダ、$(($(date +%s) - start)) 秒(${drive}:\\Windows は数えていません)"
     [ "$denied" -eq 0 ] 2>/dev/null || echo "  読めなかったフォルダ: $denied 個(管理者権限が要る場所など。その中身は数えていません)"
@@ -1055,7 +1136,8 @@ show_index_rows() { # $1: prev 索引(無ければ空), $2: 件数
   prev=$1
   head -n "$2" | while IFS="$TAB" read -r k p; do
     if [ -n "$prev" ] && [ -f "$prev" ]; then
-      pk=$(awk -F'\t' -v p="$p" '$2 == p { print $1; exit }' "$prev")
+      # Windows のパスのバックスラッシュを -v ではエスケープとして読んでしまうので、環境変数で渡す
+      pk=$(DISKREPORT_ROW="$p" awk -F'\t' 'BEGIN { p = ENVIRON["DISKREPORT_ROW"] } $2 == p { print $1; exit }' "$prev")
       if is_kib "$k" && is_kib "$pk"; then
         printf '  %8s  %8s  %s\n' "$(signed $((k - pk)))" "$(human "$k")" "$p"
       else
@@ -1113,6 +1195,33 @@ win_category() {
   esac
 }
 
+# ドライブ直下の大きいファイルが何かと、どう小さくするか。$1: ファイル名
+win_rootfile_note() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    pagefile.sys) echo "ページファイル(上限は 設定 → システム → バージョン情報 → システムの詳細設定 → パフォーマンス → 仮想メモリ で変える)" ;;
+    hiberfil.sys) echo "休止ファイル(休止状態を使わないなら powercfg /h off、高速スタートアップだけなら powercfg /h /type reduced。管理者で実行)" ;;
+    swapfile.sys) echo "ストアアプリ用のスワップ(OS が管理する)" ;;
+    *) echo "(何のファイルかを確かめる)" ;;
+  esac
+}
+# 仮想ディスクが何に使われているか。WSL の登録(Lxss の BasePath の下)と Docker Desktop の置き場に照らす。
+# $1: パス(Windows の形)。WIN_DISTROS に wsl_distros の結果を入れてから呼ぶ
+win_vdisk_note() {
+  # パスは awk の -v で渡すとバックスラッシュがエスケープとして読まれるので、環境変数で渡す
+  _name=$(printf '%s\n' "${WIN_DISTROS:-}" | DISKREPORT_VDISK="$1" awk -F'\t' '
+    BEGIN { p = tolower(ENVIRON["DISKREPORT_VDISK"]) }
+    NF >= 2 { b = tolower($2); sub(/\\+$/, "", b); if (index(p, b "\\") == 1) { print $1; exit } }')
+  if [ -n "$_name" ]; then
+    echo "WSL($_name)"
+    return 0
+  fi
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    *\\docker\\wsl\\*) echo "Docker Desktop" ;;
+    *) echo "どこにも登録されていない(古い Docker のディスク、wsl --export --vhd の書き出し、Hyper-V、Dev Drive など。使っていなければ消し忘れ)" ;;
+  esac
+  return 0
+}
+
 report_index_windows() {
   is_wsl || return 0
   [ -f "$INDEX_WIN" ] || return 0
@@ -1127,13 +1236,40 @@ report_index_windows() {
       # Users\<名前> 自体(深さ 2)は索引に出るが、ここでは深さ 3 の内訳で数える
       printf '%s\t%s\n' "$(win_category "$p")" "$k" >>"$WORK/wincat"
     done
-  echo "  カテゴリ別(フォルダの振り分け。ルート直下のファイル(ページ/休止ファイル等)は含まない):"
+  # フォルダの合計では名前が出ないファイル(scan のついでに拾ったもの): ドライブ直下の大きいファイルと仮想ディスク
+  : >"$WORK/win-root"
+  : >"$WORK/win-vdisk"
+  if [ -f "$INDEX_WINFILES" ]; then
+    tail -n +2 "$INDEX_WINFILES" | awk -F'\t' -v root="$WORK/win-root" -v vdisk="$WORK/win-vdisk" '
+      $1 !~ /^[0-9]+$/ { next }
+      { lp = tolower($2); t = $2; n = gsub(/\\/, "\\", t)
+        if (lp ~ /\.(vhdx|vhd|avhdx)$/) print > vdisk; else if (n == 1) print > root }'
+    awk -F'\t' '{ printf "os\t%s\n", $1 }' "$WORK/win-root" >>"$WORK/wincat"
+  fi
+  if [ -s "$WORK/win-root" ]; then
+    echo "  カテゴリ別(フォルダの振り分けと、ドライブ直下の大きいファイル):"
+  else
+    echo "  カテゴリ別(フォルダの振り分け。ドライブ直下のファイル(ページ/休止ファイル等)は、次の diskreport windows から含める):"
+  fi
   for c in os apps userdata cloud cache trash other; do
     k=$(awk -F'\t' -v c="$c" '$1 == c { s += $2 } END { if (s > 0) printf "%d", s }' "$WORK/wincat")
     [ -n "$k" ] || continue
     if [ "$c" = other ]; then label="その他(ドライブ直下の分類外フォルダ)"; else label=$(cat_label "$c"); fi
     printf '  %s: %s\n' "$label" "$(human "$k")"
   done
+  if [ -s "$WORK/win-root" ]; then
+    echo "  ドライブ直下の大きいファイル(フォルダの合計では名前が出ないもの):"
+    while IFS="$TAB" read -r k p; do printf '  %8s  %s  %s\n' "$(human "$k")" "$p" "$(win_rootfile_note "${p##*"$BSEP"}")"; done <"$WORK/win-root"
+  fi
+  if [ -s "$WORK/win-vdisk" ]; then
+    echo "  仮想ディスク(.vhdx / .vhd / .avhdx。中で消しても外は縮まない):"
+    WIN_DISTROS=$(wsl_distros || true)
+    while IFS="$TAB" read -r k p; do printf '  %8s  %s  %s\n' "$(human "$k")" "$p" "$(win_vdisk_note "$p")"; done <"$WORK/win-vdisk"
+  fi
+  # ハードリンクは索引で見分けられないので、よくある場所があるときだけ断る
+  if grep -qiE '\\(pnpm\\store|\.pnpm-store|uv\\cache)' "$INDEX_WIN" 2>/dev/null; then
+    echo "  (注: pnpm の store と node_modules、uv のキャッシュと .venv はハードリンクで中身を共有するので、この索引では二重に数えています)"
+  fi
   echo "  大きい順(深さ 4 まで):"
   awk -F'\t' 'NR > 1 { t = $2; d = gsub(/\\/, "\\", t); if (d >= 1 && d <= 4) print }' "$INDEX_WIN" |
     collapse_nested "$BSEP" | sort -t"$TAB" -k1,1nr | show_index_rows "$prev" 20
@@ -1358,6 +1494,7 @@ report_index_home
 report_apps_home
 report_projects
 report_docker
+report_snap
 report_bigfiles
 report_nix
 report_windows_ledger
