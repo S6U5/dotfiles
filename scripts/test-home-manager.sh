@@ -87,8 +87,10 @@ echo "== 3) home/ 配下の全ファイルが配布対象になり、home/ の�
 # git 管理下の home/ 全ファイルを対象にする(代表ファイルだけだと、walkHome の除外ロジックを
 # 変えたときの漏れや、新しく置いたファイルが配布されないケースを見逃す)。
 # .gitkeep は walkHome が意図的に除外するため対象外
+# 日本語などのファイル名を git が "\343..." の形で引用しないよう、quotePath を切り NUL 区切りで読む。
+# フォルダごとリンクする所(nix/home.nix の dirLinkParents)の中も、readlink -f で実体をたどるので同じ形で確かめられる。
 linked=0
-while IFS= read -r f; do
+while IFS= read -r -d '' f; do
   rel=${f#home/}
   case "$rel" in */.gitkeep | .gitkeep) continue ;; esac
   linked_to=$(readlink -f "$RESULT/home-files/$rel" 2>/dev/null || true)
@@ -98,7 +100,7 @@ while IFS= read -r f; do
   else
     ng "リンク先が不一致: $rel (got: ${linked_to:-リンク無し}, want: $expected)"
   fi
-done < <(git ls-files -- home)
+done < <(git -c core.quotePath=false ls-files -z -- home)
 if [ "$linked" -gt 0 ]; then
   ok "home/ の $linked ファイルすべてが home/ の実体にリンクされている"
 else
@@ -110,6 +112,25 @@ if [ -f "$RESULT/home-files/.config/dotfiles/diskreport.paths" ]; then
   ok "配布: .config/dotfiles/diskreport.paths"
 else
   ng "未配布: .config/dotfiles/diskreport.paths"
+fi
+
+echo "== 3c) mdgrid のスターターは、スターターごとにフォルダで1本のリンクになっているか(dirLinkParents)"
+# mdgrid はスターターのフォルダの中のリンクのファイルをたどらない(docs/decisions/mdgrid-starters.md)。
+starters=0
+for d in home/.config/mdgrid/starters/*/; do
+  [ -d "$d" ] || continue
+  rel=${d#home/}
+  rel=${rel%/}
+  if [ -L "$RESULT/home-files/$rel" ] && [ "$(readlink -f "$RESULT/home-files/$rel")" = "$DOTFILES_DIR/home/$rel" ]; then
+    starters=$((starters + 1))
+  else
+    ng "スターターがフォルダごとのリンクになっていない: $rel"
+  fi
+done
+if [ "$starters" -gt 0 ]; then
+  ok "mdgrid のスターター $starters 件がフォルダごとのリンク"
+else
+  ng "mdgrid のスターターが見つからない"
 fi
 
 echo "== 4) 実行可能属性が維持されているか"

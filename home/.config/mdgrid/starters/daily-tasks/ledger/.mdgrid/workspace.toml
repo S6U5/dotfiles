@@ -1,0 +1,259 @@
+# mdgrid のワークスペースの印(WS-7)。スターター「毎日のタスクとルーチン」から作った台帳。
+# Tasks/ にタスク、Routines/ にルーチン(繰り返しの仕事)、Runs/ にルーチンの回を、1件1ノートで置く。
+# 表はヘッダーのパンくずか w で切り替える。R で表どうしのつながり(タスクの parent・routine)を見る。
+open = "タスク"
+
+# 見た目: 淡い桃とクリームのテーマと、それに合う柔らかい丸い札。丸い札の端は Nerd Font で描く(config.toml の [terminal] nerd_font)。
+[look]
+theme = "dozy-pink"
+preset = "dozy-pink"
+
+# まとまりの間に空きの行を1つ。ノートの欄はファイルの名前だけで、新しいタスクの頭に付く日付(20261124_)は出さない。
+[display]
+group_gap = true
+note_path = "name"
+note_name = '^\d{8}_'
+
+# 列の型。日付は日付として並び、直すときにカレンダーが開き、形の合わない値に印が付く。
+[types]
+start = "date"
+due = "date"
+created = "date"
+done_at = "date"
+date = "date"
+remind = "datetime"
+tags = "list"
+
+# 値の候補(CE-36)。セルを直すときと新しいノートの窓に並び、ほかの値には印が付く。
+# actor は誰がやるか: human(人)・ai(エージェント)・both(エージェントが用意して人が仕上げる)。
+[rules.actor]
+values = ["human", "ai", "both"]
+icons = { human = "", ai = "󰚩", both = "" }
+labels = { human = "人", ai = "AI", both = "人と AI" }
+
+# まとまりの見出しとカンバンのレーンは、候補の順に「アイコン 名前」で並ぶ(セルとノートの値は英語のまま)。
+[rules.status]
+values = ["todo", "doing", "waiting", "done", "dropped"]
+icons = { todo = "", doing = "", waiting = "", done = "", dropped = "" }
+labels = { todo = "未着手", doing = "進行中", waiting = "待ち", done = "完了", dropped = "やめた" }
+
+# 状態を done にすると、完了日に今日が入る。未着手・進行中・待ちに戻したら、完了日を空にする。
+[rules.status.then]
+done = { done_at = "{date}" }
+todo = { done_at = "" }
+doing = { done_at = "" }
+waiting = { done_at = "" }
+
+[rules.priority]
+values = ["p1", "p2", "p3"]
+labels = { p1 = "高", p2 = "中", p3 = "低" }
+
+# ---- タスク ----
+[[table]]
+name = "タスク"
+# 表の既定の並べ替え: 自分の sort を持たないタブとビューの無い表がこの順。画面で並べ替えても、同じ並びの行どうしはこの順。
+sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
+# ガントの画面(C): 開始から期限までの棒。親子の行(ビューの設定の「親子」)はその字下げのまま。
+gantt = { start = "start", end = "due" }
+# カンバンの画面(B): 状態ごとのレーンに札を [rules.status] の順で並べる。H と L で札を動かすと状態を書き換える。
+kanban = { column = "status" }
+# 親子: 子タスクは parent に親のノートを入れる。どのビューも親の下に字下げして並ぶ(ビューの設定でオフにもできる)。
+# 親を done にすると、終わっていない子孫も done になる(保存の前の差分で確かめ、取り消し1回で戻る)。
+# ガントで子が親の期間をはみ出したら印を付ける。
+children = { key = "parent", on_done = "complete", closed = ["done", "dropped"], gantt = "mark" }
+# グラフの画面(P): 状態ごと、担当ごと、月ごとの期限、担当と状態の組。[ と ] で移る。
+chart = [
+  { name = "状態ごと", x = "status" },
+  { name = "担当ごと", x = "actor" },
+  { name = "月ごとの期限", kind = "line", x = "due", unit = "month" },
+  { name = "担当と状態", kind = "heatmap", x = "actor", by = "status" },
+]
+
+# 新しいタスク(a、または mdgrid --new-note): 名前は今日の日付(20261124_)で始め、その日付は欄に出さずに打った名前の前に付ける。
+# 担当・期限・優先度を聞き、残りを埋め、本文を雛形から始める。子タスクは、作ったあとで parent に親のノートを入れる。
+[table.new_note]
+folder = "Tasks"
+name = "{date:YYYYMMDD}_"
+name_head = "hide"
+ask = ["actor", "due", "priority"]
+hidden = ["created"]
+body = ".mdgrid/templates/task.md"
+
+[table.new_note.set]
+status = "todo"
+created = "{date}"
+
+[table.base]
+filters = { and = ['file.inFolder("Tasks")'] }
+
+# left: 今日から期限までの隔たり(「あと3日」「5日前」)。見るたびに計算し、ノートには書かない。
+[table.base.formulas]
+left = 'due.relative()'
+
+[table.base.properties]
+"note.status" = { displayName = "状態" }
+"note.actor" = { displayName = "誰が" }
+"note.parent" = { displayName = "親タスク" }
+"note.start" = { displayName = "開始" }
+"note.due" = { displayName = "期限" }
+"note.remind" = { displayName = "思い出す" }
+"note.priority" = { displayName = "優先度" }
+"note.tags" = { displayName = "タグ" }
+"note.url" = { displayName = "URL" }
+"note.routine" = { displayName = "ルーチン" }
+"note.created" = { displayName = "作成" }
+"note.done_at" = { displayName = "完了日" }
+"formula.left" = { displayName = "残り" }
+
+# タブ([ と ] で切り替える)。1行目は誰と状態で分けるタブ、2行目(tab_break)は期限と完了のタブ。
+[[table.base.views]]
+type = "table"
+name = "人と AI"
+where = { status = ["todo", "doing", "waiting"] }
+order = ["status", "due", "formula.left", "priority", "parent", "tags", "routine", "url"]
+groupBy = { property = "actor", direction = "ASC" }
+sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "状態ごと"
+where = { status = ["todo", "doing", "waiting"] }
+order = ["actor", "due", "formula.left", "priority", "parent", "tags", "url"]
+groupBy = { property = "status", direction = "ASC" }
+sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "人だけ"
+filters = { and = ['actor != "ai"'] }
+where = { status = ["todo", "doing", "waiting"] }
+order = ["status", "actor", "due", "formula.left", "remind", "priority", "parent", "tags", "url"]
+groupBy = { property = "status", direction = "ASC" }
+sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "AI だけ"
+filters = { and = ['actor == "ai" || actor == "both"'] }
+where = { status = ["todo", "doing", "waiting"] }
+order = ["status", "actor", "priority", "due", "parent", "tags", "url"]
+groupBy = { property = "status", direction = "ASC" }
+sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+tab_break = true
+name = "今週"
+filters = { and = ['status != "done"', 'status != "dropped"', 'due <= today() + "7d"'] }
+order = ["status", "actor", "due", "formula.left", "remind", "priority", "parent"]
+groupBy = { property = "actor", direction = "ASC" }
+sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "期限切れ"
+filters = { and = ['status != "done"', 'status != "dropped"', 'due < today()'] }
+order = ["status", "actor", "due", "formula.left", "priority", "parent"]
+sort = [{ property = "due", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "完了"
+where = { status = ["done", "dropped"] }
+order = ["status", "actor", "done_at", "parent", "routine"]
+sort = [{ property = "done_at", direction = "DESC" }]
+
+# ---- ルーチン ----
+# 繰り返しの決まりを recurrence に書く: daily・weekly mon thu・monthly 1 15・monthly last・every 3d(start から)、
+# 日本語の 毎日・毎週 月 木・毎月 1日・毎月 末日・3日ごと。来た回は「ルーチンの回」の表に1つずつ作る:
+# 開いている間は下の帯に「ルーチンの回が N 件来ています」と出て、押すと名前を見せてから作る。
+# 閉じているあいだは OS の定期実行から mdgrid <この台帳> --runs で作る。抜けた回は一番新しい回だけ。
+[[table]]
+name = "ルーチン"
+runs = { folder = "Runs", rule = "recurrence", name = "{date:YYYYMMDD}_{routine}", set = { status = "todo" }, copy = ["actor", "tags"], body = ".mdgrid/templates/run.md" }
+
+[table.new_note]
+folder = "Routines"
+ask = ["recurrence", "actor"]
+body = ".mdgrid/templates/routine.md"
+
+[table.base]
+filters = { and = ['file.inFolder("Routines")'] }
+
+# 次の回: 決まりから今日以後の一番近い回の日を計算する(ノートには書かない)。every は start の日から数える。
+[table.base.formulas]
+next = 'recurrence.nextRun(start)'
+next_left = 'recurrence.nextRun(start).relative()'
+
+[table.base.properties]
+"note.recurrence" = { displayName = "繰り返し" }
+"note.start" = { displayName = "起点" }
+"formula.next" = { displayName = "次の回" }
+"formula.next_left" = { displayName = "あと" }
+"note.actor" = { displayName = "誰が" }
+"note.tags" = { displayName = "タグ" }
+
+[[table.base.views]]
+type = "table"
+name = "次の回の順"
+order = ["recurrence", "formula.next", "formula.next_left", "actor", "tags"]
+sort = [{ property = "formula.next", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "担当ごと"
+order = ["recurrence", "formula.next", "formula.next_left", "tags"]
+groupBy = { property = "actor", direction = "ASC" }
+sort = [{ property = "formula.next", direction = "ASC" }]
+
+# ---- ルーチンの回 ----
+# ルーチンから作った回。routine で元のルーチンを指し、date が回の日。済んだら status を done にする(完了日が入る)。
+[[table]]
+name = "ルーチンの回"
+kanban = { column = "status" }
+# グラフ(P): ルーチンごとに済んだ回とまだの回、月ごとの回の数。
+chart = [
+  { name = "ルーチンと状態", kind = "heatmap", x = "routine", by = "status" },
+  { name = "月ごとの回", kind = "line", x = "date", unit = "month" },
+]
+
+[table.base]
+filters = { and = ['file.inFolder("Runs")'] }
+
+[table.base.properties]
+"note.routine" = { displayName = "ルーチン" }
+"note.date" = { displayName = "回の日" }
+"note.status" = { displayName = "状態" }
+"note.actor" = { displayName = "誰が" }
+"note.done_at" = { displayName = "完了日" }
+"note.tags" = { displayName = "タグ" }
+
+[[table.base.views]]
+type = "table"
+name = "未完了"
+where = { status = ["todo", "doing", "waiting"] }
+order = ["routine", "date", "status", "actor", "tags"]
+groupBy = { property = "actor", direction = "ASC" }
+sort = [{ property = "date", direction = "ASC" }]
+
+[[table.base.views]]
+type = "table"
+name = "済んだ回"
+where = { status = ["done", "dropped"] }
+order = ["routine", "date", "status", "done_at", "actor"]
+sort = [{ property = "date", direction = "DESC" }]
+
+[[table.base.views]]
+type = "table"
+name = "ルーチンごと"
+order = ["date", "status", "done_at", "actor"]
+groupBy = { property = "routine", direction = "ASC" }
+sort = [{ property = "date", direction = "DESC" }]
+
+# ---- ページ: 表を縦に並べた形(ヘッダーの表の一覧の引き出しか、mdgrid <台帳> --page 今日) ----
+[[page]]
+name = "今日"
+tables = [
+  { table = "タスク", view = "今週", height = 2 },
+  { table = "ルーチンの回", view = "未完了" },
+]
