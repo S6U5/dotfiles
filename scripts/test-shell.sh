@@ -258,7 +258,12 @@ cat >"$DISK_TEST/bin/docker" <<'EOF'
 #!/bin/sh
 old='2020-01-01 00:00:00 +0000 UTC'
 case "$1" in
-  info) printf '%s\n' "$FAKE_DOCKER_OS" ;;
+  info)
+    case "$3" in
+      *LoggingDriver*) printf '%s\tjson-file\t%s\n' "$FAKE_DOCKER_OS" "$FAKE_DOCKER_ROOT" ;;
+      *) printf '%s\n' "$FAKE_DOCKER_OS" ;;
+    esac
+    ;;
   system)
     if [ "$3" = "-v" ]; then
       printf 'I\t0\t1.2GB\t%s\told/app:1\tsha256:aaaa\n' "$old"
@@ -278,11 +283,22 @@ case "$1" in
 esac
 EOF
 chmod +x "$DISK_TEST/bin/docker"
+# コンテナのログの置き場(rootless のように読める場所)。docker info の DockerRootDir として返す
+mkdir -p "$DISK_TEST/dockerroot/containers/abc"
+head -c 2097152 /dev/urandom >"$DISK_TEST/dockerroot/containers/abc/abc-json.log"
+# snap の一覧(止まっている古い版が1つ)
+cat >"$DISK_TEST/bin/snap" <<'EOF'
+#!/bin/sh
+printf 'Name    Version   Rev   Tracking       Publisher   Notes\n'
+printf 'core22  20240111  1122  latest/stable  canonical*  base,disabled\n'
+printf 'core22  20240408  1380  latest/stable  canonical*  base\n'
+EOF
+chmod +x "$DISK_TEST/bin/snap"
 run_diskreport() { # $1: docker info が返す OS 名、残りは diskreport の引数
   local docker_os=$1
   shift
   env -i HOME="$DISK_TEST/home" PATH="$DISK_TEST/bin:/usr/bin:/bin" FAKE_DOCKER_OS="$docker_os" \
-    "$DOTFILES_DIR/home/.local/bin/diskreport" "$@" </dev/null 2>&1
+    FAKE_DOCKER_ROOT="$DISK_TEST/dockerroot" "$DOTFILES_DIR/home/.local/bin/diskreport" "$@" </dev/null 2>&1
 }
 expect_in() { # $1: 出力, $2: 探す文字列, $3: 説明
   if grep -qF -- "$2" <<<"$1"; then ok "$3"; else ng "$3(「$2」が出力に無い)"; fi
@@ -307,6 +323,19 @@ expect_in "$out" "compose: shop  shop_db" "Docker の内訳: compose のボリ�
 expect_not_in "$out" "live-data" "Docker の内訳: つながっているボリュームは候補に出さない"
 expect_in "$out" "使っていないもの 1 件(最後に使ってから 30 日より前: 1 件、100.0M)" "Docker の内訳: 古いビルドキャッシュを数える"
 expect_in "$out" "docker volume prune" "Docker の内訳: 消し方を案内する"
+if [ "$(uname -s)" != Darwin ]; then
+  expect_in "$out" "コンテナのログ(json-file。docker system df には出ない): 2.0M" "Docker の内訳: 読めるならコンテナのログを測る"
+  if [ ! -r /etc/docker/daemon.json ] || ! grep -q '"max-size"' /etc/docker/daemon.json; then
+    expect_in "$out" "コンテナのログに上限がありません" "Docker の内訳: ログに上限が無いことを知らせる"
+  fi
+else
+  expect_not_in "$out" "コンテナのログ" "Docker の内訳: macOS ではログを見ない(VM の中にあるため)"
+fi
+out_desktop=$(run_diskreport "Docker Desktop") || ng "diskreport が非0で終了(Docker Desktop のログ)"
+expect_not_in "$out_desktop" "コンテナのログ" "Docker の内訳: Docker Desktop ではログを見ない"
+expect_in "$out" "0K  core22(版 1122)" "snap: 止まっている古い版を出す"
+expect_not_in "$out" "core22(版 1380)" "snap: 使っている版は出さない"
+expect_in "$out" "snap remove" "snap: 消し方を案内する"
 
 # 桁あふれしていた頃の履歴が残っていても、前回比に出さない
 printf '%s\tcat:vm\t9223372036854775807\n' "$(($(date +%s) - 100))" >"$DISK_STATE/diskreport.tsv"
@@ -496,9 +525,21 @@ printf '5242880\tC:\\Users\\me\r\n'
 printf '5242880\tC:\\Users\r\n'
 printf '5242880\tC:\r\n'
 printf 'not a size line\r\n'
+printf '#file\t16777216\tC:\\pagefile.sys\r\n'
+printf '#file\t52428800\tC:\\Users\\me\\AppData\\Local\\wsl\\{abc}\\ext4.vhdx\r\n'
+printf '#file\t8388608\tC:\\Users\\me\\AppData\\Local\\Docker\\wsl\\disk\\docker_data.vhdx\r\n'
+printf '#file\t4194304\tD:\\old\\disk.vhdx\r\n'
 printf '#denied\t3\r\n'
 EOF
 chmod +x "$WIN_TEST/bin/powershell.exe"
+# 登録されている WSL(Lxss の BasePath)
+cat >"$WIN_TEST/bin/reg.exe" <<'EOF'
+#!/bin/sh
+printf 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\{abc}\r\n'
+printf '    DistributionName    REG_SZ    Ubuntu\r\n'
+printf '    BasePath    REG_SZ    C:\\Users\\me\\AppData\\Local\\wsl\\{abc}\r\n'
+EOF
+chmod +x "$WIN_TEST/bin/reg.exe"
 run_diskreport_windows() { # 引数は env に渡す追加の環境変数
   env -i HOME="$WIN_TEST/home" PATH="$WIN_TEST/bin:/usr/bin:/bin" WSL_DISTRO_NAME=test "$@" \
     "$DOTFILES_DIR/home/.local/bin/diskreport" windows </dev/null 2>&1
@@ -512,6 +553,40 @@ expect_in "$out" 'C:\Users\me\Videos' "diskreport windows: 大きい順に出す
 expect_in "$out" "読めなかったフォルダ: 3 個" "diskreport windows: 読めなかったフォルダの数を出す"
 expect_in "$out" "docker" "diskreport windows: アプリ別に出す"
 expect_not_in "$out" "not a size line" "diskreport windows: 数字で始まらない行は索引に入れない"
+expect_in "$out" '16.0G  C:\pagefile.sys  ページファイル' "diskreport windows: ドライブ直下の大きいファイルに名前と説明を付ける"
+expect_in "$out" "OS・システム: 16.0G" "diskreport windows: ドライブ直下の大きいファイルを OS・システムに入れる"
+expect_in "$out" 'ext4.vhdx  WSL(Ubuntu)' "diskreport windows: 登録されている WSL の仮想ディスクを見分ける"
+expect_in "$out" 'docker_data.vhdx  Docker Desktop' "diskreport windows: Docker Desktop の仮想ディスクを見分ける"
+expect_in "$out" 'D:\old\disk.vhdx  どこにも登録されていない' "diskreport windows: 登録されていない仮想ディスクを出す"
+out=$(run_diskreport_windows) || ng "diskreport windows が非0で終了(2回目)"
+expect_in "$out" '±0      2.0G  C:\Users\me\Videos' "diskreport windows: バックスラッシュを含むパスでも前回の索引と突き合わせる"
+
+# 本物の PowerShell があれば、索引を作るスクリプトそのものを動かす(ドライブの根を作業用のフォルダに替える。
+# Windows の API(GetCompressedFileSizeW)は無いので、見かけの大きさに戻る道を通る)
+if command -v pwsh >/dev/null 2>&1; then
+  PS_ROOT=$WIN_TEST/drive
+  mkdir -p "$PS_ROOT/Windows" "$PS_ROOT/Users/me/vm" "$PS_ROOT/small"
+  dd if=/dev/null of="$PS_ROOT/pagefile.sys" bs=1 seek=314572800 2>/dev/null
+  dd if=/dev/null of="$PS_ROOT/Windows/skipped.bin" bs=1 seek=314572800 2>/dev/null
+  head -c 2097152 /dev/urandom >"$PS_ROOT/Users/me/vm/old.vhdx"
+  head -c 4096 /dev/urandom >"$PS_ROOT/small/a.txt"
+  cat >"$WIN_TEST/bin/powershell.exe" <<EOF
+#!/usr/bin/env bash
+s=\$4
+s=\${s/"\\\$root = 'C:\\\\';"/"\\\$root = '$PS_ROOT/';"}
+exec "$(command -v pwsh)" -NoProfile -NonInteractive -Command "\$s"
+EOF
+  chmod +x "$WIN_TEST/bin/powershell.exe"
+  rm -f "$WIN_INDEX" "$WIN_TEST/home/.local/state/dotfiles/diskindex-windows-files.tsv"
+  out=$(run_diskreport_windows) || ng "diskreport windows が非0で終了(pwsh)"
+  WIN_FILES=$WIN_TEST/home/.local/state/dotfiles/diskindex-windows-files.tsv
+  if grep -qF "$PS_ROOT/pagefile.sys" "$WIN_FILES" 2>/dev/null; then ok "diskreport windows(pwsh): ドライブ直下の大きいファイルを拾う"; else ng "diskreport windows(pwsh): ドライブ直下の大きいファイルを拾っていない"; fi
+  if grep -qF "$PS_ROOT/Users/me/vm/old.vhdx" "$WIN_FILES" 2>/dev/null; then ok "diskreport windows(pwsh): 深い場所の仮想ディスクを拾う"; else ng "diskreport windows(pwsh): 仮想ディスクを拾っていない"; fi
+  if grep -qF "skipped.bin" "$WIN_FILES" 2>/dev/null; then ng "diskreport windows(pwsh): Windows フォルダの中まで数えた"; else ok "diskreport windows(pwsh): Windows フォルダは数えない"; fi
+  if grep -qF "a.txt" "$WIN_FILES" 2>/dev/null; then ng "diskreport windows(pwsh): 小さいファイルまで拾った"; else ok "diskreport windows(pwsh): 小さいファイルは拾わない"; fi
+else
+  echo "  skip: pwsh が無いので、索引を作る PowerShell のスクリプトを本物で動かす確認を飛ばす"
+fi
 
 echo "== 7) pkgwhere が出どころ(dotfiles の Nix・自作・Homebrew・それ以外)を見分けるか"
 # 偽の Nix ストア・home-manager の世代・Homebrew の置き場を作業用ディレクトリの下に作る

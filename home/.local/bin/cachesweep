@@ -8,7 +8,8 @@
 #   cachesweep --projects       # 開発成果物(node_modules・.venv・target など)を一覧にし、選んで消す
 # OS 自体のキャッシュ(~/Library/Caches 等)には触れない(壊すリスクに見合わないため)。
 # サイズ表示では、yarn・bun・cargo・go などが入っていれば検出して出す(表示のみ。--clean の対象外)。
-# WSL では Windows 側の開発キャッシュと %TEMP% のサイズも出す(表示のみ。Windows 側は消さない)。
+# WSL では Windows 側の開発キャッシュ、%TEMP%、開発ツールの大物(Visual Studio の Package Cache・.NET SDK・
+# Android の SDK と AVD)のサイズも出す(表示のみ。Windows 側は消さない)。
 # --projects の一覧は diskreport の索引から作る(無ければ diskreport scan を案内する)。大きさ・最後に触った日・
 # 戻し方を出し、端末で選んだものだけを、確かめてから消す。fzf があれば fzf で選び、無ければ番号で選ぶ。
 # git で管理されているもの、プロジェクトの印(package.json・pyvenv.cfg など)が無いものは消さない。
@@ -101,7 +102,8 @@ report_detected() {
 
 # Windows 側で動かす PowerShell(改行を除いて1行にして渡すので、文の区切りは ; で書き、引用符は ' だけを使う)。
 # 一覧の形は 名前|候補|候補...。%VAR% は Windows 側で展開し、未定義の変数は存在しないパスになって飛ばされる。
-# winget と Chocolatey のダウンロードは %TEMP% の下に入るので temp に含まれる。
+# winget と Chocolatey のダウンロードは %TEMP% の下に入るので temp に含まれる。ファイルの多い開発ツールの大物は、
+# 上限時間で打ち切られても前の項目が数え終わっているよう、最後に置く。
 windows_script() {
   tr -d '\n' <<'PS'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8;
@@ -126,7 +128,11 @@ maven|%USERPROFILE%\.m2\repository;
 composer|%COMPOSER_CACHE_DIR%|%LOCALAPPDATA%\Composer;
 scoop|%SCOOP%\cache|%USERPROFILE%\scoop\cache;
 vcpkg|%VCPKG_DEFAULT_BINARY_CACHE%|%LOCALAPPDATA%\vcpkg\archives;
-temp|%TEMP%';
+temp|%TEMP%;
+vs-pkg|%ProgramData%\Microsoft\VisualStudio\Packages;
+dotnet|%ProgramFiles%\dotnet\sdk;
+android|%ANDROID_HOME%|%ANDROID_SDK_ROOT%|%LOCALAPPDATA%\Android\Sdk;
+avd|%ANDROID_AVD_HOME%|%USERPROFILE%\.android\avd';
 foreach ($entry in $list.Split(';')) {
 $parts = $entry.Split('|');
 foreach ($candidate in $parts[1..($parts.Length - 1)]) {
@@ -153,7 +159,8 @@ PS
 report_windows() {
   [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null || return 0
   echo ""
-  echo "== Windows 側のキャッシュ(表示のみ。--clean では消しません)"
+  echo "== Windows 側の開発キャッシュと開発ツール(表示のみ。--clean では消しません)"
+  echo "  (vs-pkg は Visual Studio Installer の設定、dotnet の古い SDK は dotnet-core-uninstall、avd は Android Studio の Device Manager で整理)"
   if ! command -v powershell.exe >/dev/null 2>&1; then
     echo "  (powershell.exe が見つからないので数えません。Windows 連携が無効?)"
     return 0
