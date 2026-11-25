@@ -91,6 +91,13 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 戻し方を添える: `node_modules` はロックファイルがあれば同じ版で戻る(無ければ版が変わりうる)。`.venv` は `uv.lock`・`poetry.lock`・`requirements*.txt`・`pyproject.toml` などがあれば戻せるが、どれも無ければ手で入れたパッケージは戻らないので、選ばれても別に y/N で聞く(既定は残す)。
 - 「最後に触った日」は、プロジェクトのフォルダ(成果物の親)とその直下のファイル・フォルダ(`.git` と成果物そのものを含む)の更新日時のうち一番新しいもの。`.git` は commit・checkout・index の更新でフォルダの中身が入れ替わるので、触った目安になる。深い場所のファイルを編集しただけでは変わらないので目安にとどまるが、間違えて消しても作り直せるものなので、精度より速さ(全件で find と stat を1回ずつ)を取った。アクセス時刻(atime)は `noatime` / `relatime` で当てにならないので使わない。`diskreport` は 90 日以上触っていないものの件数と合計も出す(しきい値は固定。設定を増やさない)。
 
+### Docker の内訳(回収忘れの候補)
+
+- `docker system df` の4行(イメージ・コンテナ・ボリューム・ビルドキャッシュの合計)だけでは、何が残っているかが分からず、止まったコンテナ、使わなくなったイメージ、つながっていないボリュームが溜まる。`diskreport` は `docker system df -v` を1回だけ引き(Go のテンプレートで種別ごとのタブ区切りの行にする。python や jq を持ち込まない)、種別ごとに「使われていないもの」を大きい順に出す。新しいコマンドにせず `diskreport` の節にしたのは、いつもの1語で目に入らないと回収忘れに気づけないため。
+- 合計と戻せる量は `docker system df` の値をそのまま使う。イメージは層を共有するので、1つずつの大きさの和では合計にならない。単位は他の場所と同じく、10進と2進を区別しない目安として扱う(`docker system df` の表示と数字が揃う)。
+- 候補の見方: イメージは使っているコンテナの数が 0 のもの(大きさは固有の層。日付はイメージが作られた日で、取ってきた日ではない。Docker はイメージを最後に使った日を持たない)。コンテナは動いていないもの(書き込み層の大きさ)。ボリュームはどのコンテナにもつながっていないもの(名前なしか、compose のどのプロジェクトのものかを添える。中身はデータのことがあるので、大きさだけで消さない)。ビルドキャッシュは使用中でも共有でもないもの(`docker system df` の戻せる量と同じ数え方)と、そのうち最後に使ってから 30 日より前のもの。
+- 消すのは案内だけ(`docker container prune` / `image prune -a` / `volume prune` / `builder prune --filter until=720h`)。`docker volume prune` は Docker 23 以降、既定では名前なしのボリュームだけを消し、名前付きは `-a` を付けたときだけ消す。
+
 ### 既知パス一覧の持ち方
 
 - 共通の一覧はリポジトリのデータファイル(`home/.config/dotfiles/diskreport.paths`。タブ区切りで「カテゴリ、パス、何のデータか・消してよいか」)に出し、home-manager で配る。
@@ -141,11 +148,13 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 実装済み(索引・アプリ別): `scan`(`$HOME` の `du -xkd 6`、WSL では PowerShell での集計、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`windows`(Windows 側を数えて詳細を出す)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
 - 実装済み(開発成果物と apt): `diskreport` の開発成果物に最後に触った日と 90 日以上触っていないものの合計、`cachesweep --projects`(選んで消す)、`cachesweep` の表示に apt の autoremove の候補(`apt-get -s autoremove` と dpkg の `Installed-Size`)。対話で消す流れは `script` で端末のふりをして確かめた(macOS)。apt の部分は偽の `apt-get` / `dpkg-query` で通しただけで、実機の apt では未実行。
+- 実装済み(Docker の内訳): `docker system df -v` からの種別ごとの数・大きさ・戻せる量と、使われていないものの一覧、消し方の案内。macOS の Docker Desktop で `docker system df` と数字が揃うことを確かめた。Docker Engine(WSL・Linux)は偽の `docker` で通しただけ。
 - 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
 - 実機未検証: `cachesweep` の Windows 側(PowerShell の動作は macOS の PowerShell 7 で確かめただけで、Windows PowerShell 5.1 と WSL からの起動は未実行。各ツールの置き場は既定の場所の知識に基づく)。WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に `diskreport windows` の集計(PowerShell)は macOS の PowerShell 7 と仮のフォルダで確かめただけで、Windows PowerShell 5.1 では未実行。実機で1回走らせて確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
+- (2026-11: `diskreport` に Docker の内訳を足した。`docker system df` の4行の合計だけでは、止まったコンテナ・使わなくなったイメージ・つながっていないボリューム・古いビルドキャッシュのどれが残っているかが分からず、回収を忘れやすいため。詳しくは本文「Docker の内訳」)
 - (2026-11: 開発成果物を消す道として `cachesweep --projects` を足した。`diskreport` は場所と大きさを出すだけで、消すには場所を見て手で消すしかなく、どれを消してよいか(使っているか、戻せるか)も分からなかったため。一覧は `diskreport` の索引から取り、最後に触った日と戻し方を添え、人が選んだものだけを確かめてから消す。あわせて、`cachesweep` の表示に apt の autoremove の候補を出し、案内に `--apt-autoremove` を載せた。`--apt-autoremove` はあったが、案内にも README にも無く、何が消えるかも見えなかったため)
 - (2026-11: Windows 側の詳細を WizTree から Windows 側の PowerShell での集計に置き換え、`diskreport windows` で表示するようにした。WizTree は個人利用のみ無料で、商用利用できないツールは入れない方針にしたため。ファイルを1つずつ数えるので MFT 読みより遅いが、`diskreport scan` / `windows` の中だけの処理なので上限時間を付けて受け入れる。管理者権限が要らなくなり、確認ダイアログも出ない。読めないフォルダは数えられないので個数を表示する)
 - (2026-11: `cachesweep` のサイズ表示に、WSL での Windows 側の開発キャッシュと、そのほかのパッケージツールの検出を足した。WizTree が無くても Windows 側のキャッシュの量が分かるようにするため。Windows 側の中身は Windows の道具で見る原則どおり、`/mnt` 越しの `du` ではなく Windows 側の PowerShell に決まった場所だけを数えさせ、上限時間を付けた。新しいコマンドは足さず、表示だけにして `--clean` は Windows 側に触れない。ツールは起動せず場所で検出する。corepack などは起動すると取得を始めることがあるため)
