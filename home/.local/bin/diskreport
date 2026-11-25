@@ -6,6 +6,7 @@
 #   diskreport scan       # 索引を作り直す(時間がかかる作業をここに隔離。既定 15 分で打ち切り)
 #   diskreport windows    # WSL のみ: Windows 側を PowerShell で数えて、大きい順とアプリ別を出す(数分かかることがある)
 #   diskreport --nix-brief  # (人向けではない)dotfiles-switch / dotfiles-update の最後が呼ぶ Nix の数行
+#   diskreport --projects-tsv  # (人向けではない)cachesweep --projects が読む開発成果物の一覧
 #
 # 設計(判断根拠は docs/decisions/storage-hygiene.md):
 #   - 会計モデル。使用量を「帰属できた分(OS・アプリ・ユーザーデータ・クラウド同期・仮想ディスク・
@@ -33,6 +34,7 @@ for arg in "$@"; do
     scan) SCAN=1 ;;
     windows | --windows) WINDOWS=1 ;;
     --nix-brief) MODE=nix-brief ;;
+    --projects-tsv) MODE=projects-tsv ;;
     -h | --help)
       awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
       exit 0
@@ -100,6 +102,24 @@ to_kib() {
 alloc_kib() {
   blocks=$(stat -c %b "$1" 2>/dev/null || stat -f %b "$1" 2>/dev/null || echo 0)
   echo "$((blocks / 2))"
+  return 0
+}
+# 更新時刻と名前を「時刻 パス」の形で出す stat の書式。GNU は -c、BSD(macOS)は -f
+if stat -c %Y / >/dev/null 2>&1; then
+  STAT_OPT=-c
+  STAT_FMT='%Y %n'
+else
+  STAT_OPT=-f
+  STAT_FMT='%m %N'
+fi
+# 幅をそろえた「N 日前」(9 桁ぶん)。$1: 時刻(epoch。形が正しくなければ「不明」)
+age_cell() {
+  if ! is_kib "$1"; then
+    printf '     不明'
+    return 0
+  fi
+  _days=$(((NOW - $1) / 86400))
+  if [ "$_days" -le 0 ]; then printf '     今日'; else printf '%4d 日前' "$_days"; fi
   return 0
 }
 is_wsl() { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }
@@ -328,23 +348,29 @@ collect_paths() {
   return 0
 }
 
-# プロジェクト成果物(マーカー探索層)。見つけた成果物の中へは降りない(-prune)
-# 開発成果物(消しても再生成できるもの)を索引から拾う。名前で候補を選び、target / build / dist は
+# 開発成果物(多くは消しても作り直せるもの)を索引から拾う。名前で候補を選び、target / build / dist は
 # 親にマーカー(Cargo.toml 等)があるときだけ。別の成果物の配下にあるもの(node_modules の中の
-# node_modules 等)は数えない。索引が無ければ空
+# node_modules 等)は数えない。索引のあとで消えたものも数えない。索引が無ければ空
 collect_projects() {
   : >"$WORK/projects"
   [ -f "$INDEX_HOME" ] || return 0
   # 既知パス(~/.cache 等)の配下にある成果物は、そちらで数えているので除く(二重計上を避ける)。
-  # __pycache__ は小さく数が多いだけなので対象外、~/.gradle は成果物ではなくキャッシュなので対象外
+  # __pycache__ は小さく数が多いだけなので対象外、~/.gradle は成果物ではなくキャッシュなので対象外。
+  # ツールやアプリが自分で管理する入れ物(ホーム直下の隠しフォルダ、~/Library、~/Applications、~/snap、
+  # .app の中)は、プロジェクトではないので対象外。エディタの拡張機能(~/.antigravity/extensions/*/dist 等)や
+  # pnpm の置き場は package.json を持つが、作り直せず、消すと壊れる
+  load_paths | cut -f2 >"$WORK/known"
   tail -n +2 "$INDEX_HOME" | awk -F'\t' -v home="$HOME" '
-    FILENAME == ARGV[1] { known[++nk] = $1; next }
+    FILENAME == ARGV[1] { known[++nk] = $0; next }
     { n = split($2, seg, "/"); b = seg[n]
       if (!(b == "node_modules" || b == "target" || b == ".venv" || b == "venv" || b == "build" || b == "dist" || b == ".next" || b == ".turbo" || b == ".tox" || b == ".gradle")) next
-      if (b == ".gradle" && $2 == home "/.gradle") next
+      if (index($2, home "/") != 1) next
+      rel = substr($2, length(home) + 2)
+      if (rel ~ /^\./ || rel ~ /^(Library|Applications|snap)\// || $2 ~ /\.app\//) next
       for (i = 1; i <= nk; i++) if ($2 == known[i] || index($2, known[i] "/") == 1) next
-      print }' "$WORK/pathcat" - |
+      print }' "$WORK/known" - |
     while IFS="$TAB" read -r k d; do
+      [ -d "$d" ] && [ ! -L "$d" ] || continue
       parent=$(dirname "$d")
       case "$(basename "$d")" in
         target) [ -f "$parent/Cargo.toml" ] || [ -f "$d/CACHEDIR.TAG" ] || continue ;;
@@ -363,6 +389,31 @@ collect_projects() {
       }' | sort -t"$TAB" -k1,1nr >"$WORK/projects"
   k=$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")
   [ "$k" -gt 0 ] && add_item "projects:index" "$k"
+  return 0
+}
+
+# 開発成果物に「最後に触った時刻」を付ける。$WORK/projects「KiB<TAB>パス」→ 標準出力「KiB<TAB>時刻<TAB>パス」。
+# 時刻は、プロジェクトのフォルダ(成果物の親)とその直下のファイル・フォルダ(.git や成果物そのものを含む)の
+# 更新日時のうち一番新しいもの。深い場所のファイルを編集しただけでは変わらないので目安。
+# 1件ずつ数えると件数ぶん遅くなるので、find と stat をまとめて1回ずつ走らせる
+projects_touched() {
+  [ -s "$WORK/projects" ] || return 0
+  awk '{ p = substr($0, index($0, "\t") + 1); sub(/\/[^\/]*$/, "", p); print p }' "$WORK/projects" | sort -u >"$WORK/proj-parents"
+  # shellcheck disable=SC2016  # $1 などは xargs が起動する sh の中で展開する
+  tr '\n' '\000' <"$WORK/proj-parents" |
+    xargs -0 sh -c 'opt=$1 fmt=$2; shift 2; find "$@" -maxdepth 1 -exec stat "$opt" "$fmt" {} + 2>/dev/null' sh "$STAT_OPT" "$STAT_FMT" >"$WORK/proj-stat" 2>/dev/null || true
+  awk -v OFS='\t' '
+    FILENAME == ARGV[1] { par[$0] = 1; next }
+    FILENAME == ARGV[2] {
+      t = $1; if (t !~ /^[0-9]+$/) next
+      p = substr($0, index($0, " ") + 1)
+      if ((p in par) && t + 0 > m[p] + 0) m[p] = t
+      q = p; sub(/\/[^\/]*$/, "", q)
+      if ((q in par) && t + 0 > m[q] + 0) m[q] = t
+      next
+    }
+    { d = substr($0, index($0, "\t") + 1); q = d; sub(/\/[^\/]*$/, "", q); print $1, ((q in m) ? m[q] : ""), d }
+  ' "$WORK/proj-parents" "$WORK/proj-stat" "$WORK/projects"
   return 0
 }
 
@@ -438,7 +489,7 @@ report_accounting() {
     echo "  いますぐ戻せる見込み: $(human "$reclaim")(上限の目安。実際に消すのは下の「次の一手」のコマンド)"
     [ -n "${cache_k:-}" ] && echo "    キャッシュ $(human "$cache_k")(cachesweep --clean、各ツールの掃除コマンド)"
     [ -n "${trash_k:-}" ] && echo "    ごみ箱・バックアップ $(human "$trash_k")(ごみ箱を空にする)"
-    [ -n "${proj_k:-}" ] && echo "    開発成果物 $(human "$proj_k")(再生成できる。プロジェクトごとに削除)"
+    [ -n "${proj_k:-}" ] && echo "    開発成果物 $(human "$proj_k")(多くは作り直せる。cachesweep --projects で選んで削除)"
     [ "$nix_gap" -gt 0 ] && echo "    Nix の古い世代とゴミ $(human "$nix_gap")(nix-collect-garbage -d。世代ごと消すなら expire-generations を先に)"
     [ "${DOCKER_RECLAIM:-0}" -gt 0 ] && echo "    Docker の未使用分 $(human "$DOCKER_RECLAIM")(docker system prune)"
   fi
@@ -504,10 +555,17 @@ report_breakdown() {
 
 report_projects() {
   [ -s "$WORK/projects" ] || return 0
-  echo "== 開発成果物(索引から。消しても再生成できるもの)"
-  head -n 15 "$WORK/projects" | while IFS="$TAB" read -r k d; do printf '  %8s  %s\n' "$(human "$k")" "$d"; done
-  n=$(wc -l <"$WORK/projects" | tr -d ' ')
-  echo "  合計 $(human "$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects")")($n 件。上位 15 件を表示)"
+  projects_touched >"$WORK/projects-t"
+  echo "== 開発成果物(索引から。数えたのは $(index_age_label "$INDEX_HOME")。多くは消しても作り直せる)"
+  echo "  サイズ・最後に触った日(プロジェクトの直下と .git の更新日時から見た目安)・場所"
+  head -n 15 "$WORK/projects-t" | while IFS="$TAB" read -r k t d; do printf '  %8s  %s  %s\n' "$(human "$k")" "$(age_cell "$t")" "$d"; done
+  n=$(wc -l <"$WORK/projects-t" | tr -d ' ')
+  echo "  合計 $(human "$(awk -F'\t' '{ s += $1 } END { printf "%d", s }' "$WORK/projects-t")")($n 件。上位 15 件を表示)"
+  stale=$(awk -F'\t' -v now="$NOW" '$2 ~ /^[0-9]+$/ && now - $2 >= 90 * 86400 { c++; s += $1 } END { if (c) printf "%d\t%d", c, s }' "$WORK/projects-t")
+  if [ -n "$stale" ]; then
+    echo "  うち 90 日以上触っていないもの: ${stale%%"$TAB"*} 件、合計 $(human "${stale#*"$TAB"}")"
+  fi
+  echo "  選んで消すには: cachesweep --projects(戻し方も出ます)"
   echo ""
   return 0
 }
@@ -1148,6 +1206,16 @@ if [ "$MODE" = nix-brief ]; then
   exit 0
 fi
 
+# cachesweep --projects 用: 1行目に索引の時刻「#time<TAB>時刻」、続けて「KiB<TAB>最後に触った時刻<TAB>パス」を
+# 大きい順に出す。索引が無ければ何も出さない(どれを開発成果物とみなすかを、レポートと消す側で揃えるため)
+if [ "$MODE" = projects-tsv ]; then
+  [ -f "$INDEX_HOME" ] || exit 0
+  collect_projects
+  printf '#time\t%s\n' "$(index_time "$INDEX_HOME")"
+  projects_touched
+  exit 0
+fi
+
 if [ "$WINDOWS" -eq 1 ]; then
   report_windows_detail
   exit 0
@@ -1179,6 +1247,9 @@ save_history "$WORK/save"
 
 echo "== 次の一手(このコマンドは何も消しません)"
 echo "  cachesweep                                  # 開発キャッシュのサイズ。--clean で削除"
+if [ -s "$WORK/projects" ]; then
+  echo "  cachesweep --projects                       # node_modules・.venv などを、戻し方を見ながら選んで削除"
+fi
 if [ -d "$HOME/.claude" ] || [ -d "$HOME/.codex" ] || [ -d "$HOME/.gemini" ] || [ -d "$HOME/.copilot" ]; then
   echo "  aidata                                      # AI ツールの会話の記録・本体・キャッシュの内訳(プロファイルごと)"
 fi
