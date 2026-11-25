@@ -37,4 +37,5 @@
 - (2026-09: `~/.config/zsh/.zshrc` も `home.activation` 生成の対象に追加): nvm のインストーラが ZDOTDIR を尊重して `$ZDOTDIR/.zshrc` へ追記すること、および `mkOutOfStoreSymlink` のリンク越しの追記はエラーにならずリポジトリ内の実体へ書き込まれることが判明したため。zsh の設定本体は `home/.config/zsh/zshrc` へ移動した(経緯の詳細は `docs/decisions/zshrc-pollution.md` の履歴参照)。
 - (2026-11: トレードオフに挙げた `DOTFILES_DIR` の手動設定(と `<system>` / `--impure` の手打ち)を、`switch.sh` / `dotfiles-switch` ラッパーに吸収した。`nix/home.nix` 側の仕組み(`builtins.getEnv` + `--impure`)自体は変えていない。判断根拠は `docs/decisions/home-manager-switch-invocation.md`)
 - (2026-11: `update.sh` / `dotfiles-update` は `git pull` に続けて `switch.sh` で反映まで行うようにした(上記「メッセージ表示のみ」を撤回)。`mkOutOfStoreSymlink` のため pull の時点で既存ファイルの変更は反映済みになり、新規ファイル・パッケージ・activation だけが switch 待ちになる「新旧が混ざった状態」を pull だけで作ってしまうことが理由。判断根拠は `docs/decisions/home-manager-switch-invocation.md`)
+- (2026-11: `walkHome` に、指定したフォルダの直下をフォルダごと1本のリンクで置く例外 `dirLinkParents` を足した。mdgrid が自分のスターターの中のリンクのファイルを読まないため。判断根拠は `docs/decisions/mdgrid-starters.md`)
 - (今後この決定が覆ったら、ここに追記していく。全面書き換えはしない)

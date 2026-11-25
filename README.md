@@ -506,6 +506,8 @@ home/              $HOME に同じ構造でリンクされる設定ファイル�
 ├── .config/shell/                     シェル共通設定(sh 互換・機能別ファイル、zsh/bash 両方から source)
 │   └── os/                            OS 固有の起動時設定(macos / wsl / linux)
 ├── .local/bin/                        自作コマンド(PATH に自動で通る)
+├── .config/mdgrid/starters/           mdgrid の自分のスターター(台帳の雛形)。スターターごとにフォルダで
+│                                      1本のリンクにする(判断根拠は docs/decisions/mdgrid-starters.md)
 ├── .tmux.conf / .npmrc                各ツールの共通設定
 └── ...
 

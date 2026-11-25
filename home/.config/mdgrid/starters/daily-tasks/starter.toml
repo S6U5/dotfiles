@@ -1,0 +1,10 @@
+# mdgrid の自分のスターター。`mdgrid --starters` の一覧とパレットの「スターターから台帳を作る」に出る。
+# 作るのは `mdgrid <フォルダ> --init-workspace --starter daily-tasks`(`--with-samples` で見本のノートも入れる)。
+# [name] と [description] は言語ごとの見出し(en が無い言語の既定)。
+[name]
+en = "Daily tasks and routines"
+ja = "毎日のタスクとルーチン"
+
+[description]
+en = "Tasks split by who does them, routines and their runs, and a Today page. Dated file names, subtasks, Gantt, Kanban and charts"
+ja = "担当(人・AI・両方)で分けるタスク、ルーチンとその回、今日のページ。日付で始まる名前・親子・ガント・カンバン・グラフつき"

@@ -23,12 +23,18 @@ let
   # `find "$HOME_SRC" -type f` ループの Nix 版)。新規ファイルを home/ に追加するだけで自動的に
   # 配布対象になる。.gitignore されている local.sh / *.local は home/ に実体が無いため readDir にも
   # 現れず、何も特別扱いしなくても自動的にスキップされる。
+  # dirLinkParents に挙げたフォルダの直下のフォルダだけは、ファイルごとではなくフォルダごと1本のリンクで置く。
+  # 中のファイルがリンクだと読まない道具があるため(mdgrid は自分のスターター starters/<名前>/ の中のリンクの
+  # ファイルをたどらず、フォルダそのもののリンクだけを許す。判断根拠は docs/decisions/mdgrid-starters.md)。
+  dirLinkParents = [ ".config/mdgrid/starters" ];
   walkHome = dir: prefix:
     lib.concatMapAttrs
       (name: type:
         let rel = if prefix == "" then name else "${prefix}/${name}";
         in
-        if type == "directory" then
+        if type == "directory" && builtins.elem prefix dirLinkParents then
+          { ${rel} = { source = outOfStore rel; }; }
+        else if type == "directory" then
           walkHome "${dir}/${name}" rel
         else if name == ".gitkeep" then
           { }
