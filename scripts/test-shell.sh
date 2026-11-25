@@ -312,6 +312,26 @@ else
 fi
 expect_in "$out" "+3.0M      4.0M  $DISK_TEST/home/real" "索引: 偽造した行があっても、普通の行の前回比は出る"
 
+# 開発成果物: 最後に触った日と、90 日以上触っていないものの合計を出す。索引のあとで消えたものと、
+# ツールやアプリの入れ物の中(エディタの拡張機能、~/Library)は数えない
+mkdir -p "$DISK_TEST/home/old-proj/node_modules" "$DISK_TEST/home/new-proj/.venv" \
+  "$DISK_TEST/home/.editor/extensions/ext-1/dist" "$DISK_TEST/home/Library/pnpm/global/node_modules"
+echo '{}' >"$DISK_TEST/home/old-proj/package.json"
+: >"$DISK_TEST/home/new-proj/.venv/pyvenv.cfg"
+echo '{}' >"$DISK_TEST/home/.editor/extensions/ext-1/package.json"
+echo '{}' >"$DISK_TEST/home/Library/pnpm/global/package.json"
+touch -t 202001010000 "$DISK_TEST/home/old-proj/package.json" "$DISK_TEST/home/old-proj/node_modules" "$DISK_TEST/home/old-proj"
+printf '#time\t%s\n4096\t%s\n2048\t%s\n1024\t%s\n8192\t%s\n8192\t%s\n' "$(date +%s)" "$DISK_TEST/home/old-proj/node_modules" \
+  "$DISK_TEST/home/new-proj/.venv" "$DISK_TEST/home/gone-proj/node_modules" \
+  "$DISK_TEST/home/.editor/extensions/ext-1/dist" "$DISK_TEST/home/Library/pnpm/global/node_modules" >"$DISK_STATE/diskindex-home.tsv"
+rm -f "$DISK_STATE/diskindex-home.tsv.prev"
+out=$(run_diskreport "Ubuntu 24.04") || ng "diskreport が非0で終了(開発成果物)"
+expect_in "$out" "日前  $DISK_TEST/home/old-proj/node_modules" "開発成果物: 最後に触った日を出す"
+expect_in "$out" "今日  $DISK_TEST/home/new-proj/.venv" "開発成果物: 今日触ったものは「今日」"
+expect_in "$out" "90 日以上触っていないもの: 1 件、合計 4.0M" "開発成果物: 長く触っていないものの合計を出す"
+expect_in "$out" "合計 6.0M(2 件" "開発成果物: 索引のあとで消えたものと、ツールやアプリの入れ物の中は数えない"
+expect_in "$out" "cachesweep --projects" "開発成果物: 消し方を案内する"
+
 echo "== 5) cachesweep が入っているツールだけを表示し、WSL では Windows 側も数えるか"
 # Windows 側は偽の powershell.exe が返す行の表示だけを確かめる(PowerShell の中身は動かない)
 SWEEP_TEST=$WORK_DIR/cachesweep
@@ -336,6 +356,97 @@ expect_in "$out" "合計" "cachesweep: Windows 側の合計を出す"
 if ! grep -qi microsoft /proc/version 2>/dev/null; then
   out=$(run_cachesweep) || ng "cachesweep が非0で終了(WSL 以外)"
   expect_not_in "$out" "Windows 側" "cachesweep: WSL 以外では Windows 側を数えない"
+fi
+
+# apt の不要パッケージ: 試し実行(-s)の結果から件数と申告サイズを出す(偽の apt-get と dpkg-query)
+cat >"$SWEEP_TEST/bin/apt-get" <<'EOF'
+#!/bin/sh
+[ "$1 $2" = "-s autoremove" ] || exit 1
+echo "NOTE: This is only a simulation!"
+echo "Remv libold1 [1.0]"
+echo "Remv libold2:amd64 [2.0]"
+EOF
+printf '#!/bin/sh\nprintf "1024\\n2048\\n"\n' >"$SWEEP_TEST/bin/dpkg-query"
+chmod +x "$SWEEP_TEST/bin/apt-get" "$SWEEP_TEST/bin/dpkg-query"
+out=$(run_cachesweep) || ng "cachesweep が非0で終了(apt)"
+expect_in "$out" "2 件、約 3.0M" "cachesweep: autoremove の候補の件数とサイズを出す"
+expect_in "$out" "libold2:amd64" "cachesweep: autoremove の候補の名前を出す"
+expect_in "$out" "--apt-autoremove" "cachesweep: autoremove の消し方を案内する"
+rm -f "$SWEEP_TEST/bin/apt-get" "$SWEEP_TEST/bin/dpkg-query"
+
+echo "== 5b) cachesweep --projects が索引の開発成果物を一覧にし、選んだものだけを消すか"
+# 一覧は diskreport の索引(偽物)から取る。対話は script で端末のふりをして答えを流し込む
+PROJ_HOME=$SWEEP_TEST/projhome
+PROJ_STATE=$PROJ_HOME/.local/state/dotfiles
+mkdir -p "$SWEEP_TEST/gitbin" "$PROJ_STATE" "$PROJ_HOME/proj-a/node_modules/x" "$PROJ_HOME/proj-b/.venv" \
+  "$PROJ_HOME/proj-c/dist" "$PROJ_HOME/proj-d/node_modules" "$PROJ_HOME/.editor/extensions/ext-1/dist"
+echo '{}' >"$PROJ_HOME/.editor/extensions/ext-1/package.json"
+echo '{}' >"$PROJ_HOME/proj-a/package.json"
+echo '{}' >"$PROJ_HOME/proj-a/package-lock.json"
+: >"$PROJ_HOME/proj-b/.venv/pyvenv.cfg"
+echo '{}' >"$PROJ_HOME/proj-c/package.json"
+echo x >"$PROJ_HOME/proj-c/dist/a.js"
+have_git=0
+if command -v git >/dev/null 2>&1; then
+  ln -s "$(command -v git)" "$SWEEP_TEST/gitbin/git"
+  git -C "$PROJ_HOME/proj-c" -c init.defaultBranch=main init -q && git -C "$PROJ_HOME/proj-c" add dist/a.js && have_git=1
+fi
+printf '#time\t%s\n3072\t%s\n2048\t%s\n1024\t%s\n512\t%s\n100\t%s\n100\t%s\n' "$(date +%s)" "$PROJ_HOME/proj-a/node_modules" \
+  "$PROJ_HOME/proj-b/.venv" "$PROJ_HOME/proj-c/dist" "$PROJ_HOME/proj-d/node_modules" "$PROJ_HOME/gone/node_modules" \
+  "$PROJ_HOME/.editor/extensions/ext-1/dist" >"$PROJ_STATE/diskindex-home.tsv"
+# PATH に fzf は入れない(番号で選ぶ道を通す。fzf で選ぶ道は、最後に偽の fzf を足して通す)
+PROJ_PATH=$SWEEP_TEST/gitbin:/usr/bin:/bin
+# 端末のふりをして動かす。答えを入れ終わってもしばらくパイプを開けておく(macOS の script は、入力が尽きると
+# すぐ EOF を送り、答えより先に届くことがあるため)。$1: 入れる答え、残り: コマンド
+in_pty() {
+  local answers=$1
+  shift
+  {
+    printf '%b' "$answers"
+    sleep 2
+  } | if script --version >/dev/null 2>&1; then
+    script -qec "$(printf '%q ' "$@")" /dev/null
+  else
+    script -q /dev/null "$@"
+  fi
+}
+SWEEP=$DOTFILES_DIR/home/.local/bin/cachesweep
+
+out=$(env -i HOME="$PROJ_HOME" PATH="$PROJ_PATH" "$SWEEP" --projects </dev/null 2>&1) || ng "cachesweep --projects が非0で終了(端末なし)"
+expect_in "$out" "/proj-a/node_modules(package-lock.json から戻せる)" "--projects: ロックファイルから戻せると出す"
+expect_in "$out" "/proj-b/.venv(注意: 戻し方が分からない" "--projects: 戻し方の分からない仮想環境に注意を付ける"
+expect_in "$out" "/proj-d/node_modules(package.json が無いので消さない)" "--projects: 印の無いものは消さない側に出す"
+expect_not_in "$out" "gone/node_modules" "--projects: 索引のあとで消えたものは出さない"
+expect_not_in "$out" "ext-1/dist" "--projects: エディタの拡張機能の中のものは出さない"
+expect_in "$out" "端末で cachesweep --projects を実行すると" "--projects: 端末でなければ聞かない"
+if [ "$have_git" -eq 1 ]; then
+  expect_in "$out" "/proj-c/dist(git で管理されているので消さない)" "--projects: git の管理下のものは消さない"
+fi
+if [ -d "$PROJ_HOME/proj-a/node_modules" ]; then ok "--projects: 端末でなければ何も消さない"; else ng "--projects: 端末でないのに消した"; fi
+
+if command -v script >/dev/null 2>&1; then
+  out=$(in_pty '9\n' env -i HOME="$PROJ_HOME" PATH="$PROJ_PATH" TERM=dumb "$SWEEP" --projects 2>&1 || true)
+  expect_in "$out" "番号の書き方が分かりません" "--projects: 範囲外の番号は受け付けない"
+  # 1 と 2 を選び、戻し方の分からない .venv は「残す」、最後の確認は y
+  out=$(in_pty '1 2\nn\ny\n' env -i HOME="$PROJ_HOME" PATH="$PROJ_PATH" TERM=dumb "$SWEEP" --projects 2>&1 || true)
+  expect_in "$out" "消しました: ~/proj-a/node_modules" "--projects: 選んだものを消す"
+  if [ ! -e "$PROJ_HOME/proj-a/node_modules" ] && [ -d "$PROJ_HOME/proj-b/.venv" ] && [ -d "$PROJ_HOME/proj-c/dist" ] && [ -d "$PROJ_HOME/proj-d/node_modules" ]; then
+    ok "--projects: 選んだものだけを消し、注意付きで「残す」と答えたものは残す"
+  else
+    ng "--projects: 消したものが違う"
+  fi
+  # fzf で選ぶ道(偽の fzf は先頭の行=いま1番の .venv を選ぶ)。注意付きも y で消す
+  mkdir -p "$SWEEP_TEST/fzfbin"
+  printf '#!/bin/sh\nhead -n 1\n' >"$SWEEP_TEST/fzfbin/fzf"
+  chmod +x "$SWEEP_TEST/fzfbin/fzf"
+  out=$(in_pty 'y\ny\n' env -i HOME="$PROJ_HOME" PATH="$SWEEP_TEST/fzfbin:$PROJ_PATH" TERM=dumb "$SWEEP" --projects 2>&1 || true)
+  if [ ! -e "$PROJ_HOME/proj-b/.venv" ] && [ -d "$PROJ_HOME/proj-d/node_modules" ]; then
+    ok "--projects: fzf で選んだものを、注意に y と答えたら消す"
+  else
+    ng "--projects: fzf で選んだものが消えていない(または別のものが消えた)"
+  fi
+else
+  echo "  skip: script が無いので、対話で消す流れは確かめません"
 fi
 
 echo "== 6) diskreport windows が PowerShell の集計結果を索引にして表示するか"

@@ -1,20 +1,27 @@
 #!/bin/sh
-# 開発ツールのキャッシュを掃除する。既定は「サイズ表示のみ」で何も消さない。
-#   cachesweep                  # 各キャッシュの現在サイズを表示
+# 開発ツールのキャッシュと、node_modules・.venv などの開発成果物を掃除する。既定は「サイズ表示のみ」で何も消さない。
+#   cachesweep                  # 各キャッシュの現在サイズと、apt の不要パッケージ(autoremove の候補)を表示
 #   cachesweep --clean          # 安全なキャッシュ削除を実行(各ツールの公式コマンドのみ)
 #   cachesweep --docker         # --clean に加えて Docker の未使用データも削除(次回ビルドが遅くなりうる)
 #   cachesweep --apt-autoremove # --clean に加えて apt の不要パッケージも削除(キャッシュではなく
 #                               # パッケージ本体の削除のため、明示したときだけ)
+#   cachesweep --projects       # 開発成果物(node_modules・.venv・target など)を一覧にし、選んで消す
 # OS 自体のキャッシュ(~/Library/Caches 等)には触れない(壊すリスクに見合わないため)。
 # サイズ表示では、yarn・bun・cargo・go などが入っていれば検出して出す(表示のみ。--clean の対象外)。
 # WSL では Windows 側の開発キャッシュと %TEMP% のサイズも出す(表示のみ。Windows 側は消さない)。
+# --projects の一覧は diskreport の索引から作る(無ければ diskreport scan を案内する)。大きさ・最後に触った日・
+# 戻し方を出し、端末で選んだものだけを、確かめてから消す。fzf があれば fzf で選び、無ければ番号で選ぶ。
+# git で管理されているもの、プロジェクトの印(package.json・pyvenv.cfg など)が無いものは消さない。
+# 戻し方の分からない仮想環境(ロックファイルや requirements.txt が無い .venv)は、別に聞いてから消す。
 set -eu
 
 MODE=report
 DOCKER=0
 APT_AUTOREMOVE=0
+PROJECTS=0
 for arg in "$@"; do
   case "$arg" in
+    --projects) PROJECTS=1 ;;
     --clean) MODE=clean ;;
     --docker)
       MODE=clean
@@ -34,6 +41,24 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+TAB=$(printf '\t')
+
+# KiB を人が読める単位に
+human() {
+  awk -v k="$1" 'BEGIN {
+    split("K M G T", u, " "); i = 1
+    while (k >= 1024 && i < 4) { k /= 1024; i++ }
+    printf (i == 1 ? "%d%s" : "%.1f%s"), k, u[i]
+  }'
+  return 0
+}
+# 数字だけで、余分な先頭の 0 が無いなら真。索引の値は $(( )) に渡す前にここを通す
+# (bash の算術式は変数の中身を式として評価するため。diskreport の is_kib と同じ)
+is_num() {
+  case "$1" in '' | *[!0123456789]* | 0?*) return 1 ;; esac
+  return 0
+}
 
 show() { # $1: 名前, $2: パス
   if [ -n "$2" ] && [ -e "$2" ]; then
@@ -163,6 +188,298 @@ report_windows() {
     }'
 }
 
+# apt の不要パッケージ(autoremove で消えるもの)を、試し実行(-s。root は要らず何も変えない)で数える。
+# サイズは dpkg の申告値(Installed-Size、KiB)
+report_apt_autoremove() {
+  command -v apt-get >/dev/null 2>&1 || return 0
+  pkgs=$(LC_ALL=C apt-get -s autoremove 2>/dev/null | awk '$1 == "Remv" { print $2 }') || pkgs=
+  echo ""
+  echo "== apt の不要パッケージ(autoremove で消える候補。表示のみ)"
+  if [ -z "$pkgs" ]; then
+    echo "  ありません"
+    return 0
+  fi
+  n=$(printf '%s\n' "$pkgs" | wc -l | tr -d ' ')
+  size=
+  if command -v dpkg-query >/dev/null 2>&1; then
+    # shellcheck disable=SC2086  # パッケージ名を1つずつの引数に分ける(名前に空白は入らない)
+    kib=$(dpkg-query -W -f='${Installed-Size}\n' $pkgs 2>/dev/null | awk '{ s += $1 } END { printf "%d", s }')
+    [ "$kib" -gt 0 ] && size="、約 $(human "$kib")"
+  fi
+  echo "  ${n} 件${size}。消すには cachesweep --apt-autoremove(パッケージ本体を消します)"
+  printf '%s\n' "$pkgs" | head -n 10 | sed 's/^/    /'
+  if [ "$n" -gt 10 ]; then echo "    ほか $((n - 10)) 件"; fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# --projects: 開発成果物を選んで消す
+# ---------------------------------------------------------------------------
+# 幅をそろえた「N 日前」(9 桁ぶん)。$1: 時刻(epoch。形が正しくなければ「不明」)
+age_cell() {
+  if ! is_num "$1"; then
+    printf '     不明'
+    return 0
+  fi
+  days=$((($(date +%s) - $1) / 86400))
+  if [ "$days" -le 0 ]; then printf '     今日'; else printf '%4d 日前' "$days"; fi
+  return 0
+}
+short() { # $HOME を ~ にして短く見せる
+  # shellcheck disable=SC2088  # 表示用の文字どおりの ~(展開させない)
+  case "$1" in "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;; *) printf '%s' "$1" ;; esac
+}
+
+# 消してよいかと戻し方を決め、state(ok / warn / skip)と note に入れる。$1: 成果物のパス。
+# 選ぶ前と、消す直前の2回呼ぶ(選んでいるあいだに変わったものを消さないため)
+classify() {
+  c_dir=$1
+  c_parent=$(dirname "$c_dir")
+  c_base=$(basename "$c_dir")
+  state=skip
+  note=
+  if [ -L "$c_dir" ] || [ ! -d "$c_dir" ]; then
+    note="もう無い"
+    return 0
+  fi
+  case "$c_dir" in
+    "$HOME"/*) ;;
+    *)
+      note="ホームの外なので消さない"
+      return 0
+      ;;
+  esac
+  # 中身が git で管理されているもの(コミットされた dist など)は、消すと作業ツリーの変更になる。
+  # 外から持ってきたリポの .git/config がコマンドを走らせないよう、fsmonitor とフックを切って読むだけにする
+  if command -v git >/dev/null 2>&1 && [ -n "$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$c_parent" ls-files -- "$c_base" 2>/dev/null | head -n 1)" ]; then
+    note="git で管理されているので消さない"
+    return 0
+  fi
+  case "$c_base" in
+    node_modules)
+      if [ ! -f "$c_parent/package.json" ]; then
+        note="package.json が無いので消さない"
+        return 0
+      fi
+      state=ok
+      note="install で戻る(ロックファイルが無いので版は変わりうる)"
+      for c_f in package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock bun.lock bun.lockb; do
+        if [ -f "$c_parent/$c_f" ]; then
+          note="$c_f から戻せる"
+          return 0
+        fi
+      done
+      ;;
+    .venv | venv)
+      if [ ! -f "$c_dir/pyvenv.cfg" ]; then
+        note="仮想環境の印(pyvenv.cfg)が無いので消さない"
+        return 0
+      fi
+      for c_f in uv.lock poetry.lock pdm.lock Pipfile.lock Pipfile pyproject.toml setup.py setup.cfg "$c_parent"/requirements*.txt; do
+        c_f=${c_f##*/}
+        if [ -f "$c_parent/$c_f" ]; then
+          state=ok
+          note="$c_f から戻せる"
+          return 0
+        fi
+      done
+      state=warn
+      note="戻し方が分からない。手で入れたパッケージは戻らない"
+      ;;
+    target)
+      if [ -f "$c_parent/Cargo.toml" ] || [ -f "$c_dir/CACHEDIR.TAG" ]; then
+        state=ok
+        note="ビルドで作り直せる"
+      else
+        note="Cargo.toml が無いので消さない"
+      fi
+      ;;
+    build | dist | .next | .turbo | .gradle | .tox)
+      for c_f in package.json pyproject.toml setup.py setup.cfg tox.ini build.gradle build.gradle.kts settings.gradle settings.gradle.kts; do
+        if [ -f "$c_parent/$c_f" ]; then
+          state=ok
+          note="ビルドなどで作り直せる"
+          return 0
+        fi
+      done
+      note="プロジェクトの印が無いので消さない"
+      ;;
+    *) note="対象外の名前" ;;
+  esac
+  return 0
+}
+
+# 「3 1 5-7」のような答えを、重複なしの番号の列に。範囲外や読めない語があれば非0
+parse_picks() { # $1: 答え, $2: 番号の最大
+  printf '%s\n' "$1" | awk -v max="$2" '{
+    gsub(/,/, " ")
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^[0-9]+$/) { a = $i + 0; b = a }
+      else if ($i ~ /^[0-9]+-[0-9]+$/) { split($i, r, "-"); a = r[1] + 0; b = r[2] + 0 }
+      else { bad = 1; continue }
+      if (a < 1 || b > max || a > b) { bad = 1; continue }
+      for (j = a; j <= b; j++) if (!(j in seen)) { seen[j] = 1; print j }
+    }
+  } END { exit bad }'
+}
+
+ask_yes() { # $1: 質問。y / yes のときだけ真
+  printf '%s[y/N] ' "$1"
+  read -r answer || answer=
+  case "$answer" in y | Y | yes) return 0 ;; *) return 1 ;; esac
+}
+
+projects_mode() {
+  WORK=$(mktemp -d)
+  trap 'rm -rf "$WORK"' EXIT
+  # 一覧は diskreport から取る(どれを開発成果物とみなすかを揃え、$HOME を歩き直さない)
+  dr=$(dirname "$0")/diskreport
+  [ -x "$dr" ] || dr=$(command -v diskreport 2>/dev/null) || dr=
+  if [ -z "$dr" ]; then
+    echo "cachesweep: diskreport が見つかりません" >&2
+    return 1
+  fi
+  if ! "$dr" --projects-tsv >"$WORK/tsv"; then
+    echo "cachesweep: diskreport から開発成果物の一覧を取れませんでした" >&2
+    return 1
+  fi
+  itime=$(awk -F'\t' 'NR == 1 && $1 == "#time" { print $2; exit }' "$WORK/tsv")
+  if [ -z "$itime" ]; then
+    echo "開発成果物の一覧は diskreport の索引から作ります。索引がまだ無いので、diskreport scan で作ってから、もう一度実行してください。"
+    return 0
+  fi
+
+  # 行: 番号<TAB>状態<TAB>KiB<TAB>最後に触った時刻<TAB>戻し方<TAB>パス(パスにタブが入っても崩れないよう最後に置く)
+  tail -n +2 "$WORK/tsv" >"$WORK/list"
+  : >"$WORK/rows"
+  : >"$WORK/skipped"
+  n=0
+  gone=0
+  while IFS="$TAB" read -r k t d; do
+    is_num "$k" || continue
+    classify "$d"
+    case "$state" in
+      ok | warn)
+        n=$((n + 1))
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$state" "$k" "$t" "$note" "$d" >>"$WORK/rows"
+        ;;
+      *)
+        if [ "$note" = "もう無い" ]; then
+          gone=$((gone + 1))
+        else
+          printf '%s\t%s\n' "$note" "$d" >>"$WORK/skipped"
+        fi
+        ;;
+    esac
+  done <"$WORK/list"
+
+  now=$(date +%s)
+  is_num "$itime" || itime=$now
+  age=$(((now - itime) / 86400))
+  if [ "$age" -le 0 ]; then age=今日; else age="$age 日前"; fi
+  echo "== 開発成果物(diskreport の索引から。数えたのは ${age}。サイズはそのときの値)"
+  if [ "$n" -eq 0 ]; then
+    echo "  消せるものはありません"
+  else
+    echo "  番号・サイズ・最後に触った日(プロジェクトの直下と .git の更新日時から見た目安)・場所(戻し方)"
+    while IFS="$TAB" read -r i s k t note d; do
+      mark=
+      if [ "$s" = warn ]; then mark="注意: "; fi
+      printf '  %4s  %8s  %s  %s(%s%s)\n' "$i" "$(human "$k")" "$(age_cell "$t")" "$(short "$d")" "$mark" "$note"
+    done <"$WORK/rows" >"$WORK/shown"
+    cat "$WORK/shown"
+    echo "  合計 $(human "$(awk -F'\t' '{ s += $3 } END { printf "%d", s }' "$WORK/rows")")($n 件)"
+  fi
+  if [ "$gone" -gt 0 ]; then echo "  (索引のあとで無くなったもの $gone 件は省きました)"; fi
+  if [ -s "$WORK/skipped" ]; then
+    echo "  消さないもの:"
+    while IFS="$TAB" read -r note d; do printf '    %s(%s)\n' "$(short "$d")" "$note"; done <"$WORK/skipped"
+  fi
+  echo "  (索引より後に作ったものは出ません。diskreport scan で作り直せます)"
+  [ "$n" -gt 0 ] || return 0
+
+  if ! { [ -t 0 ] && [ -t 1 ]; }; then
+    echo ""
+    echo "端末で cachesweep --projects を実行すると、選んで消せます。"
+    return 0
+  fi
+
+  echo ""
+  if command -v fzf >/dev/null 2>&1; then
+    picks=$(fzf --multi --reverse --height=60% --prompt='消すもの> ' \
+      --header='Tab で選び、Enter で決めます(Esc で中止)' <"$WORK/shown" | awk '{ print $1 }') || picks=
+  else
+    printf '消す番号を空白で区切って入れてください(3-5 のような範囲も可。空なら中止): '
+    read -r answer || answer=
+    if ! picks=$(parse_picks "$answer" "$n"); then
+      echo "番号の書き方が分かりません: $answer(何も消しません)" >&2
+      return 1
+    fi
+  fi
+  if [ -z "$picks" ]; then
+    echo "何も選ばれなかったので、何も消しません。"
+    return 0
+  fi
+  printf '%s\n' "$picks" >"$WORK/picks"
+  awk -F'\t' 'FILENAME == ARGV[1] { want[$1] = 1; next } ($1 in want)' "$WORK/picks" "$WORK/rows" >"$WORK/sel"
+
+  # 戻し方の分からないものは、まとめて別に聞く(既定は残す)
+  if awk -F'\t' '$2 == "warn" { found = 1 } END { exit !found }' "$WORK/sel"; then
+    echo "次のものは戻し方が分かりません(ロックファイルも requirements.txt も無い仮想環境。手で入れたパッケージは、消すと戻りません):"
+    while IFS="$TAB" read -r i s k t note d; do
+      if [ "$s" = warn ]; then printf '  %8s  %s\n' "$(human "$k")" "$(short "$d")"; fi
+    done <"$WORK/sel"
+    if ! ask_yes "これらも消しますか?"; then
+      awk -F'\t' '$2 != "warn"' "$WORK/sel" >"$WORK/sel2"
+      mv "$WORK/sel2" "$WORK/sel"
+      echo "これらは残します。"
+    fi
+  fi
+  if [ ! -s "$WORK/sel" ]; then
+    echo "何も消しません。"
+    return 0
+  fi
+
+  echo "消すもの:"
+  while IFS="$TAB" read -r i s k t note d; do printf '  %8s  %s\n' "$(human "$k")" "$(short "$d")"; done <"$WORK/sel"
+  total=$(awk -F'\t' '{ s += $3 } END { printf "%d", s }' "$WORK/sel")
+  if ! ask_yes "$(wc -l <"$WORK/sel" | tr -d ' ') 件、合計 約 $(human "$total") を消します。よいですか?"; then
+    echo "何も消しません。"
+    return 0
+  fi
+
+  freed=0
+  failed=0
+  while IFS="$TAB" read -r i s k t note d; do
+    classify "$d"
+    if [ "$state" = skip ]; then
+      echo "  飛ばしました: $(short "$d")($note)"
+      continue
+    fi
+    if rm -rf -- "$d"; then
+      echo "  消しました: $(short "$d")"
+      freed=$((freed + k))
+    else
+      echo "  消しきれませんでした: $(short "$d")" >&2
+      failed=1
+    fi
+  done <"$WORK/sel"
+  echo "完了。約 $(human "$freed") 空きました(索引の値からの目安)。"
+  if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
+    echo "WSL の場合、空いた領域を Windows に返すには wsl-compact を実行してください。"
+  fi
+  return "$failed"
+}
+
+if [ "$PROJECTS" -eq 1 ]; then
+  if [ "$MODE" != report ]; then
+    echo "cachesweep: --projects は他のオプションと一緒には使えません" >&2
+    exit 1
+  fi
+  projects_mode
+  exit $?
+fi
+
 echo "== キャッシュの状態"
 command -v brew >/dev/null 2>&1 && show brew "$(brew --cache 2>/dev/null)"
 command -v npm >/dev/null 2>&1 && show npm "$(npm config get cache 2>/dev/null)"
@@ -176,10 +493,14 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 if [ "$MODE" = report ]; then
+  report_apt_autoremove
   report_detected
   report_windows
   echo ""
-  echo "削除するには: cachesweep --clean(Docker も含めるなら --docker)"
+  apt_hint=
+  command -v apt-get >/dev/null 2>&1 && apt_hint="、apt の不要パッケージも消すなら --apt-autoremove"
+  echo "キャッシュを消すには: cachesweep --clean(Docker も含めるなら --docker${apt_hint})"
+  echo "node_modules・.venv などの開発成果物を選んで消すには: cachesweep --projects"
   exit 0
 fi
 

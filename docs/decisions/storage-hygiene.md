@@ -25,7 +25,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | クラウド同期 | OneDrive / iCloud / Google Drive のローカルコピー | プレースホルダは論理サイズと実サイズが違う |
 | 仮想ディスク・コンテナ | WSL の vhdx(他ディストリ含む)、Docker Desktop の vhdx、Docker Engine、VM イメージ | 中で消しても外は縮まない |
 | アプリデータ・キャッシュ | `~/.cache`、`AppData\Local`、`~/Library/*` 等 | (B) の正体。既知パス一覧で測る |
-| 開発成果物 | `node_modules` / `target` / `.venv` 等 | 再生成できる。マーカー探索(明示指定) |
+| 開発成果物 | `node_modules` / `target` / `.venv` 等 | 多くは作り直せる(戻し方の分からない `.venv` もある)。索引から拾い、マーカーで確かめる |
 | ごみ箱・バックアップ | Trash、iOS バックアップ、`Windows.old` | 消し忘れの定番 |
 | **残差** | 器の使用量 − 上記の合計 | **知らない場所。これが設計の中心** |
 
@@ -50,7 +50,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | クラウド同期 | (該当なし) | OneDrive フォルダはプレースホルダに注意(論理サイズで見える) | `~/Library/CloudStorage`、iCloud の退避可能分 |
 | 仮想ディスク・コンテナ | `docker system df`(Engine) | Lxss の BasePath から各 `ext4.vhdx` を `stat`、`%LOCALAPPDATA%\Docker\wsl` | VM イメージの既知パス |
 | アプリデータ・キャッシュ | 既知パス一覧(`~/.cache` 等) | `diskreport windows` の索引。場所が決まっている開発キャッシュは `cachesweep` でも見られる | 既知パス一覧(`~/Library/{Caches,Application Support,Containers,Developer,Logs}`) |
-| 開発成果物 | マーカー探索(明示指定) | 同左(ローカルに置く前提。`/mnt` 配下は遅い旨を注記) | 同左 |
+| 開発成果物 | `diskreport scan` の索引 + マーカー | 同左(ローカルに置く前提。`/mnt` 配下は数えない) | 同左 |
 | ごみ箱・バックアップ | `~/.local/share/Trash` | `$Recycle.Bin`、`Windows.old`(帳簿なし。ストレージ設定) | `~/.Trash`、`MobileSync/Backup` |
 
 ### 残差と時間軸
@@ -82,6 +82,15 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 - 索引からこれらの直下の行を拾い、フォルダ名(小文字化)で入れ物をまたいで合計し、入れ物ごとの内訳(設定 / キャッシュ / データ…)を添える。Windows はさらにレジストリの Uninstall キー(`DisplayName` と `EstimatedSize`)でインストーラの申告サイズの上位も出す。
 - 限界: フォルダ名はアプリ名と一致しないことがある(macOS の Containers はバンドル ID、ベンダー名のフォルダの下にアプリが入る Windows の例)。「使っているか」は見ていない(最終利用日は別の帳簿: macOS の Spotlight `kMDItemLastUsedDate`、Windows の UserAssist。未実装)。
 
+### 開発成果物を消す(`cachesweep --projects`)
+
+- 一覧は `diskreport --projects-tsv`(内部用)から取る。どれを開発成果物とみなすか(名前とマーカー、既知パスの配下と入れ子を除く)を `diskreport` のレポートと揃え、`$HOME` を歩き直さない。索引が無ければ `diskreport scan` を案内するだけ。索引のあとで消えたものは、レポートでも一覧でも数えない。
+- ツールやアプリが自分で管理する入れ物(ホーム直下の隠しフォルダ、`~/Library`、`~/Applications`、`~/snap`、`.app` の中)は、プロジェクトではないので開発成果物とみなさない。実機で、エディタの拡張機能(`~/.antigravity/extensions/*/dist` や `…/node_modules`)と pnpm の置き場(`~/Library/pnpm/…/node_modules`)が `package.json` を持つため「作り直せる」と判定され、消せる一覧に並んだ。拡張機能は作り直せず、消すと壊れる。既知パスの一覧に足す方法では、一覧に無いエディタ(Cursor など)で同じことが起きるので、場所の形で決める。ホーム直下の隠しフォルダにプロジェクトを置いている場合は拾えないが、手で消せるので、消してはいけないものを並べないほうを取った。
+- 消すのは `cachesweep` の役目(責務分担どおり)。キャッシュと違って「プロジェクトごとに要るか」は人にしか分からないので、`--clean` のようにまとめて消さず、端末で人が選んだものだけを、件数と合計を見せて y/N で確かめてから消す。端末でなければ一覧を出すだけ。選び方は fzf があれば fzf、無ければ番号(「1 3 5-7」)。
+- 消さないもの: git で管理されている中身(コミットされた `dist` など。消すと作業ツリーの変更になる)、印の無いもの(`package.json` の無い `node_modules`、`pyvenv.cfg` の無い `.venv`、`Cargo.toml` の無い `target` など)、ホームの外、シンボリックリンク。選んでから消すまでのあいだに変わったものを消さないよう、消す直前にもう一度確かめる。
+- 戻し方を添える: `node_modules` はロックファイルがあれば同じ版で戻る(無ければ版が変わりうる)。`.venv` は `uv.lock`・`poetry.lock`・`requirements*.txt`・`pyproject.toml` などがあれば戻せるが、どれも無ければ手で入れたパッケージは戻らないので、選ばれても別に y/N で聞く(既定は残す)。
+- 「最後に触った日」は、プロジェクトのフォルダ(成果物の親)とその直下のファイル・フォルダ(`.git` と成果物そのものを含む)の更新日時のうち一番新しいもの。`.git` は commit・checkout・index の更新でフォルダの中身が入れ替わるので、触った目安になる。深い場所のファイルを編集しただけでは変わらないので目安にとどまるが、間違えて消しても作り直せるものなので、精度より速さ(全件で find と stat を1回ずつ)を取った。アクセス時刻(atime)は `noatime` / `relatime` で当てにならないので使わない。`diskreport` は 90 日以上触っていないものの件数と合計も出す(しきい値は固定。設定を増やさない)。
+
 ### 既知パス一覧の持ち方
 
 - 共通の一覧はリポジトリのデータファイル(`home/.config/dotfiles/diskreport.paths`。タブ区切りで「カテゴリ、パス、何のデータか・消してよいか」)に出し、home-manager で配る。
@@ -95,7 +104,7 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 | 上限(予防) | `nix-gc-setup`(`min-free` / `max-free`)、各ツールの設定(`cleanupPeriodDays` 等)。システム側(journald、Docker daemon)は README に書くだけ |
 | 通知 | `switch.sh` の末尾で `diskreport --nix-brief`(表示だけ)。続けて、世代が 10 を超え 30 日より前のものがあれば、端末で対話中に限り「消して GC しますか?」と聞く(`y` で `expire-generations "-30 days"` と `nix-collect-garbage`) |
 | 分析 | `diskreport`(読み取り専用。既定は 1〜4 の手段だけで数秒。全走査・成果物探索・Windows 側の道具は明示指定) |
-| 削除 | `cachesweep` / `nix-collect-garbage` / `home-manager expire-generations` / `wsl-compact`、OS の道具(Storage Sense 等)。分析コマンドは案内するだけ |
+| 削除 | `cachesweep`(開発成果物は `--projects` で人が選ぶ。apt の不要パッケージは `--apt-autoremove`) / `nix-collect-garbage` / `home-manager expire-generations` / `wsl-compact`、OS の道具(Storage Sense 等)。分析コマンドは案内するだけ |
 
 ## 検討した代替
 
@@ -131,11 +140,13 @@ Nix は宣言的だが `/nix/store` は足すだけで勝手には引かない�
 
 - 実装済み(索引・アプリ別): `scan`(`$HOME` の `du -xkd 6`、WSL では PowerShell での集計、15 分の上限)、索引からの「大きい順」「増えた順」「残差の候補」「アプリ別」(入れ物直下の合計、Windows はレジストリの申告値の上位も)。入れ子の間引き(子1つが親の 8 割以上なら親を省く)。
 - 実装済み: 器(`df`、満杯時の警告、macOS のスナップショット数、削除済みで使用中のファイル)、会計(カテゴリ別の合計と残差、入れ子の二重計上回避)、履歴(直近 30 回、前回・約1週間前・約1か月前との差)、残差の増分による警告、「いますぐ戻せる見込み」(キャッシュ + ごみ箱 + 開発成果物 + Nix の store 全体と今の世代の差 + Docker の未使用分)、帳簿ソース(journald、`/var/cache/apt` 等、dpkg の `Installed-Size`、flatpak / snap のディレクトリ、macOS の `/Applications`、Homebrew の Cellar、Nix store 全体、`docker system df`)、既知パス一覧の外部ファイル化(`home/.config/dotfiles/diskreport.paths` と git 管理外の `diskreport.local`)、`--projects`、`--deep`(macOS は `mdfind`、他は `find -size` と全走査 TUI の案内)、WSL の Windows 側(各 vhdx、Windows 側ドライブの `df`、レジストリ `EstimatedSize` による申告値の合計、他ドライブ)、`windows`(Windows 側を数えて詳細を出す)、`switch.sh` 末尾の通知、`nix-gc-setup`。作業ファイルは tmpfs を優先し、ディスクが満杯でもレポート自体は出る(履歴の保存だけ失敗して警告)。
+- 実装済み(開発成果物と apt): `diskreport` の開発成果物に最後に触った日と 90 日以上触っていないものの合計、`cachesweep --projects`(選んで消す)、`cachesweep` の表示に apt の autoremove の候補(`apt-get -s autoremove` と dpkg の `Installed-Size`)。対話で消す流れは `script` で端末のふりをして確かめた(macOS)。apt の部分は偽の `apt-get` / `dpkg-query` で通しただけで、実機の apt では未実行。
 - 未実装: Everything(`es.exe`)との連携(コマンドの書式を実機で確かめてから)、最終利用日(Spotlight / UserAssist)、クラウド同期のプレースホルダ(論理サイズ)の補正、XDG の `user-dirs.dirs` による書類フォルダ名の追従(一覧ファイルで足せる)。
 - 実機未検証: `cachesweep` の Windows 側(PowerShell の動作は macOS の PowerShell 7 で確かめただけで、Windows PowerShell 5.1 と WSL からの起動は未実行。各ツールの置き場は既定の場所の知識に基づく)。WSL 分岐はスタブ(`reg.exe` / `wslpath` / `cmd.exe` / `powershell.exe` の偽物)で通しただけ。特に `diskreport windows` の集計(PowerShell)は macOS の PowerShell 7 と仮のフォルダで確かめただけで、Windows PowerShell 5.1 では未実行。実機で1回走らせて確かめる。macOS 分岐(`mdfind`、`tmutil`、`/Applications`、`stat -f`)は未実行。
 
 ## 履歴
 
+- (2026-11: 開発成果物を消す道として `cachesweep --projects` を足した。`diskreport` は場所と大きさを出すだけで、消すには場所を見て手で消すしかなく、どれを消してよいか(使っているか、戻せるか)も分からなかったため。一覧は `diskreport` の索引から取り、最後に触った日と戻し方を添え、人が選んだものだけを確かめてから消す。あわせて、`cachesweep` の表示に apt の autoremove の候補を出し、案内に `--apt-autoremove` を載せた。`--apt-autoremove` はあったが、案内にも README にも無く、何が消えるかも見えなかったため)
 - (2026-11: Windows 側の詳細を WizTree から Windows 側の PowerShell での集計に置き換え、`diskreport windows` で表示するようにした。WizTree は個人利用のみ無料で、商用利用できないツールは入れない方針にしたため。ファイルを1つずつ数えるので MFT 読みより遅いが、`diskreport scan` / `windows` の中だけの処理なので上限時間を付けて受け入れる。管理者権限が要らなくなり、確認ダイアログも出ない。読めないフォルダは数えられないので個数を表示する)
 - (2026-11: `cachesweep` のサイズ表示に、WSL での Windows 側の開発キャッシュと、そのほかのパッケージツールの検出を足した。WizTree が無くても Windows 側のキャッシュの量が分かるようにするため。Windows 側の中身は Windows の道具で見る原則どおり、`/mnt` 越しの `du` ではなく Windows 側の PowerShell に決まった場所だけを数えさせ、上限時間を付けた。新しいコマンドは足さず、表示だけにして `--clean` は Windows 側に触れない。ツールは起動せず場所で検出する。corepack などは起動すると取得を始めることがあるため)
 - (2026-11: 導入。固定パス + 前回差分の `diskreport`、`nix-gc-setup`、`switch.sh` の通知)
