@@ -249,8 +249,9 @@ classify() {
       return 0
       ;;
   esac
-  # 中身が git で管理されているもの(コミットされた dist など)は、消すと作業ツリーの変更になる
-  if command -v git >/dev/null 2>&1 && [ -n "$(git -C "$c_parent" ls-files -- "$c_base" 2>/dev/null | head -n 1)" ]; then
+  # 中身が git で管理されているもの(コミットされた dist など)は、消すと作業ツリーの変更になる。
+  # 外から持ってきたリポの .git/config がコマンドを走らせないよう、fsmonitor とフックを切って読むだけにする
+  if command -v git >/dev/null 2>&1 && [ -n "$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$c_parent" ls-files -- "$c_base" 2>/dev/null | head -n 1)" ]; then
     note="git で管理されているので消さない"
     return 0
   fi
