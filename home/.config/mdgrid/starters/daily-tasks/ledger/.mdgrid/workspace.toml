@@ -77,6 +77,15 @@ todo = { done_at = "" }
 doing = { start = { value = "{date}", if_empty = true }, done_at = "" }
 waiting = { done_at = "" }
 
+# 候補の出し方: 親タスクの欄は、まだ済んでいないタスクを子の多い順に。タグの欄は、この表で多く使うタグから
+# (同じ根のほかの表のタグは出さない)。
+[table.rules.parent.candidates]
+where = { status = ["todo", "doing", "waiting"] }
+sort = "count"
+
+[table.rules.tags.candidates]
+sort = "count"
+
 # 新しいタスク(a、または mdgrid --new-note): 名前は今日の日付(20261124_)で始め、その日付は欄に出さずに打った名前の前に付ける。
 # 担当・開始日・期限・思い出す日時・優先度・親タスク・タグ・URL を聞き、残りを埋め、本文を雛形から始める。子タスクは親タスクの欄で親を選ぶ。
 [table.new_note]
@@ -179,6 +188,10 @@ sort = [{ property = "done_at", direction = "DESC" }]
 [[table]]
 name = "ルーチン"
 runs = { folder = "Runs", rule = "recurrence", name = "{date:YYYYMMDD}_{routine}", set = { status = "todo" }, copy = ["actor", "tags"], body = ".mdgrid/templates/run.md" }
+
+# タグの欄は、ルーチンの表で多く使うタグから。
+[table.rules.tags.candidates]
+sort = "count"
 
 [table.new_note]
 folder = "Routines"
