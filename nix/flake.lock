@@ -27,16 +27,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1795183997,
-        "narHash": "sha256-uG31OLfT8cfWXVydcnGgDEHCz2/7l97sWLXNnDgDI0o=",
+        "lastModified": 1795625439,
+        "narHash": "sha256-hYhRzkRQ6ldaLefthItJ/9pHsU6bEv7ooVvx/OUaCa0=",
         "owner": "S6U5",
         "repo": "mdgrid",
-        "rev": "4ea7d90c424841d2f68a11e03edaf573a44eebd3",
+        "rev": "b058932f57776b9e35c1e12a60f906f8ef981c5e",
         "type": "github"
       },
       "original": {
         "owner": "S6U5",
-        "ref": "v0.5.0",
+        "ref": "v0.6.0",
         "repo": "mdgrid",
         "type": "github"
       }
