@@ -45,8 +45,8 @@ doing = { done_at = "" }
 waiting = { done_at = "" }
 
 [rules.priority]
-values = ["p1", "p2", "p3"]
-labels = { p1 = "高", p2 = "中", p3 = "低" }
+values = ["p1", "p2", "p3", "p4", "p5"]
+labels = { p1 = "最優先", p2 = "高", p3 = "中", p4 = "低", p5 = "後回し" }
 
 # ---- タスク ----
 [[table]]
@@ -78,12 +78,12 @@ doing = { start = { value = "{date}", if_empty = true }, done_at = "" }
 waiting = { done_at = "" }
 
 # 新しいタスク(a、または mdgrid --new-note): 名前は今日の日付(20261124_)で始め、その日付は欄に出さずに打った名前の前に付ける。
-# 担当・開始日・期限・優先度を聞き、残りを埋め、本文を雛形から始める。子タスクは、作ったあとで parent に親のノートを入れる。
+# 担当・開始日・期限・思い出す日時・優先度・親タスク・タグ・URL を聞き、残りを埋め、本文を雛形から始める。子タスクは親タスクの欄で親を選ぶ。
 [table.new_note]
 folder = "Tasks"
 name = "{date:YYYYMMDD}_"
 name_head = "hide"
-ask = ["actor", "start", "due", "priority"]
+ask = ["actor", "start", "due", "remind", "priority", "parent", "tags", "url"]
 hidden = ["created"]
 body = ".mdgrid/templates/task.md"
 
@@ -182,7 +182,7 @@ runs = { folder = "Runs", rule = "recurrence", name = "{date:YYYYMMDD}_{routine}
 
 [table.new_note]
 folder = "Routines"
-ask = ["recurrence", "actor"]
+ask = ["recurrence", "actor", "tags"]
 body = ".mdgrid/templates/routine.md"
 
 [table.base]
