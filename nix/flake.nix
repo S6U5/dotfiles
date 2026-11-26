@@ -13,7 +13,7 @@
     # (.github/dependabot.yml の nix)が見つけ、ここのタグと flake.lock をまとめて PR にする。
     # nixpkgs はこのリポのものに揃え、2つ目の nixpkgs を取ってこない。
     mdgrid = {
-      url = "github:S6U5/mdgrid/v0.6.0";
+      url = "github:S6U5/mdgrid/v0.7.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
