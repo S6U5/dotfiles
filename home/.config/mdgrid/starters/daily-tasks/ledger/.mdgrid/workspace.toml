@@ -69,13 +69,21 @@ chart = [
   { name = "担当と状態", kind = "heatmap", x = "actor", by = "status" },
 ]
 
+# 状態の決まり(この表だけ。ルーチンの回の表には効かない): done で完了日に今日を入れ、未着手・進行中・待ちに戻すと完了日を空にする。
+# 進行中にすると、開始日が空のときだけ今日を入れる(前もって決めた開始日は残る)。表の範囲の then は全体の then に丸ごと代わる。
+[table.rules.status.then]
+done = { done_at = "{date}" }
+todo = { done_at = "" }
+doing = { start = { value = "{date}", if_empty = true }, done_at = "" }
+waiting = { done_at = "" }
+
 # 新しいタスク(a、または mdgrid --new-note): 名前は今日の日付(20261124_)で始め、その日付は欄に出さずに打った名前の前に付ける。
-# 担当・期限・優先度を聞き、残りを埋め、本文を雛形から始める。子タスクは、作ったあとで parent に親のノートを入れる。
+# 担当・開始日・期限・優先度を聞き、残りを埋め、本文を雛形から始める。子タスクは、作ったあとで parent に親のノートを入れる。
 [table.new_note]
 folder = "Tasks"
 name = "{date:YYYYMMDD}_"
 name_head = "hide"
-ask = ["actor", "due", "priority"]
+ask = ["actor", "start", "due", "priority"]
 hidden = ["created"]
 body = ".mdgrid/templates/task.md"
 
@@ -110,7 +118,7 @@ left = 'due.relative()'
 type = "table"
 name = "人と AI"
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "due", "formula.left", "priority", "parent", "tags", "routine", "url"]
+order = ["status", "start", "due", "formula.left", "priority", "parent", "tags", "routine", "url"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -118,7 +126,7 @@ sort = [{ property = "priority", direction = "ASC" }, { property = "due", direct
 type = "table"
 name = "状態ごと"
 where = { status = ["todo", "doing", "waiting"] }
-order = ["actor", "due", "formula.left", "priority", "parent", "tags", "url"]
+order = ["actor", "start", "due", "formula.left", "priority", "parent", "tags", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -127,7 +135,7 @@ type = "table"
 name = "人だけ"
 filters = { and = ['actor != "ai"'] }
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "actor", "due", "formula.left", "remind", "priority", "parent", "tags", "url"]
+order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent", "tags", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
 
@@ -136,7 +144,7 @@ type = "table"
 name = "AI だけ"
 filters = { and = ['actor == "ai" || actor == "both"'] }
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "actor", "priority", "due", "parent", "tags", "url"]
+order = ["status", "actor", "priority", "start", "due", "parent", "tags", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -145,7 +153,7 @@ type = "table"
 tab_break = true
 name = "今週"
 filters = { and = ['status != "done"', 'status != "dropped"', 'due <= today() + "7d"'] }
-order = ["status", "actor", "due", "formula.left", "remind", "priority", "parent"]
+order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
 
@@ -153,7 +161,7 @@ sort = [{ property = "due", direction = "ASC" }, { property = "priority", direct
 type = "table"
 name = "期限切れ"
 filters = { and = ['status != "done"', 'status != "dropped"', 'due < today()'] }
-order = ["status", "actor", "due", "formula.left", "priority", "parent"]
+order = ["status", "actor", "start", "due", "formula.left", "priority", "parent"]
 sort = [{ property = "due", direction = "ASC" }]
 
 [[table.base.views]]
