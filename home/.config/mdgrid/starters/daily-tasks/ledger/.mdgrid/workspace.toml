@@ -16,8 +16,9 @@ note_name = '^\d{8}_'
 
 # 列の型。日付は日付として並び、直すときにカレンダーが開き、形の合わない値に印が付く。
 [types]
-start = "date"
-due = "date"
+# 開始と期限は日時の列: 日付だけでも書け、カレンダーの時刻の欄(数字で 1430・[-] [+])で時刻も入れられる。
+start = "datetime"
+due = "datetime"
 created = "date"
 done_at = "date"
 date = "date"
