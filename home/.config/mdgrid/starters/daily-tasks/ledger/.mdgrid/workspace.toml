@@ -16,8 +16,9 @@ note_name = '^\d{8}_'
 
 # 列の型。日付は日付として並び、直すときにカレンダーが開き、形の合わない値に印が付く。
 [types]
-start = "date"
-due = "date"
+# 開始と期限は日時の列: 日付だけでも書け、カレンダーの時刻の欄(数字で 1430・[-] [+])で時刻も入れられる。
+start = "datetime"
+due = "datetime"
 created = "date"
 done_at = "date"
 date = "date"
@@ -87,12 +88,12 @@ sort = "count"
 sort = "count"
 
 # 新しいタスク(a、または mdgrid --new-note): 名前は今日の日付(20261124_)で始め、その日付は欄に出さずに打った名前の前に付ける。
-# 担当・開始日・期限・思い出す日時・優先度・親タスク・タグ・URL を聞き、残りを埋め、本文を雛形から始める。子タスクは親タスクの欄で親を選ぶ。
+# 説明・担当・開始日・期限・思い出す日時・優先度・親タスク・タグ・URL を聞き、残りを埋め、本文を雛形から始める。子タスクは親タスクの欄で親を選ぶ。
 [table.new_note]
 folder = "Tasks"
 name = "{date:YYYYMMDD}_"
 name_head = "hide"
-ask = ["actor", "start", "due", "remind", "priority", "parent", "tags", "url"]
+ask = ["description", "actor", "start", "due", "remind", "priority", "parent", "tags", "url"]
 hidden = ["created"]
 body = ".mdgrid/templates/task.md"
 
@@ -108,6 +109,7 @@ filters = { and = ['file.inFolder("Tasks")'] }
 left = 'due.relative()'
 
 [table.base.properties]
+"note.description" = { displayName = "説明" }
 "note.status" = { displayName = "状態" }
 "note.actor" = { displayName = "誰が" }
 "note.parent" = { displayName = "親タスク" }
@@ -127,7 +129,7 @@ left = 'due.relative()'
 type = "table"
 name = "人と AI"
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "start", "due", "formula.left", "priority", "parent", "tags", "routine", "url"]
+order = ["status", "start", "due", "formula.left", "priority", "parent", "tags", "routine", "description", "url"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -135,7 +137,7 @@ sort = [{ property = "priority", direction = "ASC" }, { property = "due", direct
 type = "table"
 name = "状態ごと"
 where = { status = ["todo", "doing", "waiting"] }
-order = ["actor", "start", "due", "formula.left", "priority", "parent", "tags", "url"]
+order = ["actor", "start", "due", "formula.left", "priority", "parent", "tags", "description", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -144,7 +146,7 @@ type = "table"
 name = "人だけ"
 filters = { and = ['actor != "ai"'] }
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent", "tags", "url"]
+order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent", "tags", "description", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
 
@@ -153,7 +155,7 @@ type = "table"
 name = "AI だけ"
 filters = { and = ['actor == "ai" || actor == "both"'] }
 where = { status = ["todo", "doing", "waiting"] }
-order = ["status", "actor", "priority", "start", "due", "parent", "tags", "url"]
+order = ["status", "actor", "priority", "start", "due", "parent", "tags", "description", "url"]
 groupBy = { property = "status", direction = "ASC" }
 sort = [{ property = "priority", direction = "ASC" }, { property = "due", direction = "ASC" }]
 
@@ -162,7 +164,7 @@ type = "table"
 tab_break = true
 name = "今週"
 filters = { and = ['status != "done"', 'status != "dropped"', 'due <= today() + "7d"'] }
-order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent"]
+order = ["status", "actor", "start", "due", "formula.left", "remind", "priority", "parent", "description"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "due", direction = "ASC" }, { property = "priority", direction = "ASC" }]
 
@@ -170,7 +172,7 @@ sort = [{ property = "due", direction = "ASC" }, { property = "priority", direct
 type = "table"
 name = "期限切れ"
 filters = { and = ['status != "done"', 'status != "dropped"', 'due < today()'] }
-order = ["status", "actor", "start", "due", "formula.left", "priority", "parent"]
+order = ["status", "actor", "start", "due", "formula.left", "priority", "parent", "description"]
 sort = [{ property = "due", direction = "ASC" }]
 
 [[table.base.views]]
@@ -187,7 +189,7 @@ sort = [{ property = "done_at", direction = "DESC" }]
 # 閉じているあいだは OS の定期実行から mdgrid <この台帳> --runs で作る。抜けた回は一番新しい回だけ。
 [[table]]
 name = "ルーチン"
-runs = { folder = "Runs", rule = "recurrence", name = "{date:YYYYMMDD}_{routine}", set = { status = "todo" }, copy = ["actor", "tags"], body = ".mdgrid/templates/run.md" }
+runs = { folder = "Runs", rule = "recurrence", name = "{date:YYYYMMDD}_{routine}", set = { status = "todo" }, copy = ["actor", "tags", "description"], body = ".mdgrid/templates/run.md" }
 
 # タグの欄は、ルーチンの表で多く使うタグから。
 [table.rules.tags.candidates]
@@ -195,7 +197,7 @@ sort = "count"
 
 [table.new_note]
 folder = "Routines"
-ask = ["recurrence", "actor", "tags"]
+ask = ["description", "recurrence", "actor", "tags"]
 body = ".mdgrid/templates/routine.md"
 
 [table.base]
@@ -208,6 +210,7 @@ next_left = 'recurrence.nextRun(start).relative()'
 
 [table.base.properties]
 "note.recurrence" = { displayName = "繰り返し" }
+"note.description" = { displayName = "説明" }
 "note.start" = { displayName = "起点" }
 "formula.next" = { displayName = "次の回" }
 "formula.next_left" = { displayName = "あと" }
@@ -217,13 +220,13 @@ next_left = 'recurrence.nextRun(start).relative()'
 [[table.base.views]]
 type = "table"
 name = "次の回の順"
-order = ["recurrence", "formula.next", "formula.next_left", "actor", "tags"]
+order = ["recurrence", "formula.next", "formula.next_left", "actor", "tags", "description"]
 sort = [{ property = "formula.next", direction = "ASC" }]
 
 [[table.base.views]]
 type = "table"
 name = "担当ごと"
-order = ["recurrence", "formula.next", "formula.next_left", "tags"]
+order = ["recurrence", "formula.next", "formula.next_left", "tags", "description"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "formula.next", direction = "ASC" }]
 
@@ -244,6 +247,7 @@ filters = { and = ['file.inFolder("Runs")'] }
 [table.base.properties]
 "note.routine" = { displayName = "ルーチン" }
 "note.date" = { displayName = "回の日" }
+"note.description" = { displayName = "説明" }
 "note.status" = { displayName = "状態" }
 "note.actor" = { displayName = "誰が" }
 "note.done_at" = { displayName = "完了日" }
@@ -253,7 +257,7 @@ filters = { and = ['file.inFolder("Runs")'] }
 type = "table"
 name = "未完了"
 where = { status = ["todo", "doing", "waiting"] }
-order = ["routine", "date", "status", "actor", "tags"]
+order = ["routine", "date", "status", "actor", "tags", "description"]
 groupBy = { property = "actor", direction = "ASC" }
 sort = [{ property = "date", direction = "ASC" }]
 
